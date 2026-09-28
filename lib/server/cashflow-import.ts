@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import type { TransactionKind } from "@/lib/domain";
 import { ensureManualAccount, upsertTransaction } from "@/lib/server/repository";
 import { maybeToCzk } from "@/lib/server/fx";
 
@@ -45,9 +46,9 @@ const ALLOWED_KINDS = new Set([
   "adjustment",
 ]);
 
-function normalizeKind(value: unknown): string | null {
+function normalizeKind(value: unknown): TransactionKind | null {
   const kind = String(value || "").trim().toLowerCase();
-  return ALLOWED_KINDS.has(kind) ? kind : null;
+  return ALLOWED_KINDS.has(kind) ? (kind as TransactionKind) : null;
 }
 
 export async function importCashFlow(input: {
