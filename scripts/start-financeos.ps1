@@ -94,12 +94,29 @@ try {
         Pop-Location
     }
 
-    if (-not (Test-FinanceOs)) {
-        $portInUse = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
-        if ($portInUse) {
-            throw "Port 3000 is already used by another application. Close it and start FinanceOS again."
+    # Always restart FinanceOS after updating so the running process matches the
+    # freshly pulled code and dependencies.
+    foreach ($managedPidFile in @($syncPidFile, $pidFile)) {
+        if (Test-Path $managedPidFile) {
+            try {
+                $managedPid = [int](Get-Content $managedPidFile -Raw)
+                if ($managedPid -gt 0 -and (Get-Process -Id $managedPid -ErrorAction SilentlyContinue)) {
+                    & taskkill.exe /PID $managedPid /T /F *> $null
+                    Start-Sleep -Milliseconds 300
+                }
+            } catch {
+                Write-LauncherLog ("Could not stop stale managed process: " + $_.Exception.Message)
+            }
+            Remove-Item $managedPidFile -Force -ErrorAction SilentlyContinue
         }
+    }
 
+    $portInUse = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+    if ($portInUse) {
+        throw "Port 3000 is already used by another application. Close it and start FinanceOS again."
+    }
+
+    if (-not (Test-FinanceOs)) {
         Write-LauncherLog "Starting hidden Next.js server."
         if (Test-Path $serverLog) {
             Remove-Item $serverLog -Force -ErrorAction SilentlyContinue
