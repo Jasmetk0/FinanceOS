@@ -11,6 +11,7 @@ New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 $launcherLog = Join-Path $dataDir "launcher.log"
 $serverLog = Join-Path $dataDir "server.log"
 $pidFile = Join-Path $dataDir "server.pid"
+$syncPidFile = Join-Path $dataDir "background-sync.pid"
 $healthUrl = "http://127.0.0.1:3000/api/health"
 $appUrl = "http://127.0.0.1:3000"
 
@@ -29,6 +30,17 @@ function Show-ErrorMessage([string]$Message) {
             [System.Windows.MessageBoxImage]::Error
         ) | Out-Null
     } catch {
+    }
+}
+
+function Test-ProcessId([string]$Path) {
+    if (-not (Test-Path $Path)) { return $false }
+    try {
+        $processId = [int](Get-Content $Path -Raw)
+        if ($processId -le 0) { return $false }
+        return $null -ne (Get-Process -Id $processId -ErrorAction SilentlyContinue)
+    } catch {
+        return $false
     }
 }
 
@@ -105,6 +117,16 @@ try {
 
         if (-not (Test-FinanceOs)) {
             throw "FinanceOS did not start within 75 seconds. See $serverLog."
+        }
+    }
+
+    if (-not (Test-ProcessId $syncPidFile)) {
+        Remove-Item $syncPidFile -Force -ErrorAction SilentlyContinue
+        $syncScript = Join-Path $repoRoot "scripts\background-sync.ps1"
+        if (Test-Path $syncScript) {
+            Write-LauncherLog "Starting background sync worker."
+            $syncProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ('"' + $syncScript + '"') -WindowStyle Hidden -PassThru
+            Set-Content -Path $syncPidFile -Value $syncProcess.Id -Encoding ASCII
         }
     }
 
