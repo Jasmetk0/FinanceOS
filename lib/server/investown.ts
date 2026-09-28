@@ -34,6 +34,81 @@ export interface InvestownImportInput {
   sourceFormat?: "investown-native" | "mapped";
 }
 
+export interface InvestownImportStatus {
+  mode: string;
+  updatedAt: string;
+  currentValueCzk: number;
+  walletCashCzk: number;
+  investedValueCzk: number;
+  realizedYieldCzk: number;
+  transactions: number;
+  projects: number;
+  activeProjects: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  unknownTypes: number;
+}
+
+export function getInvestownImportStatus(): InvestownImportStatus | null {
+  const db = getDb();
+  const account = db
+    .prepare(
+      "SELECT total_value_czk, cash_value_czk, invested_value_czk, " +
+        "realized_pnl_czk, updated_at, raw_json " +
+        "FROM accounts WHERE provider = 'investown' LIMIT 1",
+    )
+    .get();
+
+  if (!account) return null;
+
+  const transactionStats = db
+    .prepare(
+      "SELECT COUNT(*) AS count, " +
+        "SUM(CASE WHEN kind = 'adjustment' THEN 1 ELSE 0 END) AS unknown, " +
+        "MIN(occurred_at) AS first_at, MAX(occurred_at) AS last_at " +
+        "FROM transactions WHERE provider = 'investown'",
+    )
+    .get();
+  const projectStats = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM assets " +
+        "WHERE provider = 'investown' AND asset_class = 'p2p'",
+    )
+    .get();
+  const activeStats = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM holdings h " +
+        "JOIN accounts a ON a.id = h.account_id " +
+        "WHERE a.provider = 'investown' AND h.market_value_czk > 0.005",
+    )
+    .get();
+
+  let mode = "unknown";
+  try {
+    const raw = account.raw_json
+      ? (JSON.parse(String(account.raw_json)) as Record<string, unknown>)
+      : {};
+    if (typeof raw.importMode === "string") mode = raw.importMode;
+  } catch {
+    mode = "invalid metadata";
+  }
+
+  return {
+    mode,
+    updatedAt: String(account.updated_at),
+    currentValueCzk: Number(account.total_value_czk) || 0,
+    walletCashCzk: Number(account.cash_value_czk) || 0,
+    investedValueCzk: Number(account.invested_value_czk) || 0,
+    realizedYieldCzk: Number(account.realized_pnl_czk) || 0,
+    transactions: Number(transactionStats?.count) || 0,
+    projects: Number(projectStats?.count) || 0,
+    activeProjects: Number(activeStats?.count) || 0,
+    firstAt: transactionStats?.first_at ? String(transactionStats.first_at) : null,
+    lastAt: transactionStats?.last_at ? String(transactionStats.last_at) : null,
+    unknownTypes: Number(transactionStats?.unknown) || 0,
+  };
+}
+
 const EXACT_TYPE_MAP: Record<string, TransactionKind> = {
   "Vklad peněz": "deposit",
   "Výběr peněz": "withdrawal",
