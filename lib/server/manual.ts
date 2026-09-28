@@ -20,6 +20,28 @@ const allowedKinds = new Set<TransactionKind>([
   "adjustment",
 ]);
 
+function recalculateManualAccount(accountIdValue: string) {
+  recalculateManualAccount(accountIdValue);
+}
+
+export function deleteManualTransaction(id: string) {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id, account_id, provider FROM transactions WHERE id = ?")
+    .get(id);
+
+  if (!row) {
+    throw new Error("Transaction was not found.");
+  }
+  if (String(row.provider) !== "manual") {
+    throw new Error("Only manual transactions can be deleted.");
+  }
+
+  const accountIdValue = String(row.account_id);
+  db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
+  recalculateManualAccount(accountIdValue);
+}
+
 export async function addManualTransaction(input: {
   kind: string;
   amount: number;
