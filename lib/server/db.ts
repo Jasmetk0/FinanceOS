@@ -127,6 +127,19 @@ function initialize(db: DatabaseSync) {
       value TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS investment_journal (
+      id TEXT PRIMARY KEY,
+      symbol TEXT,
+      title TEXT NOT NULL,
+      thesis TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      review_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_investment_journal_created
+      ON investment_journal(created_at DESC);
   `);
 
   if (!hasColumn(db, "transactions", "category")) {
