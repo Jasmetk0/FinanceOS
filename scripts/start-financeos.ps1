@@ -10,6 +10,8 @@ New-Item -ItemType Directory -Force -Path $dataDir | Out-Null
 
 $launcherLog = Join-Path $dataDir "launcher.log"
 $serverLog = Join-Path $dataDir "server.log"
+$buildLog = Join-Path $dataDir "build.log"
+$buildShaFile = Join-Path $dataDir "built.sha"
 $pidFile = Join-Path $dataDir "server.pid"
 $syncPidFile = Join-Path $dataDir "background-sync.pid"
 $healthUrl = "http://127.0.0.1:3000/api/health"
@@ -90,6 +92,29 @@ try {
         Write-LauncherLog "Updating npm dependencies."
         & npm install --no-audit --no-fund *> $null
         if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
+
+        $repoSha = (git rev-parse HEAD).Trim()
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoSha)) {
+            throw "Could not resolve current Git commit."
+        }
+
+        $builtSha = if (Test-Path $buildShaFile) {
+            (Get-Content $buildShaFile -Raw).Trim()
+        } else {
+            ""
+        }
+
+        $nextBuild = Join-Path $repoRoot ".next"
+        if ($builtSha -ne $repoSha -or -not (Test-Path $nextBuild)) {
+            Write-LauncherLog "Building FinanceOS production bundle."
+            & npm run build *> $buildLog
+            if ($LASTEXITCODE -ne 0) {
+                throw "FinanceOS production build failed. See $buildLog."
+            }
+            Set-Content -Path $buildShaFile -Value $repoSha -Encoding ASCII
+        } else {
+            Write-LauncherLog "Production bundle is already current."
+        }
     } finally {
         Pop-Location
     }
@@ -117,12 +142,12 @@ try {
     }
 
     if (-not (Test-FinanceOs)) {
-        Write-LauncherLog "Starting hidden Next.js server."
+        Write-LauncherLog "Starting hidden FinanceOS production server."
         if (Test-Path $serverLog) {
             Remove-Item $serverLog -Force -ErrorAction SilentlyContinue
         }
 
-        $serverCommand = 'cd /d "' + $repoRoot + '" && npm run dev -- --hostname 127.0.0.1 > "' + $serverLog + '" 2>&1'
+        $serverCommand = 'cd /d "' + $repoRoot + '" && npm run start -- --hostname 127.0.0.1 > "' + $serverLog + '" 2>&1'
         $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $serverCommand -WindowStyle Hidden -PassThru
         Set-Content -Path $pidFile -Value $process.Id -Encoding ASCII
 
