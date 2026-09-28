@@ -34,7 +34,7 @@ timeline.
 - privacy-safe AI context export and Analyst workspace
 - installable PWA metadata and FinanceOS app icon
 - Mintos CSV import with flexible column mapping and balance-only updates
-- Investown CSV transaction import with project mapping and manual current-balance updates
+- native Investown CSV import with automatic schema detection, full transaction classification, project-level holdings, reconstructed balances/history and optional manual balance override
 - JSON data export without API secrets
 - Excel-friendly transaction CSV export
 - annual cross-provider reports for interest, dividends, sales, purchases, fees and cash transfers
