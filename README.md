@@ -16,9 +16,15 @@ timeline.
 - Trading 212 order/dividend/cash history
 - Kraken trade and ledger history
 - daily portfolio snapshots
-- CZK conversion using CNB daily FX rates
+- current and historical-date CZK conversion using CNB fixing
 - manual income, gifts, expenses, interest and adjustments
+- personal cash-flow dashboard and savings-rate analytics
+- portfolio performance view with simple return and XIRR
+- deterministic concentration/data-health insights
+- Mintos CSV import with flexible column mapping
 - JSON data export without API secrets
+- Excel-friendly transaction CSV export
+- automatic 15-minute background provider sync
 - Windows one-click hidden launcher
 - responsive dashboard, investments, transactions, accounts, connections and settings
 
@@ -47,8 +53,10 @@ It creates:
 - `FinanceOS` on the Desktop
 - `FinanceOS Stop` on the Desktop
 
-The FinanceOS shortcut updates `buuk`, updates npm packages, starts the local
-server in the background and opens the browser.
+The FinanceOS shortcut updates `buuk`, updates npm packages, restarts the local
+server on the newest code, starts a hidden 15-minute background sync worker, and
+opens the browser. The background worker continues syncing while the browser is closed
+until `FinanceOS Stop` is used or the computer/session stops.
 
 See `docs/DESKTOP_LAUNCHER.md` for details.
 
