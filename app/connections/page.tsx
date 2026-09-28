@@ -3,12 +3,14 @@ import { ConnectionsManager } from "@/components/connections-manager";
 import { MintosImporter } from "@/components/mintos-importer";
 import { InvestownImporter } from "@/components/investown-importer";
 import { listConnections } from "@/lib/server/repository";
+import { getInvestownImportStatus } from "@/lib/server/investown";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default function ConnectionsPage() {
   const connections = listConnections();
+  const investownStatus = getInvestownImportStatus();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -32,7 +34,7 @@ export default function ConnectionsPage() {
       </div>
 
       <div className="mt-4">
-        <InvestownImporter />
+        <InvestownImporter initialStatus={investownStatus} />
       </div>
 
       <div className="mt-4 rounded-3xl border border-[var(--accent)]/15 bg-[var(--accent)]/[0.035] p-5">

@@ -17,6 +17,10 @@ export interface AnnualProviderReport {
   feesCzk: number;
   depositsCzk: number;
   withdrawalsCzk: number;
+  principalInvestedCzk: number;
+  principalReturnedCzk: number;
+  offerReservedCzk: number;
+  offerReleasedCzk: number;
   transactionCount: number;
   missingCzkCount: number;
 }
@@ -26,7 +30,7 @@ export function getAnnualReports() {
 
   const rows = db
     .prepare(
-      "SELECT provider, kind, occurred_at, amount_czk FROM transactions ORDER BY occurred_at ASC",
+      "SELECT provider, kind, occurred_at, amount_czk, quantity, category FROM transactions ORDER BY occurred_at ASC",
     )
     .all();
 
@@ -53,6 +57,10 @@ export function getAnnualReports() {
         feesCzk: 0,
         depositsCzk: 0,
         withdrawalsCzk: 0,
+        principalInvestedCzk: 0,
+        principalReturnedCzk: 0,
+        offerReservedCzk: 0,
+        offerReleasedCzk: 0,
         transactionCount: 0,
         missingCzkCount: 0,
       };
@@ -78,6 +86,25 @@ export function getAnnualReports() {
     if (kind === "deposit") report.depositsCzk += Math.abs(amount);
     if (kind === "withdrawal") report.withdrawalsCzk += Math.abs(amount);
 
+    const quantity =
+      row.quantity === null || row.quantity === undefined
+        ? null
+        : num(row.quantity);
+    const category = row.category ? String(row.category) : "";
+
+    if (kind === "transfer" && quantity !== null && amount < 0) {
+      report.principalInvestedCzk += Math.abs(amount);
+    }
+    if (kind === "transfer" && quantity !== null && amount > 0) {
+      report.principalReturnedCzk += Math.abs(amount);
+    }
+    if (provider === "investown" && category === "Nabídka ke koupi") {
+      report.offerReservedCzk += Math.abs(amount);
+    }
+    if (provider === "investown" && category === "Vrácení nabídky") {
+      report.offerReleasedCzk += Math.abs(amount);
+    }
+
     byKey.set(key, report);
   }
 
@@ -102,6 +129,10 @@ export function getAnnualReports() {
         acc.feesCzk += item.feesCzk;
         acc.depositsCzk += item.depositsCzk;
         acc.withdrawalsCzk += item.withdrawalsCzk;
+        acc.principalInvestedCzk += item.principalInvestedCzk;
+        acc.principalReturnedCzk += item.principalReturnedCzk;
+        acc.offerReservedCzk += item.offerReservedCzk;
+        acc.offerReleasedCzk += item.offerReleasedCzk;
         acc.transactionCount += item.transactionCount;
         acc.missingCzkCount += item.missingCzkCount;
         return acc;
@@ -117,6 +148,10 @@ export function getAnnualReports() {
         feesCzk: 0,
         depositsCzk: 0,
         withdrawalsCzk: 0,
+        principalInvestedCzk: 0,
+        principalReturnedCzk: 0,
+        offerReservedCzk: 0,
+        offerReleasedCzk: 0,
         transactionCount: 0,
         missingCzkCount: 0,
       },

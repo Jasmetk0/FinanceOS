@@ -78,6 +78,8 @@ export default function ReportsPage() {
                     <th className="pb-3 text-right font-medium">Sales</th>
                     <th className="pb-3 text-right font-medium">Purchases</th>
                     <th className="pb-3 text-right font-medium">Fees</th>
+                    <th className="pb-3 text-right font-medium">Principal in</th>
+                    <th className="pb-3 text-right font-medium">Principal out</th>
                     <th className="pb-3 text-right font-medium">Transactions</th>
                     <th className="pb-3 text-right font-medium">Missing CZK</th>
                   </tr>
@@ -106,6 +108,12 @@ export default function ReportsPage() {
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {money(row.feesCzk)}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {money(row.principalInvestedCzk)}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {money(row.principalReturnedCzk)}
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {row.transactionCount.toLocaleString("cs-CZ")}
@@ -152,6 +160,8 @@ export default function ReportsPage() {
                     <th className="pb-3 text-right font-medium">Fees</th>
                     <th className="pb-3 text-right font-medium">Deposits</th>
                     <th className="pb-3 text-right font-medium">Withdrawals</th>
+                    <th className="pb-3 text-right font-medium">Principal in</th>
+                    <th className="pb-3 text-right font-medium">Principal out</th>
                     <th className="pb-3 text-right font-medium">Rows</th>
                   </tr>
                 </thead>
@@ -185,6 +195,12 @@ export default function ReportsPage() {
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {money(row.withdrawalsCzk)}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {money(row.principalInvestedCzk)}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {money(row.principalReturnedCzk)}
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {row.transactionCount.toLocaleString("cs-CZ")}

@@ -39,31 +39,106 @@ export default async function AssetDetailPage({
         </div>
       </div>
 
+      {detail.assetClass === "p2p" && detail.metadata ? (
+        <section className="mt-5 rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p className="text-xs text-[var(--muted)]">Úvěr</p>
+              <p className="mt-1 text-sm font-medium">
+                {detail.metadata.loanName || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Typ projektu</p>
+              <p className="mt-1 text-sm font-medium">
+                {detail.metadata.projectType || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Celkem vložená jistina</p>
+              <p className="mt-1 font-mono text-sm">
+                {(detail.metadata.investedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                Kč
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Vrácená jistina</p>
+              <p className="mt-1 font-mono text-sm">
+                {(detail.metadata.returnedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                Kč
+              </p>
+            </div>
+          </div>
+
+          {detail.metadata.projectUrl ? (
+            <a
+              href={detail.metadata.projectUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-[var(--accent)] transition hover:border-[var(--accent)]/30"
+            >
+              Otevřít projekt v Investownu ↗
+            </a>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Current value"
           value={detail.currentValueCzk}
           format="currency"
         />
-        <StatCard
-          label="Unrealized P/L"
-          value={detail.unrealizedPnlCzk}
-          format="currency"
-          positive={detail.unrealizedPnlCzk >= 0}
-        />
-        <StatCard
-          label="Historical buys"
-          value={detail.summary.buysCzk}
-          format="currency"
-          hint="Z importované historie"
-        />
-        <StatCard
-          label="Dividends"
-          value={detail.summary.dividendsCzk}
-          format="currency"
-          hint="Z importované historie"
-          positive
-        />
+        {detail.assetClass === "p2p" ? (
+          <>
+            <StatCard
+              label="Received yield"
+              value={detail.summary.interestCzk}
+              format="currency"
+              hint="Výnosy, bonusové výnosy a úroky"
+              positive
+            />
+            <StatCard
+              label="Principal invested"
+              value={detail.summary.principalInCzk}
+              format="currency"
+              hint="Historicky vložená jistina"
+            />
+            <StatCard
+              label="Principal returned"
+              value={detail.summary.principalOutCzk}
+              format="currency"
+              hint="Splacení a odstoupení"
+              positive
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="Unrealized P/L"
+              value={detail.unrealizedPnlCzk}
+              format="currency"
+              positive={detail.unrealizedPnlCzk >= 0}
+            />
+            <StatCard
+              label="Historical buys"
+              value={detail.summary.buysCzk}
+              format="currency"
+              hint="Z importované historie"
+            />
+            <StatCard
+              label="Dividends"
+              value={detail.summary.dividendsCzk}
+              format="currency"
+              hint="Z importované historie"
+              positive
+            />
+          </>
+        )}
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
@@ -90,40 +165,87 @@ export default async function AssetDetailPage({
                     </p>
                   </div>
 
-                  <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Quantity</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.quantity.toLocaleString("cs-CZ", {
-                          maximumFractionDigits: 8,
-                        })}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Currency</dt>
-                      <dd className="mt-1 font-mono">{holding.currency}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Avg. price</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.averagePrice === null
-                          ? "—"
-                          : holding.averagePrice.toLocaleString("cs-CZ", {
-                              maximumFractionDigits: 4,
-                            })}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Current price</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.currentPrice === null
-                          ? "—"
-                          : holding.currentPrice.toLocaleString("cs-CZ", {
-                              maximumFractionDigits: 4,
-                            })}
-                      </dd>
-                    </div>
-                  </dl>
+                  {detail.assetClass === "p2p" ? (
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Outstanding principal
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {Math.max(
+                            0,
+                            holding.marketValueCzk -
+                              (detail.metadata?.reservedOfferCzk ?? 0),
+                          ).toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Pending offer
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {(detail.metadata?.reservedOfferCzk ?? 0).toLocaleString(
+                            "cs-CZ",
+                            { maximumFractionDigits: 2 },
+                          )}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Currency</dt>
+                        <dd className="mt-1 font-mono">{holding.currency}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Current exposure
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.marketValueCzk.toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Quantity</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.quantity.toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 8,
+                          })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Currency</dt>
+                        <dd className="mt-1 font-mono">{holding.currency}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Avg. price</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.averagePrice === null
+                            ? "—"
+                            : holding.averagePrice.toLocaleString("cs-CZ", {
+                                maximumFractionDigits: 4,
+                              })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Current price</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.currentPrice === null
+                            ? "—"
+                            : holding.currentPrice.toLocaleString("cs-CZ", {
+                                maximumFractionDigits: 4,
+                              })}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
                 </article>
               ))}
             </div>
@@ -134,7 +256,14 @@ export default async function AssetDetailPage({
           )}
         </SectionCard>
 
-        <SectionCard title="Trade history" subtitle="Nákupy, prodeje a dividendy">
+        <SectionCard
+          title={detail.assetClass === "p2p" ? "Project history" : "Trade history"}
+          subtitle={
+            detail.assetClass === "p2p"
+              ? "Investice, výnosy a splacení jistiny"
+              : "Nákupy, prodeje a dividendy"
+          }
+        >
           {detail.transactions.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-left">
@@ -202,12 +331,20 @@ export default async function AssetDetailPage({
       <section className="mt-4">
         <SectionCard title="Cash-flow summary">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Buys", detail.summary.buysCzk],
-              ["Sells", detail.summary.sellsCzk],
-              ["Dividends", detail.summary.dividendsCzk],
-              ["Fees", detail.summary.feesCzk],
-            ].map(([label, raw]) => (
+            {(detail.assetClass === "p2p"
+              ? [
+                  ["Principal invested", detail.summary.principalInCzk],
+                  ["Principal returned", detail.summary.principalOutCzk],
+                  ["Received yield", detail.summary.interestCzk],
+                  ["Fees", detail.summary.feesCzk],
+                ]
+              : [
+                  ["Buys", detail.summary.buysCzk],
+                  ["Sells", detail.summary.sellsCzk],
+                  ["Dividends", detail.summary.dividendsCzk],
+                  ["Fees", detail.summary.feesCzk],
+                ]
+            ).map(([label, raw]) => (
               <div
                 key={String(label)}
                 className="rounded-2xl border border-white/7 bg-white/[0.025] p-4"

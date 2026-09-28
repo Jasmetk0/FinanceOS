@@ -9,6 +9,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+function optionalNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: Request) {
   const blocked = localOnly(request);
   if (blocked) return blocked;
@@ -19,17 +25,26 @@ export async function POST(request: Request) {
       currentValue?: unknown;
       walletCash?: unknown;
       rows?: unknown;
+      replaceExisting?: unknown;
+      sourceFormat?: unknown;
     };
 
     const rows = Array.isArray(body.rows)
       ? (body.rows as InvestownImportRow[])
       : [];
 
+    const sourceFormat =
+      body.sourceFormat === "investown-native"
+        ? "investown-native"
+        : "mapped";
+
     const result = await importInvestown({
       accountCurrency: String(body.accountCurrency || "CZK"),
-      currentValue: Number(body.currentValue),
-      walletCash: Number(body.walletCash || 0),
+      currentValue: optionalNumber(body.currentValue),
+      walletCash: optionalNumber(body.walletCash),
       rows,
+      replaceExisting: body.replaceExisting !== false,
+      sourceFormat,
     });
 
     return NextResponse.json({ ok: true, result });
