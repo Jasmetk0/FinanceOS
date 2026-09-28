@@ -198,6 +198,7 @@ type InvestownStatus = {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  typeCounts: Array<{ type: string; count: number }>;
 };
 
 export function InvestownImporter({
@@ -616,6 +617,25 @@ export function InvestownImporter({
               value={initialStatus.transactions.toLocaleString("cs-CZ")}
             />
           </div>
+
+          <details className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3">
+            <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">
+              Audit typů transakcí ({initialStatus.typeCounts.length})
+            </summary>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {initialStatus.typeCounts.map((item) => (
+                <div
+                  key={item.type}
+                  className="flex items-center justify-between gap-3 rounded-lg border border-white/6 px-3 py-2 text-xs"
+                >
+                  <span>{item.type}</span>
+                  <span className="font-mono text-[var(--muted)]">
+                    {item.count.toLocaleString("cs-CZ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </details>
         </div>
       ) : null}
 
