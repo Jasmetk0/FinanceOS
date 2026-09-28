@@ -51,6 +51,12 @@ export default function SettingsPage() {
             >
               Export transactions (.csv)
             </a>
+            <a
+              href="/api/export/ai-context"
+              className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white"
+            >
+              Export AI context (.json)
+            </a>
           </div>
         </SectionCard>
 
