@@ -37,13 +37,11 @@ while ($true) {
 
             $backupName = "financeos-" + (Get-Date -Format "yyyy-MM-dd") + ".json"
             $backupPath = Join-Path $backupDir $backupName
-            if (-not (Test-Path $backupPath)) {
-                try {
-                    Invoke-WebRequest -UseBasicParsing -Uri $exportUrl -OutFile $backupPath -TimeoutSec 60
-                    Write-SyncLog ("Daily backup written: " + $backupPath)
-                } catch {
-                    Write-SyncLog ("Daily backup failed: " + $_.Exception.Message)
-                }
+            try {
+                Invoke-WebRequest -UseBasicParsing -Uri $exportUrl -OutFile $backupPath -TimeoutSec 60
+                Write-SyncLog ("Daily backup refreshed: " + $backupPath)
+            } catch {
+                Write-SyncLog ("Daily backup failed: " + $_.Exception.Message)
             }
 
             Get-ChildItem -Path $backupDir -Filter "financeos-*.json" -File -ErrorAction SilentlyContinue |
