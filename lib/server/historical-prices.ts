@@ -59,45 +59,59 @@ export async function importHistoricalPrices(input: {
   const source = String(input.source || "CSV import").trim() || "CSV import";
   const importedAt = new Date().toISOString();
 
+  let skipped = 0;
+  const prepared: Array<{
+    priceDate: string;
+    close: number;
+    currency: string;
+    closeCzk: number | null;
+  }> = [];
+
+  // Resolve network-backed historical FX before opening a SQLite transaction.
+  // This avoids holding a database write transaction across awaited HTTP calls.
+  for (const row of input.rows) {
+    const date = new Date(row.date);
+    const close = Number(row.close);
+    const currency = String(row.currency || defaultCurrency)
+      .trim()
+      .toUpperCase();
+
+    if (
+      Number.isNaN(date.getTime()) ||
+      !Number.isFinite(close) ||
+      close <= 0 ||
+      !currency
+    ) {
+      skipped += 1;
+      continue;
+    }
+
+    const priceDate = date.toISOString().slice(0, 10);
+    const closeCzk = await maybeToCzk(close, currency, priceDate);
+    prepared.push({
+      priceDate,
+      close,
+      currency,
+      closeCzk,
+    });
+  }
+
   const statement = db.prepare(
     "INSERT INTO asset_prices(asset_id, price_date, close, currency, close_czk, source, imported_at) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(asset_id, price_date) DO UPDATE SET close = excluded.close, currency = excluded.currency, close_czk = excluded.close_czk, source = excluded.source, imported_at = excluded.imported_at",
   );
 
-  let imported = 0;
-  let skipped = 0;
-
   db.exec("BEGIN IMMEDIATE;");
   try {
-    for (const row of input.rows) {
-      const date = new Date(row.date);
-      const close = Number(row.close);
-      const currency = String(row.currency || defaultCurrency)
-        .trim()
-        .toUpperCase();
-
-      if (
-        Number.isNaN(date.getTime()) ||
-        !Number.isFinite(close) ||
-        close <= 0 ||
-        !currency
-      ) {
-        skipped += 1;
-        continue;
-      }
-
-      const priceDate = date.toISOString().slice(0, 10);
-      const closeCzk = await maybeToCzk(close, currency, priceDate);
-
+    for (const row of prepared) {
       statement.run(
         assetId,
-        priceDate,
-        close,
-        currency,
-        closeCzk,
+        row.priceDate,
+        row.close,
+        row.currency,
+        row.closeCzk,
         source,
         importedAt,
       );
-      imported += 1;
     }
 
     db.exec("COMMIT;");
@@ -105,6 +119,8 @@ export async function importHistoricalPrices(input: {
     db.exec("ROLLBACK;");
     throw error;
   }
+
+  const imported = prepared.length;
 
   return {
     assetId,
