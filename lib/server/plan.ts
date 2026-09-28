@@ -42,7 +42,9 @@ function currentAllocation(): Record<PlanAssetClass, number> {
       raw === "etf" ||
       raw === "stock" ||
       raw === "crypto" ||
-      raw === "cash"
+      raw === "p2p" ||
+      raw === "cash" ||
+      raw === "other"
         ? raw
         : "other";
     result[key] += num(row.total);
@@ -58,14 +60,33 @@ function currentAllocation(): Record<PlanAssetClass, number> {
     .get();
   result.cash += num(brokerageCash?.total);
 
-  const p2p = db
+  // P2P project holdings (Investown) are already counted above. Add only
+  // the residual account value that is not represented by P2P holdings; this
+  // also keeps balance-only providers such as Mintos fully represented.
+  const p2pAccounts = db
     .prepare(`
-      SELECT COALESCE(SUM(total_value_czk), 0) AS total
+      SELECT id, total_value_czk
       FROM accounts
       WHERE type = 'p2p'
     `)
-    .get();
-  result.p2p += Math.max(0, num(p2p?.total));
+    .all();
+
+  for (const account of p2pAccounts) {
+    const represented = db
+      .prepare(`
+        SELECT COALESCE(SUM(h.market_value_czk), 0) AS total
+        FROM holdings h
+        JOIN assets a ON a.id = h.asset_id
+        WHERE h.account_id = ?
+          AND a.asset_class = 'p2p'
+      `)
+      .get(String(account.id));
+
+    result.p2p += Math.max(
+      0,
+      num(account.total_value_czk) - num(represented?.total),
+    );
+  }
 
   const manualCash = db
     .prepare(`
