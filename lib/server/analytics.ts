@@ -574,3 +574,137 @@ export function getPerformanceData() {
     },
   };
 }
+
+
+export function getInsightsData() {
+  const dashboard = getDashboardData();
+  const cashFlow = getCashFlowData(6);
+  const performance = getPerformanceData();
+  const db = getDb();
+
+  const holdings = [...dashboard.holdings].sort(
+    (a, b) => b.valueCzk - a.valueCzk,
+  );
+  const investableTotal = holdings.reduce((sum, item) => sum + item.valueCzk, 0);
+  const largestHolding = holdings[0] ?? null;
+  const topThreeValue = holdings
+    .slice(0, 3)
+    .reduce((sum, item) => sum + item.valueCzk, 0);
+
+  const providerTotals = new Map<string, number>();
+  for (const account of dashboard.accounts) {
+    providerTotals.set(
+      account.provider,
+      (providerTotals.get(account.provider) ?? 0) + account.valueCzk,
+    );
+  }
+  const providerRanking = [...providerTotals.entries()]
+    .map(([provider, valueCzk]) => ({
+      provider,
+      valueCzk,
+      sharePct:
+        dashboard.summary.netWorthCzk > 0
+          ? (valueCzk / dashboard.summary.netWorthCzk) * 100
+          : 0,
+    }))
+    .sort((a, b) => b.valueCzk - a.valueCzk);
+
+  const assetClassRanking = dashboard.allocation.map((item) => ({
+    ...item,
+    sharePct:
+      investableTotal > 0 ? (item.valueCzk / investableTotal) * 100 : 0,
+  }));
+
+  const transactionCountRow = db
+    .prepare("SELECT COUNT(*) AS count FROM transactions")
+    .get();
+  const snapshotCountRow = db.prepare("SELECT COUNT(*) AS count FROM snapshots").get();
+
+  const lastThreeMonths = cashFlow.months.slice(-3);
+  const lastThreeGross = lastThreeMonths.reduce(
+    (sum, item) =>
+      sum + item.incomeCzk + item.giftsCzk + item.interestCzk,
+    0,
+  );
+  const lastThreeNet = lastThreeMonths.reduce(
+    (sum, item) => sum + item.netCzk,
+    0,
+  );
+  const recentSavingsRate =
+    lastThreeGross > 0 ? (lastThreeNet / lastThreeGross) * 100 : null;
+
+  const warnings: Array<{
+    id: string;
+    severity: "info" | "warning" | "error";
+    title: string;
+    detail: string;
+  }> = [];
+
+  for (const connection of dashboard.connections) {
+    if (connection.status === "error") {
+      warnings.push({
+        id: "connection-" + connection.provider,
+        severity: "error",
+        title: connection.label + " sync error",
+        detail: connection.lastError || "Provider reported a synchronization error.",
+      });
+    }
+  }
+
+  if (largestHolding && investableTotal > 0) {
+    const share = (largestHolding.valueCzk / investableTotal) * 100;
+    if (share >= 25) {
+      warnings.push({
+        id: "largest-holding",
+        severity: "warning",
+        title: "Velká koncentrace v jedné pozici",
+        detail:
+          largestHolding.symbol +
+          " tvoří " +
+          share.toLocaleString("cs-CZ", { maximumFractionDigits: 1 }) +
+          " % aktuálně naceněných investičních pozic.",
+      });
+    }
+  }
+
+  for (const account of performance.accounts) {
+    if (account.currentValueCzk > 0 && account.externalFlowCount === 0) {
+      warnings.push({
+        id: "flows-" + account.id,
+        severity: "info",
+        title: "Neúplná performance historie: " + account.name,
+        detail:
+          "FinanceOS zatím nevidí žádný vklad ani výběr, takže XIRR a zisk z cash-flow nelze spolehlivě vyhodnotit.",
+      });
+    }
+  }
+
+  if (dashboard.connections.length === 0 && !dashboard.accounts.some((a) => a.provider === "mintos")) {
+    warnings.push({
+      id: "no-connections",
+      severity: "info",
+      title: "Žádný live provider",
+      detail:
+        "Připoj Trading 212 nebo Kraken, případně importuj Mintos, aby dashboard začal používat reálná investiční data.",
+    });
+  }
+
+  return {
+    largestHolding:
+      largestHolding && investableTotal > 0
+        ? {
+            ...largestHolding,
+            sharePct: (largestHolding.valueCzk / investableTotal) * 100,
+          }
+        : null,
+    topThreeSharePct:
+      investableTotal > 0 ? (topThreeValue / investableTotal) * 100 : 0,
+    providerRanking,
+    assetClassRanking,
+    recentSavingsRate,
+    transactionCount: num(transactionCountRow?.count),
+    snapshotCount: num(snapshotCountRow?.count),
+    connectionCount: dashboard.connections.length,
+    warnings,
+  };
+}
