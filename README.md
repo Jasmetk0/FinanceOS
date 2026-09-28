@@ -21,10 +21,15 @@ timeline.
 - personal cash-flow dashboard and savings-rate analytics
 - portfolio performance view with simple return and XIRR
 - deterministic concentration/data-health insights
-- Mintos CSV import with flexible column mapping
+- per-asset position and transaction drill-down pages
+- searchable/filterable unified transaction ledger
+- privacy-safe AI context export and Analyst workspace
+- Mintos CSV import with flexible column mapping and balance-only updates
 - JSON data export without API secrets
 - Excel-friendly transaction CSV export
 - automatic 15-minute background provider sync
+- automatic daily JSON backups with 60-day retention
+- merge-safe JSON backup restore
 - Windows one-click hidden launcher
 - responsive dashboard, investments, transactions, accounts, connections and settings
 
