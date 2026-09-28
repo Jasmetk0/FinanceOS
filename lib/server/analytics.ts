@@ -829,7 +829,7 @@ export function getAssetDetail(symbolInput: string) {
 
   const assets = db
     .prepare(`
-      SELECT id, provider, external_id, symbol, name, asset_class, currency
+      SELECT id, provider, external_id, symbol, name, asset_class, currency, raw_json
       FROM assets
       WHERE UPPER(symbol) = ?
       ORDER BY provider
@@ -947,6 +947,59 @@ export function getAssetDetail(symbolInput: string) {
     },
   );
 
+  let metadata: {
+    loanName: string | null;
+    projectUrl: string | null;
+    projectType: string | null;
+    investedPrincipal: number | null;
+    returnedPrincipal: number | null;
+    receivedInterestCzk: number | null;
+    reservedOfferCzk: number | null;
+  } | null = null;
+
+  const firstRaw = assets[0].raw_json ? String(assets[0].raw_json) : "";
+  if (firstRaw) {
+    try {
+      const parsed = JSON.parse(firstRaw) as Record<string, unknown>;
+      metadata = {
+        loanName:
+          typeof parsed.loanName === "string" && parsed.loanName
+            ? parsed.loanName
+            : null,
+        projectUrl:
+          typeof parsed.projectUrl === "string" && parsed.projectUrl
+            ? parsed.projectUrl
+            : null,
+        projectType:
+          typeof parsed.projectType === "string" && parsed.projectType
+            ? parsed.projectType
+            : null,
+        investedPrincipal:
+          parsed.investedPrincipal === null ||
+          parsed.investedPrincipal === undefined
+            ? null
+            : num(parsed.investedPrincipal),
+        returnedPrincipal:
+          parsed.returnedPrincipal === null ||
+          parsed.returnedPrincipal === undefined
+            ? null
+            : num(parsed.returnedPrincipal),
+        receivedInterestCzk:
+          parsed.receivedInterestCzk === null ||
+          parsed.receivedInterestCzk === undefined
+            ? null
+            : num(parsed.receivedInterestCzk),
+        reservedOfferCzk:
+          parsed.reservedOfferCzk === null ||
+          parsed.reservedOfferCzk === undefined
+            ? null
+            : num(parsed.reservedOfferCzk),
+      };
+    } catch {
+      metadata = null;
+    }
+  }
+
   const currentValueCzk = holdings.reduce(
     (sum, holding) => sum + holding.marketValueCzk,
     0,
@@ -966,6 +1019,7 @@ export function getAssetDetail(symbolInput: string) {
     unrealizedPnlCzk,
     holdings,
     transactions,
+    metadata,
     summary: {
       ...summary,
       netTradeCashFlowCzk: summary.sellsCzk - summary.buysCzk,
