@@ -115,6 +115,18 @@ function initialize(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_recorded
       ON snapshots(recorded_at ASC);
+
+    CREATE TABLE IF NOT EXISTS plan_targets (
+      asset_class TEXT PRIMARY KEY,
+      target_pct REAL NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS plan_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   if (!hasColumn(db, "transactions", "category")) {
