@@ -24,6 +24,7 @@ export function JournalManager({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [defaultCreatedAt, setDefaultCreatedAt] = useState("");
 
   async function add(form: HTMLFormElement) {
     const data = new FormData(form);
@@ -117,6 +118,13 @@ export function JournalManager({
         <button
           type="button"
           onClick={() => {
+            const now = new Date();
+            const local = new Date(
+              now.getTime() - now.getTimezoneOffset() * 60000,
+            )
+              .toISOString()
+              .slice(0, 10);
+            setDefaultCreatedAt(local);
             setOpen(true);
             setMessage(null);
           }}
@@ -157,7 +165,7 @@ export function JournalManager({
               <input
                 name="createdAt"
                 type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
+                defaultValue={defaultCreatedAt}
                 className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
               />
             </label>
