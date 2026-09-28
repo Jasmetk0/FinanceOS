@@ -5,7 +5,6 @@ import {
   getConnectionSecret,
   recordSnapshot,
   replaceHoldings,
-  transactionId,
   upsertAccount,
   upsertAsset,
   upsertTransaction,
