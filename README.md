@@ -37,6 +37,7 @@ timeline.
 - Investown CSV transaction import with project mapping and manual current-balance updates
 - JSON data export without API secrets
 - Excel-friendly transaction CSV export
+- annual cross-provider reports for interest, dividends, sales, purchases, fees and cash transfers
 - automatic 15-minute background provider sync
 - automatic daily JSON backups with 60-day retention
 - merge-safe JSON backup restore
