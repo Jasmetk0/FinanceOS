@@ -928,10 +928,10 @@ export function getAssetDetail(symbolInput: string) {
       if (tx.kind === "dividend") acc.dividendsCzk += Math.max(0, amount);
       if (tx.kind === "interest") acc.interestCzk += Math.max(0, amount);
       if (tx.kind === "fee") acc.feesCzk += Math.abs(amount);
-      if (tx.kind === "transfer" && amount < 0) {
+      if (tx.kind === "transfer" && tx.quantity !== null && amount < 0) {
         acc.principalInCzk += Math.abs(amount);
       }
-      if (tx.kind === "transfer" && amount > 0) {
+      if (tx.kind === "transfer" && tx.quantity !== null && amount > 0) {
         acc.principalOutCzk += amount;
       }
       return acc;
