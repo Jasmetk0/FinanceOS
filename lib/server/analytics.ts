@@ -162,6 +162,8 @@ export function getTransactions(limit = 500) {
         t.price,
         t.fee,
         t.note,
+        t.category,
+        t.source_label,
         ac.name AS account_name,
         COALESCE(a.symbol, '') AS symbol,
         COALESCE(a.name, '') AS asset_name
@@ -185,6 +187,8 @@ export function getTransactions(limit = 500) {
       price: row.price === null ? null : num(row.price),
       fee: row.fee === null ? null : num(row.fee),
       note: row.note ? String(row.note) : null,
+      category: row.category ? String(row.category) : null,
+      sourceLabel: row.source_label ? String(row.source_label) : null,
       accountName: String(row.account_name),
       symbol: String(row.symbol || ""),
       assetName: String(row.asset_name || ""),
