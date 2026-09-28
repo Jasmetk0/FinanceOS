@@ -212,7 +212,7 @@ export async function syncTrading212() {
   const cashValue = numberValue(cash, ["availableToTrade"], 0)
     + numberValue(cash, ["inPies"], 0)
     + numberValue(cash, ["reservedForOrders"], 0);
-  const investedValue = numberValue(investments, ["totalCost"], 0);
+  const investedValue = numberValue(investments, ["currentValue"], 0);
   const totalValue = numberValue(summary, ["totalValue"], 0);
   const realizedPnl = numberValue(investments, ["realizedProfitLoss"], 0);
   const unrealizedPnl = numberValue(investments, ["unrealizedProfitLoss"], 0);
