@@ -28,6 +28,10 @@ export async function GET(request: Request) {
     "fees_czk",
     "deposits_czk",
     "withdrawals_czk",
+    "principal_invested_czk",
+    "principal_returned_czk",
+    "offer_reserved_czk",
+    "offer_released_czk",
     "transaction_count",
     "missing_czk_count",
   ];
@@ -47,6 +51,10 @@ export async function GET(request: Request) {
         row.feesCzk,
         row.depositsCzk,
         row.withdrawalsCzk,
+        row.principalInvestedCzk,
+        row.principalReturnedCzk,
+        row.offerReservedCzk,
+        row.offerReleasedCzk,
         row.transactionCount,
         row.missingCzkCount,
       ]
