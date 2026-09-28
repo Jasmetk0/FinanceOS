@@ -145,7 +145,10 @@ export function getDiagnostics() {
 
   for (const row of accountRows) {
     const type = String(row.type);
-    if (!["brokerage", "crypto"].includes(type)) continue;
+    const provider = String(row.provider);
+    const shouldReconcile =
+      ["brokerage", "crypto"].includes(type) || provider === "investown";
+    if (!shouldReconcile) continue;
 
     const total = num(row.total_value_czk);
     const cash = num(row.cash_value_czk);
@@ -172,6 +175,63 @@ export function getDiagnostics() {
         detail: "Account total is consistent with cash + current holdings.",
       });
     }
+  }
+
+  const investownAccount = db
+    .prepare(
+      "SELECT raw_json, total_value_czk, cash_value_czk, invested_value_czk FROM accounts WHERE provider = 'investown' LIMIT 1",
+    )
+    .get();
+
+  if (!investownAccount) {
+    checks.push({
+      id: "investown-import",
+      severity: "info",
+      title: "Investown import",
+      detail: "Investown has not been imported yet.",
+    });
+  } else {
+    const investownStats = db
+      .prepare(
+        "SELECT COUNT(*) AS transactions, " +
+          "SUM(CASE WHEN kind = 'adjustment' THEN 1 ELSE 0 END) AS unknown, " +
+          "MIN(occurred_at) AS first_at, MAX(occurred_at) AS last_at " +
+          "FROM transactions WHERE provider = 'investown'",
+      )
+      .get();
+    const investownProjects = db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM assets WHERE provider = 'investown' AND asset_class = 'p2p'",
+      )
+      .get();
+
+    const unknown = num(investownStats?.unknown);
+    let importMode = "unknown";
+    try {
+      const raw = investownAccount.raw_json
+        ? (JSON.parse(String(investownAccount.raw_json)) as Record<string, unknown>)
+        : {};
+      if (typeof raw.importMode === "string") importMode = raw.importMode;
+    } catch {
+      importMode = "invalid metadata";
+    }
+
+    checks.push({
+      id: "investown-import",
+      severity: unknown > 0 ? "warning" : "ok",
+      title: "Investown import",
+      detail:
+        num(investownStats?.transactions).toLocaleString("cs-CZ") +
+        " transactions · " +
+        num(investownProjects?.count).toLocaleString("cs-CZ") +
+        " projects · mode " +
+        importMode +
+        (unknown > 0
+          ? " · " +
+            unknown.toLocaleString("cs-CZ") +
+            " rows have an unknown transaction type."
+          : " · all transaction types classified."),
+    });
   }
 
   const missingFx = db
