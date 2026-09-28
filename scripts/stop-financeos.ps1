@@ -6,6 +6,15 @@ $dataDir = if ($env:LOCALAPPDATA) {
     Join-Path $env:USERPROFILE ".financeos\FinanceOS"
 }
 $pidFile = Join-Path $dataDir "server.pid"
+$syncPidFile = Join-Path $dataDir "background-sync.pid"
+
+if (Test-Path $syncPidFile) {
+    $syncPid = [int](Get-Content $syncPidFile -Raw)
+    if ($syncPid -gt 0) {
+        & taskkill.exe /PID $syncPid /T /F *> $null
+    }
+    Remove-Item $syncPidFile -Force
+}
 
 if (Test-Path $pidFile) {
     $serverPid = [int](Get-Content $pidFile -Raw)
