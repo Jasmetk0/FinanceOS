@@ -32,6 +32,37 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Production server smoke test
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/c", "npm run start -- --hostname 127.0.0.1" -PassThru -WindowStyle Hidden
+          try {
+            $deadline = (Get-Date).AddSeconds(45)
+            $ready = $false
+            while ((Get-Date) -lt $deadline) {
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:3000/api/health" -TimeoutSec 2
+                if ($health.ok -eq $true -and $health.app -eq "FinanceOS") {
+                  $ready = $true
+                  break
+                }
+              } catch {
+              }
+              Start-Sleep -Milliseconds 750
+            }
+
+            if (-not $ready) {
+              throw "FinanceOS production server did not become ready."
+            }
+
+            $home = Invoke-WebRequest -UseBasicParsing -Uri "http://127.0.0.1:3000/" -TimeoutSec 15
+            if ($home.StatusCode -ne 200) {
+              throw "FinanceOS dashboard returned HTTP $($home.StatusCode)."
+            }
+          } finally {
+            & taskkill.exe /PID $process.Id /T /F *> $null
+          }
+
       - name: SQLite runtime smoke test
         shell: pwsh
         run: |
