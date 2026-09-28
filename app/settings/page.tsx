@@ -61,6 +61,25 @@ export default function SettingsPage() {
           <RestoreBackup />
         </SectionCard>
 
+        <SectionCard title="Automation">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+              <p className="text-xs text-[var(--muted)]">Background sync</p>
+              <p className="mt-2 font-medium">Every 15 minutes</p>
+              <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                Běží i po zavření prohlížeče, dokud běží FinanceOS server.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+              <p className="text-xs text-[var(--muted)]">Automatic backup</p>
+              <p className="mt-2 font-medium">Daily · 60-day retention</p>
+              <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                JSON backup bez API secrets v lokálním data adresáři.
+              </p>
+            </div>
+          </div>
+        </SectionCard>
+
         <SectionCard title="Storage & security">
           <div className="space-y-3 text-sm leading-6 text-[var(--muted)]">
             <p>
