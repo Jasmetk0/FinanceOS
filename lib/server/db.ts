@@ -140,6 +140,21 @@ function initialize(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_investment_journal_created
       ON investment_journal(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS asset_prices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+      price_date TEXT NOT NULL,
+      close REAL NOT NULL,
+      currency TEXT NOT NULL,
+      close_czk REAL,
+      source TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      UNIQUE(asset_id, price_date)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_asset_prices_asset_date
+      ON asset_prices(asset_id, price_date ASC);
   `);
 
   if (!hasColumn(db, "transactions", "category")) {
