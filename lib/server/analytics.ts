@@ -157,6 +157,57 @@ export function getDashboardData() {
     );
   }
 
+  // Current holdings already contain Kraken fiat balances as asset_class=cash.
+  // Add account-level values only where they are not represented by holdings.
+  const brokerageCashRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(cash_value_czk), 0) AS total FROM accounts WHERE type = 'brokerage'",
+    )
+    .get();
+  const brokerageCash = num(brokerageCashRow?.total);
+  if (brokerageCash) {
+    allocationMap.set(
+      "cash",
+      (allocationMap.get("cash") ?? 0) + brokerageCash,
+    );
+  }
+
+  const p2pRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts WHERE type = 'p2p'",
+    )
+    .get();
+  const p2pValue = Math.max(0, num(p2pRow?.total));
+  if (p2pValue) {
+    allocationMap.set("p2p", (allocationMap.get("p2p") ?? 0) + p2pValue);
+  }
+
+  const manualCashRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts WHERE provider = 'manual' AND type = 'cash' AND external_id LIKE 'balance:%'",
+    )
+    .get();
+  const manualCash = Math.max(0, num(manualCashRow?.total));
+  if (manualCash) {
+    allocationMap.set(
+      "cash",
+      (allocationMap.get("cash") ?? 0) + manualCash,
+    );
+  }
+
+  const manualAssetRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts WHERE provider = 'manual' AND type = 'asset' AND external_id LIKE 'balance:%'",
+    )
+    .get();
+  const manualAssets = Math.max(0, num(manualAssetRow?.total));
+  if (manualAssets) {
+    allocationMap.set(
+      "other",
+      (allocationMap.get("other") ?? 0) + manualAssets,
+    );
+  }
+
   const allocation = [...allocationMap.entries()]
     .map(([label, valueCzk]) => ({ label, valueCzk }))
     .sort((a, b) => b.valueCzk - a.valueCzk);
