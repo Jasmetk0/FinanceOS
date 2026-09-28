@@ -76,6 +76,8 @@ export interface TransactionInput {
   price?: number | null;
   fee?: number | null;
   note?: string | null;
+  category?: string | null;
+  sourceLabel?: string | null;
   raw?: unknown;
 }
 
@@ -309,9 +311,10 @@ export function upsertTransaction(input: TransactionInput) {
     .prepare(`
       INSERT INTO transactions(
         id, provider, account_id, external_id, kind, occurred_at, currency,
-        amount, amount_czk, asset_id, quantity, price, fee, note, raw_json
+        amount, amount_czk, asset_id, quantity, price, fee, note,
+        category, source_label, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         account_id = excluded.account_id,
         kind = excluded.kind,
@@ -324,6 +327,8 @@ export function upsertTransaction(input: TransactionInput) {
         price = excluded.price,
         fee = excluded.fee,
         note = excluded.note,
+        category = excluded.category,
+        source_label = excluded.source_label,
         raw_json = excluded.raw_json
     `)
     .run(
@@ -341,6 +346,8 @@ export function upsertTransaction(input: TransactionInput) {
       input.price ?? null,
       input.fee ?? null,
       input.note ?? null,
+      input.category ?? null,
+      input.sourceLabel ?? null,
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
 }
