@@ -7,6 +7,7 @@ import {
   getPerformanceData,
   getTransactions,
 } from "@/lib/server/analytics";
+import { reconstructPricedHoldingsHistory } from "@/lib/server/historical-prices";
 
 export function buildAiContext() {
   const dashboard = getDashboardData();
@@ -16,6 +17,7 @@ export function buildAiContext() {
   const plan = getPlanData();
   const journal = listJournalEntries(100);
   const transactions = getTransactions(250);
+  const reconstructedHistory = reconstructPricedHoldingsHistory();
 
   return {
     schema: "financeos-ai-context-v1",
@@ -41,6 +43,12 @@ export function buildAiContext() {
       dataWarnings: insights.warnings,
     },
     recentTransactions: transactions,
+    historicalMarketData: {
+      priceCoverage: reconstructedHistory.assetCoverage,
+      reconstructedPricedPositions: reconstructedHistory.series.slice(-365),
+      note:
+        "Reconstructed priced positions exclude historical cash and assets without imported price coverage.",
+    },
     privacy: {
       apiSecretsIncluded: false,
       encryptedCredentialsIncluded: false,
