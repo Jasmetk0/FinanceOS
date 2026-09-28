@@ -5,6 +5,11 @@ const globalDb = globalThis as typeof globalThis & {
   __financeOsDb?: DatabaseSync;
 };
 
+function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table})`).all();
+  return rows.some((row) => String(row.name) === column);
+}
+
 function initialize(db: DatabaseSync) {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
@@ -111,6 +116,13 @@ function initialize(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_snapshots_recorded
       ON snapshots(recorded_at ASC);
   `);
+
+  if (!hasColumn(db, "transactions", "category")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN category TEXT;");
+  }
+  if (!hasColumn(db, "transactions", "source_label")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN source_label TEXT;");
+  }
 }
 
 export function getDb(): DatabaseSync {
