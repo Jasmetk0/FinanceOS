@@ -30,7 +30,9 @@ After that, ordinary use does not require an open terminal window.
 11. opens `http://127.0.0.1:3000`.
 
 The sync worker requests a provider sync every 15 minutes even when the browser is
-closed. `FinanceOS Stop` stops both the web server and the background worker.
+closed. After a sync it also creates one credentials-free JSON backup per day under
+`%LOCALAPPDATA%\FinanceOS\backups` and keeps the latest 60 days.
+`FinanceOS Stop` stops both the web server and the background worker.
 
 ## Logs
 
