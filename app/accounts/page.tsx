@@ -1,11 +1,14 @@
 import { Pill, SectionCard } from "@/components/ui";
 import { getAccounts } from "@/lib/server/analytics";
+import { ManualBalancesManager } from "@/components/manual-balances-manager";
+import { listManualBalances } from "@/lib/server/manual-balance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default function AccountsPage() {
   const accounts = getAccounts();
+  const manualBalances = listManualBalances();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -75,6 +78,15 @@ export default function AccountsPage() {
               Zatím žádné účty. Připoj Trading 212 nebo Kraken.
             </p>
           )}
+        </SectionCard>
+      </div>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Manual balances"
+          subtitle="Oddělené od cash-flow journalu, aby se výplata nebo dar nepočítaly do net worth dvakrát"
+        >
+          <ManualBalancesManager initialBalances={manualBalances} />
         </SectionCard>
       </div>
     </main>
