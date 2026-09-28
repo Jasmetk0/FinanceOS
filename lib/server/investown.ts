@@ -13,6 +13,7 @@ import {
 export interface InvestownImportRow {
   externalId?: string;
   occurredAt: string;
+  sourceDate?: string;
   timezone?: string;
   amount: number;
   currency?: string;
@@ -136,6 +137,7 @@ function stableBase(row: InvestownImportRow): string {
 
   const payload = JSON.stringify({
     occurredAt: row.occurredAt,
+    sourceDate: row.sourceDate || "",
     timezone: row.timezone || "",
     amount: row.amount,
     currency: row.currency || "CZK",
@@ -178,7 +180,7 @@ function finiteOptional(value: number | null | undefined) {
 }
 
 function statementDate(row: InvestownImportRow, occurredIso: string) {
-  const original = normalize(row.occurredAt);
+  const original = normalize(row.sourceDate || row.occurredAt);
   const match = original.match(/^(\d{4}-\d{2}-\d{2})/);
   return match?.[1] || occurredIso.slice(0, 10);
 }
