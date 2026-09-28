@@ -1,8 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #07100d;
+  --foreground: #edf7f2;
+  --panel: #0d1713;
+  --panel-strong: #111d18;
+  --border: rgba(255, 255, 255, 0.08);
+  --muted: #8da399;
+  --accent: #69e3aa;
+  --accent-strong: #35c987;
+  --danger: #ff8a8a;
+  --warning: #ffd17b;
 }
 
 @theme inline {
@@ -12,15 +20,35 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
 }
 
 body {
-  background: var(--background);
+  margin: 0;
+  background:
+    radial-gradient(circle at top right, rgba(53, 201, 135, 0.08), transparent 32rem),
+    var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(105, 227, 170, 0.28);
+}
+
+.finance-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
 }
