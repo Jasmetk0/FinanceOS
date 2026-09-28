@@ -708,3 +708,139 @@ export function getInsightsData() {
     warnings,
   };
 }
+
+
+export function getAssetDetail(symbolInput: string) {
+  const db = getDb();
+  const symbol = symbolInput.trim().toUpperCase();
+
+  const assets = db
+    .prepare(`
+      SELECT id, provider, external_id, symbol, name, asset_class, currency
+      FROM assets
+      WHERE UPPER(symbol) = ?
+      ORDER BY provider
+    `)
+    .all(symbol);
+
+  if (!assets.length) return null;
+
+  const assetIds = assets.map((asset) => String(asset.id));
+  const placeholders = assetIds.map(() => "?").join(",");
+
+  const holdings = db
+    .prepare(`
+      SELECT
+        h.id,
+        h.asset_id,
+        h.quantity,
+        h.average_price,
+        h.current_price,
+        h.currency,
+        h.market_value,
+        h.market_value_czk,
+        h.unrealized_pnl,
+        h.unrealized_pnl_czk,
+        a.provider,
+        a.name AS account_name
+      FROM holdings h
+      JOIN accounts a ON a.id = h.account_id
+      WHERE h.asset_id IN (${placeholders})
+      ORDER BY h.market_value_czk DESC
+    `)
+    .all(...assetIds)
+    .map((row) => ({
+      id: String(row.id),
+      assetId: String(row.asset_id),
+      provider: String(row.provider),
+      accountName: String(row.account_name),
+      quantity: num(row.quantity),
+      averagePrice:
+        row.average_price === null ? null : num(row.average_price),
+      currentPrice:
+        row.current_price === null ? null : num(row.current_price),
+      currency: String(row.currency),
+      marketValue: num(row.market_value),
+      marketValueCzk: num(row.market_value_czk),
+      unrealizedPnl:
+        row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
+      unrealizedPnlCzk:
+        row.unrealized_pnl_czk === null
+          ? null
+          : num(row.unrealized_pnl_czk),
+    }));
+
+  const transactions = db
+    .prepare(`
+      SELECT
+        t.id,
+        t.provider,
+        t.kind,
+        t.occurred_at,
+        t.currency,
+        t.amount,
+        t.amount_czk,
+        t.quantity,
+        t.price,
+        t.fee,
+        t.note,
+        a.name AS account_name
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE t.asset_id IN (${placeholders})
+      ORDER BY t.occurred_at DESC
+    `)
+    .all(...assetIds)
+    .map((row) => ({
+      id: String(row.id),
+      provider: String(row.provider),
+      kind: String(row.kind),
+      occurredAt: String(row.occurred_at),
+      currency: String(row.currency),
+      amount: num(row.amount),
+      amountCzk: row.amount_czk === null ? null : num(row.amount_czk),
+      quantity: row.quantity === null ? null : num(row.quantity),
+      price: row.price === null ? null : num(row.price),
+      fee: row.fee === null ? null : num(row.fee),
+      note: row.note ? String(row.note) : null,
+      accountName: String(row.account_name),
+    }));
+
+  const summary = transactions.reduce(
+    (acc, tx) => {
+      const amount = tx.amountCzk;
+      if (amount === null) return acc;
+      if (tx.kind === "buy") acc.buysCzk += Math.abs(amount);
+      if (tx.kind === "sell") acc.sellsCzk += Math.abs(amount);
+      if (tx.kind === "dividend") acc.dividendsCzk += Math.max(0, amount);
+      if (tx.kind === "fee") acc.feesCzk += Math.abs(amount);
+      return acc;
+    },
+    { buysCzk: 0, sellsCzk: 0, dividendsCzk: 0, feesCzk: 0 },
+  );
+
+  const currentValueCzk = holdings.reduce(
+    (sum, holding) => sum + holding.marketValueCzk,
+    0,
+  );
+  const unrealizedPnlCzk = holdings.reduce(
+    (sum, holding) => sum + (holding.unrealizedPnlCzk ?? 0),
+    0,
+  );
+
+  return {
+    symbol,
+    name: String(assets[0].name),
+    assetClass: String(assets[0].asset_class),
+    providers: assets.map((asset) => String(asset.provider)),
+    currencies: Array.from(new Set(assets.map((asset) => String(asset.currency)))),
+    currentValueCzk,
+    unrealizedPnlCzk,
+    holdings,
+    transactions,
+    summary: {
+      ...summary,
+      netTradeCashFlowCzk: summary.sellsCzk - summary.buysCzk,
+    },
+  };
+}
