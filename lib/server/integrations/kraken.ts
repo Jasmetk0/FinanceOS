@@ -217,8 +217,38 @@ export async function validateKraken(credentials: KrakenCredentials) {
     throw new Error("Kraken API key and private key are required.");
   }
 
+  const keyInfo = await privateRequest<JsonObject>(
+    "/0/private/GetApiKeyInfo",
+    credentials,
+  );
+  const permissions = Array.isArray(keyInfo.permissions)
+    ? keyInfo.permissions.map(String)
+    : [];
+
+  const required = ["query-funds", "query-closed-trades", "query-ledger"];
+  const missing = required.filter((permission) => !permissions.includes(permission));
+  if (missing.length) {
+    throw new Error(
+      `Kraken API key is missing required read-only permissions: ${missing.join(", ")}.`,
+    );
+  }
+
+  const allowed = new Set([
+    "query-funds",
+    "query-open-trades",
+    "query-closed-trades",
+    "query-ledger",
+    "export-data",
+  ]);
+  const unsafe = permissions.filter((permission) => !allowed.has(permission));
+  if (unsafe.length) {
+    throw new Error(
+      `Kraken API key has permissions FinanceOS does not accept: ${unsafe.join(", ")}. Create a dedicated read-only key.`,
+    );
+  }
+
   await privateRequest("/0/private/Balance", credentials);
-  await privateRequest("/0/private/TradesHistory", credentials, { limit: 1 });
+  await privateRequest("/0/private/TradesHistory", credentials, { ofs: 0 });
   await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
 }
 
@@ -230,7 +260,7 @@ async function fetchAllTrades(credentials: KrakenCredentials) {
     const result = await privateRequest<JsonObject>(
       "/0/private/TradesHistory",
       credentials,
-      { ofs: offset, limit: 100 },
+      { ofs: offset },
     );
     const trades = asObject(result.trades);
     const entries = Object.entries(trades).map(
