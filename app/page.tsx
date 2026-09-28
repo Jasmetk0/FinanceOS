@@ -89,13 +89,15 @@ function PortfolioChart({
 
 export default function Home() {
   const data = getDashboardData();
-  const hasConnections = data.connections.length > 0;
+  const hasPortfolioData =
+    data.connections.length > 0 ||
+    data.accounts.some((account) => account.provider !== "manual");
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <Pill>{hasConnections ? "Live local data" : "Setup required"}</Pill>
+          <Pill>{hasPortfolioData ? "Portfolio data" : "Setup required"}</Pill>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
             Přehled majetku
           </h1>
@@ -107,7 +109,7 @@ export default function Home() {
         <SyncButton />
       </div>
 
-      {!hasConnections ? (
+      {!hasPortfolioData ? (
         <div className="mb-4 rounded-3xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-5">
           <p className="font-medium">Připoj první investiční účet</p>
           <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
