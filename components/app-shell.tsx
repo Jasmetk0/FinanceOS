@@ -82,10 +82,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
           <div className="mt-3 flex items-center gap-2 text-sm">
             <span className="h-2 w-2 rounded-full bg-[var(--warning)]" />
-            <span>Demo mode</span>
+            <span>Local mode</span>
           </div>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-            Žádné reálné účty ani API klíče zatím nejsou připojené.
+            Data i API credentials zůstávají lokálně na tomto počítači.
           </p>
         </div>
       </aside>
