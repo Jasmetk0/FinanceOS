@@ -100,7 +100,7 @@ export function transactionId(provider: ProviderId, externalId: string) {
   return stableId("tx", `${provider}:${externalId}`);
 }
 
-export function saveConnection<T extends Record<string, string>>(
+export function saveConnection<T extends object>(
   provider: ProviderId,
   label: string,
   environment: string,
@@ -126,7 +126,7 @@ export function saveConnection<T extends Record<string, string>>(
   `).run(provider, label, environment, encrypted, timestamp, timestamp);
 }
 
-export function getConnectionSecret<T extends Record<string, string>>(
+export function getConnectionSecret<T extends object>(
   provider: ProviderId,
 ): ConnectionSecret<T> | null {
   const row = getDb()
