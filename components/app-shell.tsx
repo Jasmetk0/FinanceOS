@@ -11,6 +11,7 @@ const navigation = [
   { href: "/performance", label: "Performance", short: "PF" },
   { href: "/history", label: "History", short: "HI" },
   { href: "/insights", label: "Insights", short: "IS" },
+  { href: "/plan", label: "Plan", short: "PL" },
   { href: "/analyst", label: "Analyst", short: "AI" },
   { href: "/transactions", label: "Transactions", short: "TX" },
   { href: "/cash-flow", label: "Cash Flow", short: "CF" },
