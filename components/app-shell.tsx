@@ -8,6 +8,7 @@ import { AutoSync } from "@/components/auto-sync";
 const navigation = [
   { href: "/", label: "Dashboard", short: "DB" },
   { href: "/investments", label: "Investments", short: "IN" },
+  { href: "/performance", label: "Performance", short: "PF" },
   { href: "/transactions", label: "Transactions", short: "TX" },
   { href: "/cash-flow", label: "Cash Flow", short: "CF" },
   { href: "/accounts", label: "Accounts", short: "AC" },
