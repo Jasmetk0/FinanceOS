@@ -16,14 +16,18 @@ timeline.
 - Trading 212 order/dividend/cash history
 - Kraken trade and ledger history
 - daily portfolio snapshots
+- historical price CSV import per asset
+- reconstructed historical priced-position curve from quantities + imported closes
 - current and historical-date CZK conversion using CNB fixing
 - manual income, gifts, expenses, interest and adjustments
 - manual current balances for bank cash, other assets and liabilities
 - personal cash-flow dashboard and savings-rate analytics
+- generic bank/cash-flow CSV import with transfer-safe classification
 - portfolio performance view with simple return and XIRR
 - explicit historical coverage view for snapshots and known contributions
 - user-defined target allocation and contribution-alignment plan
 - deterministic concentration/data-health insights
+- Diagnostics dashboard for SQLite integrity, sync freshness, reconciliation, FX coverage and backups
 - per-asset position and transaction drill-down pages
 - searchable/filterable unified transaction ledger
 - investment thesis journal with future review dates
@@ -105,10 +109,11 @@ Provider transaction history is backfilled when the provider API exposes it.
 FinanceOS begins storing its own daily mark-to-market snapshots from the first
 successful sync.
 
-Reconstructing exact daily portfolio market values from before the first FinanceOS
-snapshot requires historical security prices and instrument mapping; that historical
-pricing engine is separate from the transaction backfill and is not silently
-approximated.
+FinanceOS can import daily historical close prices for known assets, convert them
+using historical CNB FX rates, and reconstruct a historical curve for priced
+positions from transaction quantity changes. This reconstructed curve intentionally
+stays separate from actual FinanceOS snapshots because it can exclude historical
+cash and any asset without price coverage.
 
 ## Data ownership
 
