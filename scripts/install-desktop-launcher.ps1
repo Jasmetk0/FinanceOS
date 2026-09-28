@@ -12,103 +12,41 @@ if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path $desktop)) {
     throw "Windows Desktop folder could not be resolved."
 }
 
-$launcherPath = Join-Path $desktop "FinanceOS.cmd"
-$batchRepoRoot = $repoRoot.Replace("%", "%%")
+$powerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
+$startScript = Join-Path $repoRoot "scripts\start-financeos.ps1"
+$stopScript = Join-Path $repoRoot "scripts\stop-financeos.ps1"
 
-$launcherTemplate = @'
-@echo off
-setlocal EnableExtensions
-title FinanceOS Launcher
+if (-not (Test-Path $startScript) -or -not (Test-Path $stopScript)) {
+    throw "FinanceOS launcher scripts are missing. Update the repository and run this installer again."
+}
 
-cd /d "__REPO_ROOT__"
+$shell = New-Object -ComObject WScript.Shell
 
-where git >nul 2>&1
-if errorlevel 1 (
-  echo Git was not found in PATH.
-  echo Install Git or reopen the terminal after installation.
-  pause
-  exit /b 1
-)
+function New-FinanceShortcut([string]$Path, [string]$Script, [string]$Description, [string]$Icon) {
+    $shortcut = $shell.CreateShortcut($Path)
+    $shortcut.TargetPath = $powerShell
+    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $Script + '"'
+    $shortcut.WorkingDirectory = $repoRoot
+    $shortcut.Description = $Description
+    $shortcut.IconLocation = $Icon
+    $shortcut.WindowStyle = 7
+    $shortcut.Save()
+}
 
-where npm >nul 2>&1
-if errorlevel 1 (
-  echo npm was not found in PATH.
-  echo Install Node.js or reopen the terminal after installation.
-  pause
-  exit /b 1
-)
+$startShortcut = Join-Path $desktop "FinanceOS.lnk"
+$stopShortcut = Join-Path $desktop "FinanceOS Stop.lnk"
 
-set "DIRTY="
-for /f "delims=" %%i in ('git status --porcelain') do set "DIRTY=1"
+New-FinanceShortcut $startShortcut $startScript "Update and open FinanceOS" "$env:SystemRoot\System32\shell32.dll,167"
+New-FinanceShortcut $stopShortcut $stopScript "Stop the local FinanceOS server" "$env:SystemRoot\System32\shell32.dll,131"
 
-if defined DIRTY (
-  echo.
-  echo FinanceOS has local uncommitted changes.
-  echo Automatic update was stopped so your work cannot be overwritten.
-  echo Commit, stash, or discard the changes and run FinanceOS again.
-  echo.
-  git status --short
-  pause
-  exit /b 1
-)
-
-echo.
-echo [1/4] Updating FinanceOS from GitHub...
-git fetch origin --prune
-if errorlevel 1 goto :fail
-
-git switch buuk
-if errorlevel 1 goto :fail
-
-git pull --ff-only origin buuk
-if errorlevel 1 goto :fail
-
-echo.
-echo [2/4] Updating dependencies...
-call npm install --no-audit --no-fund
-if errorlevel 1 goto :fail
-
-echo.
-echo [3/4] Checking whether FinanceOS is already running...
-powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
-if not errorlevel 1 goto :openbrowser
-
-echo Starting FinanceOS development server...
-start "FinanceOS Dev Server" cmd /k "cd /d ""__REPO_ROOT__"" && npm run dev"
-
-echo.
-echo [4/4] Waiting for FinanceOS...
-powershell.exe -NoProfile -Command "$deadline=(Get-Date).AddSeconds(45); do { try { $r=Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3000' -TimeoutSec 2; if ($r.StatusCode -ge 200) { exit 0 } } catch {}; Start-Sleep -Seconds 1 } while ((Get-Date) -lt $deadline); exit 1"
-
-if errorlevel 1 (
-  echo FinanceOS did not become available on http://localhost:3000 within 45 seconds.
-  echo Check the FinanceOS Dev Server window for details.
-  pause
-  exit /b 1
-)
-
-:openbrowser
-echo Opening FinanceOS...
-start "" "http://localhost:3000"
-exit /b 0
-
-:fail
-echo.
-echo FinanceOS update or startup failed.
-echo Nothing was force-reset or overwritten.
-pause
-exit /b 1
-'@
-
-$launcher = $launcherTemplate.Replace("__REPO_ROOT__", $batchRepoRoot)
-Set-Content -Path $launcherPath -Value $launcher -Encoding Default
+$legacyLauncher = Join-Path $desktop "FinanceOS.cmd"
+if (Test-Path $legacyLauncher) {
+    Remove-Item $legacyLauncher -Force
+}
 
 Write-Host ""
-Write-Host "Created desktop launcher:"
-Write-Host $launcherPath
+Write-Host "Created desktop shortcuts:"
+Write-Host ("  " + $startShortcut)
+Write-Host ("  " + $stopShortcut)
 Write-Host ""
-Write-Host "Double-click FinanceOS.cmd on your Desktop to:"
-Write-Host "  1. fetch and fast-forward the buuk branch,"
-Write-Host "  2. update npm dependencies,"
-Write-Host "  3. start the local FinanceOS server if needed,"
-Write-Host "  4. open http://localhost:3000."
+Write-Host "FinanceOS now runs without a permanent terminal window."
