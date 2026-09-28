@@ -49,7 +49,7 @@ export async function addManualTransaction(input: {
     amount = Math.abs(amount);
   }
 
-  const amountCzk = await maybeToCzk(amount, currency);
+  const amountCzk = await maybeToCzk(amount, currency, occurredAt);
   const externalId = `manual:${crypto.randomUUID()}`;
 
   upsertTransaction({
