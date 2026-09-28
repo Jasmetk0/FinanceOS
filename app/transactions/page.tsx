@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default function TransactionsPage() {
-  const transactions = getTransactions(1000);
+  const transactions = getTransactions(5000);
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
