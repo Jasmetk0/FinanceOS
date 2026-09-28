@@ -10,6 +10,7 @@ import {
   upsertTransaction,
 } from "@/lib/server/repository";
 import type { TransactionKind } from "@/lib/domain";
+import { getDb } from "@/lib/server/db";
 
 type JsonObject = Record<string, unknown>;
 
@@ -252,6 +253,19 @@ export async function validateKraken(credentials: KrakenCredentials) {
   await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
 }
 
+function pageAlreadyImported(
+  providerPrefix: "trade" | "ledger",
+  entries: Array<[string, JsonObject]>,
+): boolean {
+  if (!entries.length) return false;
+  const statement = getDb().prepare(
+    "SELECT 1 FROM transactions WHERE provider = 'kraken' AND external_id = ?",
+  );
+  return entries.every(([id]) =>
+    Boolean(statement.get(`${providerPrefix}:${id}`)),
+  );
+}
+
 async function fetchAllTrades(credentials: KrakenCredentials) {
   const all: Array<[string, JsonObject]> = [];
   let offset = 0;
@@ -266,6 +280,8 @@ async function fetchAllTrades(credentials: KrakenCredentials) {
     const entries = Object.entries(trades).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+
+    if (pageAlreadyImported("trade", entries)) break;
     all.push(...entries);
 
     const count = numberValue(result.count, all.length);
@@ -290,6 +306,8 @@ async function fetchAllLedgers(credentials: KrakenCredentials) {
     const entries = Object.entries(ledger).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+
+    if (pageAlreadyImported("ledger", entries)) break;
     all.push(...entries);
 
     const count = numberValue(result.count, all.length);
