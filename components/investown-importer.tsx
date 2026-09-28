@@ -185,7 +185,26 @@ function optionalNumber(value: FormDataEntryValue | null) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export function InvestownImporter() {
+type InvestownStatus = {
+  mode: string;
+  updatedAt: string;
+  currentValueCzk: number;
+  walletCashCzk: number;
+  investedValueCzk: number;
+  realizedYieldCzk: number;
+  transactions: number;
+  projects: number;
+  activeProjects: number;
+  firstAt: string | null;
+  lastAt: string | null;
+  unknownTypes: number;
+};
+
+export function InvestownImporter({
+  initialStatus,
+}: {
+  initialStatus: InvestownStatus | null;
+}) {
   const router = useRouter();
   const [csv, setCsv] = useState<CsvData | null>(null);
   const [filename, setFilename] = useState("");
@@ -548,6 +567,58 @@ export function InvestownImporter() {
         </span>
       </div>
 
+      {initialStatus ? (
+        <div className="mt-5 rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Poslední Investown import</p>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                {new Date(initialStatus.updatedAt).toLocaleString("cs-CZ")} ·{" "}
+                {initialStatus.mode}
+              </p>
+            </div>
+            <span
+              className={[
+                "w-fit rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider",
+                initialStatus.unknownTypes
+                  ? "border-[var(--warning)]/25 bg-[var(--warning)]/8 text-[var(--warning)]"
+                  : "border-[var(--accent)]/25 bg-[var(--accent)]/8 text-[var(--accent)]",
+              ].join(" ")}
+            >
+              {initialStatus.unknownTypes
+                ? initialStatus.unknownTypes + " unknown"
+                : "fully classified"}
+            </span>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <Preview
+              label="Hodnota"
+              value={money(initialStatus.currentValueCzk)}
+            />
+            <Preview
+              label="Peněženka"
+              value={money(initialStatus.walletCashCzk)}
+            />
+            <Preview
+              label="Investováno"
+              value={money(initialStatus.investedValueCzk)}
+            />
+            <Preview
+              label="Přijaté výnosy"
+              value={money(initialStatus.realizedYieldCzk)}
+            />
+            <Preview
+              label="Aktivní projekty"
+              value={initialStatus.activeProjects.toLocaleString("cs-CZ")}
+            />
+            <Preview
+              label="Transakce"
+              value={initialStatus.transactions.toLocaleString("cs-CZ")}
+            />
+          </div>
+        </div>
+      ) : null}
+
       <form
         className="mt-5 space-y-4"
         onSubmit={(event) => {
@@ -586,7 +657,7 @@ export function InvestownImporter() {
         ) : null}
 
         {preview ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Preview label="Řádků" value={csv?.rows.length.toLocaleString("cs-CZ") || "0"} />
             <Preview label="Projektů" value={preview.projects.toLocaleString("cs-CZ")} />
             <Preview label="Typů transakcí" value={preview.types.toLocaleString("cs-CZ")} />
