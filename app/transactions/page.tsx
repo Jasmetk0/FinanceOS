@@ -30,13 +30,14 @@ export default function TransactionsPage() {
         >
           {transactions.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[980px] border-collapse text-left">
+              <table className="w-full min-w-[1180px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                     <th className="pb-3 font-medium">Date</th>
                     <th className="pb-3 font-medium">Item</th>
                     <th className="pb-3 font-medium">Account</th>
                     <th className="pb-3 font-medium">Type</th>
+                    <th className="pb-3 font-medium">Category / Source</th>
                     <th className="pb-3 text-right font-medium">Quantity</th>
                     <th className="pb-3 text-right font-medium">Amount</th>
                   </tr>
@@ -67,6 +68,14 @@ export default function TransactionsPage() {
                         <span className="rounded-full border border-white/8 bg-white/[0.025] px-2 py-1 text-[11px] font-medium uppercase text-[var(--muted)]">
                           {tx.kind}
                         </span>
+                      </td>
+                      <td className="py-4 text-sm">
+                        <p>{tx.category || "—"}</p>
+                        {tx.sourceLabel ? (
+                          <p className="mt-1 text-xs text-[var(--muted)]">
+                            {tx.sourceLabel}
+                          </p>
+                        ) : null}
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {tx.quantity === null
