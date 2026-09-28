@@ -18,12 +18,17 @@ timeline.
 - daily portfolio snapshots
 - current and historical-date CZK conversion using CNB fixing
 - manual income, gifts, expenses, interest and adjustments
+- manual current balances for bank cash, other assets and liabilities
 - personal cash-flow dashboard and savings-rate analytics
 - portfolio performance view with simple return and XIRR
+- explicit historical coverage view for snapshots and known contributions
+- user-defined target allocation and contribution-alignment plan
 - deterministic concentration/data-health insights
 - per-asset position and transaction drill-down pages
 - searchable/filterable unified transaction ledger
+- investment thesis journal with future review dates
 - privacy-safe AI context export and Analyst workspace
+- installable PWA metadata and FinanceOS app icon
 - Mintos CSV import with flexible column mapping and balance-only updates
 - JSON data export without API secrets
 - Excel-friendly transaction CSV export
@@ -40,7 +45,7 @@ FinanceOS is intentionally local-first.
 - App: Next.js 16 + TypeScript
 - Runtime: Node.js 24
 - Database: built-in Node SQLite
-- Secrets: AES-256-GCM encrypted at rest
+- Secrets: AES-256-GCM encrypted at rest; on Windows the master key is protected with CurrentUser DPAPI when available
 - Data directory: `%LOCALAPPDATA%\FinanceOS` on Windows
 - Git repository: contains code only, never runtime finance data or API secrets
 - Local web server: bound to `127.0.0.1`
@@ -58,9 +63,9 @@ It creates:
 - `FinanceOS` on the Desktop
 - `FinanceOS Stop` on the Desktop
 
-The FinanceOS shortcut updates `buuk`, updates npm packages, restarts the local
-server on the newest code, starts a hidden 15-minute background sync worker, and
-opens the browser. The background worker continues syncing while the browser is closed
+The FinanceOS shortcut updates `buuk`, updates npm packages, builds a production
+bundle only when the Git revision changes, restarts the local production server,
+starts a hidden 15-minute background sync worker, and opens the browser. The background worker continues syncing while the browser is closed
 until `FinanceOS Stop` is used or the computer/session stops.
 
 See `docs/DESKTOP_LAUNCHER.md` for details.
