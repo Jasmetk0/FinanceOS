@@ -344,6 +344,17 @@ export async function importInvestown(input: InvestownImportInput) {
 
   if (!prepared.length) throw new Error("No valid Investown rows were found.");
 
+  if (
+    input.sourceFormat === "investown-native" &&
+    prepared.length !== input.rows.length
+  ) {
+    throw new Error(
+      "Native Investown CSV contains " +
+        String(input.rows.length - prepared.length) +
+        " row(s) that could not be parsed. Nothing was imported.",
+    );
+  }
+
   prepared.sort(
     (a, b) =>
       new Date(a.occurredIso).getTime() - new Date(b.occurredIso).getTime(),
