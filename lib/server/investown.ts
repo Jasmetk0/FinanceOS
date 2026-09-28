@@ -661,9 +661,16 @@ export async function importInvestown(input: InvestownImportInput) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    if (today !== lastDate) {
-      insertSnapshot.run(accountId, today, totalValueCzk, cashValueCzk, investedValueCzk);
-    }
+    // Always make today's snapshot match the effective current account value.
+    // This also lets a manual balance override correct an incomplete statement
+    // whose newest row happens to be dated today.
+    insertSnapshot.run(
+      accountId,
+      today,
+      totalValueCzk,
+      cashValueCzk,
+      investedValueCzk,
+    );
   } else {
     recordSnapshot(accountId);
   }
