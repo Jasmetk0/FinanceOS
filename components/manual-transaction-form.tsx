@@ -25,6 +25,8 @@ export function ManualTransactionForm() {
           currency: String(data.get("currency") || "CZK"),
           occurredAt: new Date(String(data.get("occurredAt"))).toISOString(),
           note: String(data.get("note") || ""),
+          category: String(data.get("category") || ""),
+          sourceLabel: String(data.get("sourceLabel") || ""),
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -119,11 +121,29 @@ export function ManualTransactionForm() {
           />
         </label>
       </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-xs text-[var(--muted)]">Category</span>
+          <input
+            name="category"
+            placeholder="Salary, Gift, Food, Rent…"
+            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs text-[var(--muted)]">Source</span>
+          <input
+            name="sourceLabel"
+            placeholder="AMBERG, rodina, banka…"
+            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+          />
+        </label>
+      </div>
       <label className="mt-3 block">
         <span className="text-xs text-[var(--muted)]">Note</span>
         <input
           name="note"
-          placeholder="Např. výplata, narozeniny, nájem…"
+          placeholder="Volitelná poznámka"
           className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
         />
       </label>
