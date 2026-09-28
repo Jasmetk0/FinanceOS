@@ -206,6 +206,34 @@ export function getDiagnostics() {
         : "No invalid account or holding numbers were found.",
   });
 
+  const priceStats = db
+    .prepare(
+      "SELECT COUNT(*) AS count, SUM(CASE WHEN close_czk IS NULL THEN 1 ELSE 0 END) AS missing_czk FROM asset_prices",
+    )
+    .get();
+  const priceCount = num(priceStats?.count);
+  const missingPriceCzk = num(priceStats?.missing_czk);
+  checks.push({
+    id: "historical-prices",
+    severity:
+      priceCount === 0
+        ? "info"
+        : missingPriceCzk > 0
+          ? "warning"
+          : "ok",
+    title: "Historical price coverage",
+    detail:
+      priceCount === 0
+        ? "No imported historical asset prices yet."
+        : priceCount.toLocaleString("cs-CZ") +
+          " historical prices stored" +
+          (missingPriceCzk > 0
+            ? "; " +
+              missingPriceCzk.toLocaleString("cs-CZ") +
+              " are missing a historical CZK conversion."
+            : " and all have CZK conversion."),
+  });
+
   const snapshotRow = db
     .prepare("SELECT MAX(recorded_at) AS latest, COUNT(*) AS count FROM snapshots")
     .get();
