@@ -1,5 +1,6 @@
 import { Pill, SectionCard } from "@/components/ui";
 import { getFinanceOsDataDir } from "@/lib/server/paths";
+import { RestoreBackup } from "@/components/restore-backup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,6 +52,13 @@ export default function SettingsPage() {
               Export transactions (.csv)
             </a>
           </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Restore backup"
+          subtitle="Merge-only obnova dat z FinanceOS JSON exportu"
+        >
+          <RestoreBackup />
         </SectionCard>
 
         <SectionCard title="Storage & security">
