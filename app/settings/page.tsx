@@ -89,8 +89,9 @@ export default function SettingsPage() {
         <SectionCard title="Storage & security">
           <div className="space-y-3 text-sm leading-6 text-[var(--muted)]">
             <p>
-              SQLite databáze a náhodný 256bit master key jsou mimo Git repozitář.
-              Provider credentials jsou v databázi pouze šifrovaně pomocí AES-256-GCM.
+              SQLite databáze je mimo Git repozitář. Provider credentials jsou
+              v databázi šifrovaně pomocí AES-256-GCM. Na Windows FinanceOS navíc
+              chrání master key pomocí user-scoped DPAPI, pokud je na systému dostupné.
             </p>
             <p>
               Privátní API routy odmítají jiné hosty než localhost. Desktop launcher
