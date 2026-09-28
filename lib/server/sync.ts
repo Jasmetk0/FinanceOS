@@ -15,7 +15,18 @@ export interface SyncResult {
   error?: string;
 }
 
-export async function syncProvider(provider: ProviderId): Promise<SyncResult> {
+const globalSync = globalThis as typeof globalThis & {
+  __financeOsSyncs?: Map<ProviderId, Promise<SyncResult>>;
+};
+
+function syncMap(): Map<ProviderId, Promise<SyncResult>> {
+  if (!globalSync.__financeOsSyncs) {
+    globalSync.__financeOsSyncs = new Map();
+  }
+  return globalSync.__financeOsSyncs;
+}
+
+async function performSync(provider: ProviderId): Promise<SyncResult> {
   markConnectionSyncing(provider);
 
   try {
@@ -29,7 +40,9 @@ export async function syncProvider(provider: ProviderId): Promise<SyncResult> {
         detail = await syncKraken();
         break;
       default:
-        throw new Error(`Provider ${provider} does not support automatic sync yet.`);
+        throw new Error(
+          `Provider ${provider} does not support automatic sync yet.`,
+        );
     }
 
     markConnectionSynced(provider);
@@ -41,6 +54,17 @@ export async function syncProvider(provider: ProviderId): Promise<SyncResult> {
   }
 }
 
+export async function syncProvider(provider: ProviderId): Promise<SyncResult> {
+  const running = syncMap().get(provider);
+  if (running) return running;
+
+  const promise = performSync(provider).finally(() => {
+    syncMap().delete(provider);
+  });
+  syncMap().set(provider, promise);
+  return promise;
+}
+
 export async function syncAll(): Promise<SyncResult[]> {
   const providers = listConnections()
     .map((connection) => connection.provider)
@@ -50,7 +74,7 @@ export async function syncAll(): Promise<SyncResult[]> {
     );
 
   const results: SyncResult[] = [];
-  // Keep provider sync sequential so local CPU/network usage and API rate limits stay predictable.
+  // Providers remain sequential to keep API rate limits and local resource use predictable.
   for (const provider of providers) {
     results.push(await syncProvider(provider));
   }
