@@ -427,6 +427,7 @@ export async function syncKraken() {
     const cost = numberValue(trade.cost, 0);
     const signedCost = kind === "buy" ? -Math.abs(cost) : Math.abs(cost);
     const volume = numberValue(trade.vol, 0);
+    const occurredAt = new Date(numberValue(trade.time) * 1000).toISOString();
 
     let assetIdValue = assetId("kraken", baseRaw);
     assetIdValue = upsertAsset({
@@ -444,10 +445,10 @@ export async function syncKraken() {
       accountId: accountIdValue,
       externalId: `trade:${tradeId}`,
       kind,
-      occurredAt: new Date(numberValue(trade.time) * 1000).toISOString(),
+      occurredAt,
       currency: quote,
       amount: signedCost,
-      amountCzk: await maybeToCzk(signedCost, quote),
+      amountCzk: await maybeToCzk(signedCost, quote, occurredAt),
       assetId: assetIdValue,
       quantity: volume,
       price: numberValue(trade.price, volume ? cost / volume : 0),
@@ -468,14 +469,11 @@ export async function syncKraken() {
 
     let amountCzk: number | null = null;
     if (isFiat(currency)) {
-      amountCzk = await maybeToCzk(amount, currency);
+      amountCzk = await maybeToCzk(amount, currency, occurredAt);
     } else {
-      try {
-        const priced = await priceAssetInCzk(rawAsset, amount, pairs);
-        amountCzk = priced.valueCzk;
-      } catch {
-        amountCzk = null;
-      }
+      // Do not value historical crypto ledger movements using today's crypto price.
+      // A dedicated historical market-price engine will fill these values later.
+      amountCzk = null;
     }
 
     const assetIdValue = upsertAsset({
