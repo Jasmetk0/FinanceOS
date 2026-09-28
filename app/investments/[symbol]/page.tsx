@@ -165,40 +165,87 @@ export default async function AssetDetailPage({
                     </p>
                   </div>
 
-                  <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Quantity</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.quantity.toLocaleString("cs-CZ", {
-                          maximumFractionDigits: 8,
-                        })}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Currency</dt>
-                      <dd className="mt-1 font-mono">{holding.currency}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Avg. price</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.averagePrice === null
-                          ? "—"
-                          : holding.averagePrice.toLocaleString("cs-CZ", {
-                              maximumFractionDigits: 4,
-                            })}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs text-[var(--muted)]">Current price</dt>
-                      <dd className="mt-1 font-mono">
-                        {holding.currentPrice === null
-                          ? "—"
-                          : holding.currentPrice.toLocaleString("cs-CZ", {
-                              maximumFractionDigits: 4,
-                            })}
-                      </dd>
-                    </div>
-                  </dl>
+                  {detail.assetClass === "p2p" ? (
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Outstanding principal
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {Math.max(
+                            0,
+                            holding.marketValueCzk -
+                              (detail.metadata?.reservedOfferCzk ?? 0),
+                          ).toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Pending offer
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {(detail.metadata?.reservedOfferCzk ?? 0).toLocaleString(
+                            "cs-CZ",
+                            { maximumFractionDigits: 2 },
+                          )}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Currency</dt>
+                        <dd className="mt-1 font-mono">{holding.currency}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">
+                          Current exposure
+                        </dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.marketValueCzk.toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 2,
+                          })}{" "}
+                          Kč
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Quantity</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.quantity.toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 8,
+                          })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Currency</dt>
+                        <dd className="mt-1 font-mono">{holding.currency}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Avg. price</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.averagePrice === null
+                            ? "—"
+                            : holding.averagePrice.toLocaleString("cs-CZ", {
+                                maximumFractionDigits: 4,
+                              })}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs text-[var(--muted)]">Current price</dt>
+                        <dd className="mt-1 font-mono">
+                          {holding.currentPrice === null
+                            ? "—"
+                            : holding.currentPrice.toLocaleString("cs-CZ", {
+                                maximumFractionDigits: 4,
+                              })}
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
                 </article>
               ))}
             </div>
