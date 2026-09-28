@@ -6,6 +6,50 @@ function num(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
+  const rows = db
+    .prepare(`
+      SELECT account_id, recorded_at, total_value_czk
+      FROM snapshots
+      ORDER BY recorded_at ASC, account_id ASC
+    `)
+    .all();
+
+  const byDate = new Map<
+    string,
+    Array<{ accountId: string; valueCzk: number }>
+  >();
+
+  for (const row of rows) {
+    const date = String(row.recorded_at);
+    const list = byDate.get(date) ?? [];
+    list.push({
+      accountId: String(row.account_id),
+      valueCzk: num(row.total_value_czk),
+    });
+    byDate.set(date, list);
+  }
+
+  const latestByAccount = new Map<string, number>();
+  const series: Array<{ date: string; valueCzk: number }> = [];
+
+  for (const date of [...byDate.keys()].sort()) {
+    for (const item of byDate.get(date) ?? []) {
+      latestByAccount.set(item.accountId, item.valueCzk);
+    }
+
+    series.push({
+      date,
+      valueCzk: [...latestByAccount.values()].reduce(
+        (sum, value) => sum + value,
+        0,
+      ),
+    });
+  }
+
+  return series;
+}
+
 export function getDashboardData() {
   const db = getDb();
 
@@ -103,20 +147,7 @@ export function getDashboardData() {
       symbol: String(row.symbol || ""),
     }));
 
-  const snapshotRows = db
-    .prepare(`
-      SELECT recorded_at, SUM(total_value_czk) AS total
-      FROM snapshots
-      GROUP BY recorded_at
-      ORDER BY recorded_at ASC
-      LIMIT 730
-    `)
-    .all();
-
-  const portfolioSeries = snapshotRows.map((row) => ({
-    date: String(row.recorded_at),
-    valueCzk: num(row.total),
-  }));
+  const portfolioSeries = getCombinedSnapshotSeries(db).slice(-730);
 
   const allocationMap = new Map<string, number>();
   for (const holding of holdings) {
@@ -853,18 +884,7 @@ export function getAssetDetail(symbolInput: string) {
 export function getHistoryData() {
   const db = getDb();
 
-  const snapshotRows = db
-    .prepare(`
-      SELECT recorded_at, SUM(total_value_czk) AS total
-      FROM snapshots
-      GROUP BY recorded_at
-      ORDER BY recorded_at ASC
-    `)
-    .all()
-    .map((row) => ({
-      date: String(row.recorded_at),
-      valueCzk: num(row.total),
-    }));
+  const snapshotRows = getCombinedSnapshotSeries(db);
 
   const flowRows = db
     .prepare(`
