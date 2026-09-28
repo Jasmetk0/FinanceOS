@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export interface TransactionTableRow {
   id: string;
@@ -27,9 +28,11 @@ export function TransactionsTable({
 }: {
   transactions: TransactionTableRow[];
 }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("all");
   const [kind, setKind] = useState("all");
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const providers = useMemo(
     () =>
@@ -63,6 +66,28 @@ export function TransactionsTable({
         .some((value) => String(value).toLowerCase().includes(needle));
     });
   }, [transactions, search, provider, kind]);
+
+  async function deleteManual(id: string) {
+    if (!window.confirm("Smazat tento ručně zadaný záznam?")) return;
+
+    setDeleting(id);
+    try {
+      const response = await fetch("/api/manual/transaction", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Delete failed.");
+      }
+      router.refresh();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   return (
     <div>
@@ -127,6 +152,7 @@ export function TransactionsTable({
                 <th className="pb-3 font-medium">Category / Source</th>
                 <th className="pb-3 text-right font-medium">Quantity</th>
                 <th className="pb-3 text-right font-medium">Amount</th>
+                <th className="pb-3 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -177,6 +203,20 @@ export function TransactionsTable({
                       : tx.amountCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 2,
                         }) + " Kč"}
+                  </td>
+                  <td className="py-4 text-right">
+                    {tx.provider === "manual" ? (
+                      <button
+                        type="button"
+                        onClick={() => void deleteManual(tx.id)}
+                        disabled={deleting === tx.id}
+                        className="rounded-lg border border-[var(--danger)]/20 px-2.5 py-1.5 text-xs text-[var(--danger)] transition hover:bg-[var(--danger)]/8 disabled:opacity-50"
+                      >
+                        {deleting === tx.id ? "Deleting…" : "Delete"}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-[var(--muted)]">—</span>
+                    )}
                   </td>
                 </tr>
               ))}
