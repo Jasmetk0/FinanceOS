@@ -408,9 +408,13 @@ export async function importInvestown(input: InvestownImportInput) {
       assetId: assetIdValue,
       quantity,
       price: quantity === null ? null : 1,
-      note: [row.type, row.projectName, row.description].filter(Boolean).join(" · ") || "Investown",
-      category: normalize(row.projectType) || normalize(row.type) || null,
-      sourceLabel: "Investown",
+      note: [row.type, row.loanName, row.projectName, row.description]
+        .filter(Boolean)
+        .join(" · ") || "Investown",
+      category: normalize(row.type) || normalize(row.projectType) || null,
+      sourceLabel: normalize(row.projectType)
+        ? "Investown · " + normalize(row.projectType)
+        : "Investown",
       raw: {
         ...row,
         originalTimezone: row.timezone || null,
