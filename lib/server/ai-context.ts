@@ -1,3 +1,4 @@
+import { getPlanData } from "@/lib/server/plan";
 import {
   getCashFlowData,
   getDashboardData,
@@ -11,6 +12,7 @@ export function buildAiContext() {
   const performance = getPerformanceData();
   const cashFlow = getCashFlowData(24);
   const insights = getInsightsData();
+  const plan = getPlanData();
   const transactions = getTransactions(250);
 
   return {
@@ -26,6 +28,7 @@ export function buildAiContext() {
     },
     performance,
     cashFlow,
+    plan,
     insights: {
       largestHolding: insights.largestHolding,
       topThreeSharePct: insights.topThreeSharePct,
