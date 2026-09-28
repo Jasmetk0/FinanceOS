@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { AutoSync } from "@/components/auto-sync";
 
 const navigation = [
   { href: "/", label: "Dashboard", short: "DB" },
@@ -56,7 +57,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
+    <>
+      <AutoSync />
+      <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="hidden min-h-screen border-r border-white/7 bg-black/10 p-4 lg:flex lg:flex-col">
         <div className="px-2 py-3">
           <p className="text-xs font-medium uppercase tracking-[0.24em] text-[var(--muted)]">
@@ -128,6 +131,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {children}
       </div>
-    </div>
+      </div>
+    </>
   );
 }
