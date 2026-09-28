@@ -323,7 +323,12 @@ export async function importInvestown(input: InvestownImportInput) {
     const type = normalize(row.type) || "Unknown";
 
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
-    if (!EXACT_TYPE_MAP[type] && kind === "adjustment") unknownTypes.add(type);
+    if (
+      !EXACT_TYPE_MAP[type] &&
+      (input.sourceFormat === "investown-native" || kind === "adjustment")
+    ) {
+      unknownTypes.add(type);
+    }
 
     prepared.push({
       row,
