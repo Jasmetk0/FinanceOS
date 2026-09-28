@@ -442,7 +442,13 @@ export async function importInvestown(input: InvestownImportInput) {
     toCzk(totalValue, accountCurrency),
   ]);
 
-  const accountId = upsertAccount({
+  // All asynchronous currency work is complete before opening the SQLite
+  // transaction. The import itself is atomic: a failed row cannot leave a
+  // half-replaced Investown portfolio behind.
+  const db = getDb();
+  db.exec("BEGIN IMMEDIATE;");
+  try {
+    const accountId = upsertAccount({
     provider: "investown",
     externalId: "main",
     name: "Investown",
@@ -476,8 +482,7 @@ export async function importInvestown(input: InvestownImportInput) {
     },
   });
 
-  const db = getDb();
-  const replaceExisting = input.replaceExisting !== false;
+    const replaceExisting = input.replaceExisting !== false;
   if (replaceExisting) {
     db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
     db.prepare("DELETE FROM holdings WHERE account_id = ?").run(accountId);
@@ -634,33 +639,44 @@ export async function importInvestown(input: InvestownImportInput) {
     recordSnapshot(accountId);
   }
 
-  return {
-    accountId,
-    imported,
-    skipped: input.rows.length - prepared.length,
-    totalRows: input.rows.length,
-    sourceFormat: input.sourceFormat || "mapped",
-    derived: {
-      walletCashCzk: derivedWallet,
-      investedPrincipalCzk: derivedPrincipal,
-      reservedOffersCzk: derivedReserved,
-      receivedInterestCzk: derivedInterest,
-      totalValueCzk: derivedWallet + derivedInvested,
-      activeProjects: holdings.length,
-      allProjects: projects.size,
-    },
-    effective: {
-      walletCashCzk: cashValueCzk,
-      investedValueCzk,
-      totalValueCzk,
-    },
-    coverage: {
-      firstAt: prepared[0]?.occurredIso || null,
-      lastAt: prepared[prepared.length - 1]?.occurredIso || null,
-      typeCounts: Object.fromEntries(
-        [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
-      ),
-      unknownTypes: [...unknownTypes].sort(),
-    },
-  };
+    const result = {
+      accountId,
+      imported,
+      skipped: input.rows.length - prepared.length,
+      totalRows: input.rows.length,
+      sourceFormat: input.sourceFormat || "mapped",
+      derived: {
+        walletCashCzk: derivedWallet,
+        investedPrincipalCzk: derivedPrincipal,
+        reservedOffersCzk: derivedReserved,
+        receivedInterestCzk: derivedInterest,
+        totalValueCzk: derivedWallet + derivedInvested,
+        activeProjects: holdings.length,
+        allProjects: projects.size,
+      },
+      effective: {
+        walletCashCzk: cashValueCzk,
+        investedValueCzk,
+        totalValueCzk,
+      },
+      coverage: {
+        firstAt: prepared[0]?.occurredIso || null,
+        lastAt: prepared[prepared.length - 1]?.occurredIso || null,
+        typeCounts: Object.fromEntries(
+          [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+        ),
+        unknownTypes: [...unknownTypes].sort(),
+      },
+    };
+
+    db.exec("COMMIT;");
+    return result;
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK;");
+    } catch {
+      // Preserve the original import error if rollback itself fails.
+    }
+    throw error;
+  }
 }
