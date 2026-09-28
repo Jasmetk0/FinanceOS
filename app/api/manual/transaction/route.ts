@@ -17,6 +17,8 @@ export async function POST(request: Request) {
       currency: String(body.currency || "CZK"),
       occurredAt: String(body.occurredAt || new Date().toISOString()),
       note: body.note ? String(body.note) : undefined,
+      category: body.category ? String(body.category) : undefined,
+      sourceLabel: body.sourceLabel ? String(body.sourceLabel) : undefined,
     });
 
     return NextResponse.json({ ok: true });
