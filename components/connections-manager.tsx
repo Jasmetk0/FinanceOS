@@ -83,7 +83,36 @@ export function ConnectionsManager({
 
       setConnections(data.connections ?? []);
       form.reset();
-      setMessage(`${provider === "trading212" ? "Trading 212" : "Kraken"} připojen.`);
+      setMessage(
+        (provider === "trading212" ? "Trading 212" : "Kraken") +
+          " připojen. Probíhá první synchronizace…",
+      );
+
+      const syncResponse = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const syncData = (await syncResponse.json()) as {
+        results?: Array<{ ok: boolean; error?: string }>;
+        error?: string;
+      };
+      const syncResult = syncData.results?.[0];
+      if (!syncResult?.ok) {
+        throw new Error(
+          syncResult?.error || syncData.error || "První synchronizace selhala.",
+        );
+      }
+
+      setMessage(
+        (provider === "trading212" ? "Trading 212" : "Kraken") +
+          " připojen a synchronizován.",
+      );
+      const refreshed = await fetch("/api/connections", { cache: "no-store" });
+      const refreshedData = (await refreshed.json()) as {
+        connections?: ConnectionSafe[];
+      };
+      setConnections(refreshedData.connections ?? []);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
