@@ -523,6 +523,7 @@ export async function syncKraken() {
       amount,
       amountCzk,
       assetId: assetIdValue,
+      quantity: amount,
       fee: numberValue(ledger.fee, 0),
       note: [type, stringValue(ledger.subtype)].filter(Boolean).join(" · "),
       raw: ledger,
