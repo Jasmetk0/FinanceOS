@@ -29,13 +29,19 @@ export function restoreExport(input: unknown) {
   const holdings = rows(backup.holdings);
   const transactions = rows(backup.transactions);
   const snapshots = rows(backup.snapshots);
+  const planTargets = rows(backup.planTargets);
+  const planSettings = rows(backup.planSettings);
+  const investmentJournal = rows(backup.investmentJournal);
 
   if (
     accounts.length > 1000 ||
     assets.length > 100_000 ||
     holdings.length > 100_000 ||
     transactions.length > 500_000 ||
-    snapshots.length > 500_000
+    snapshots.length > 500_000 ||
+    planTargets.length > 100 ||
+    planSettings.length > 100 ||
+    investmentJournal.length > 10_000
   ) {
     throw new Error("Backup exceeds FinanceOS safety limits.");
   }
@@ -241,6 +247,67 @@ export function restoreExport(input: unknown) {
       );
     }
 
+    const planTargetStatement = db.prepare(`
+      INSERT INTO plan_targets(asset_class, target_pct, updated_at)
+      VALUES(?, ?, ?)
+      ON CONFLICT(asset_class) DO UPDATE SET
+        target_pct = excluded.target_pct,
+        updated_at = excluded.updated_at
+    `);
+
+    for (const row of planTargets) {
+      if (!value(row, "asset_class")) continue;
+      planTargetStatement.run(
+        value(row, "asset_class"),
+        value(row, "target_pct"),
+        value(row, "updated_at"),
+      );
+    }
+
+    const planSettingStatement = db.prepare(`
+      INSERT INTO plan_settings(key, value, updated_at)
+      VALUES(?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `);
+
+    for (const row of planSettings) {
+      if (!value(row, "key")) continue;
+      planSettingStatement.run(
+        value(row, "key"),
+        value(row, "value"),
+        value(row, "updated_at"),
+      );
+    }
+
+    const journalStatement = db.prepare(`
+      INSERT INTO investment_journal(
+        id, symbol, title, thesis, created_at, review_at, status
+      )
+      VALUES(?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        symbol = excluded.symbol,
+        title = excluded.title,
+        thesis = excluded.thesis,
+        created_at = excluded.created_at,
+        review_at = excluded.review_at,
+        status = excluded.status
+    `);
+
+    for (const row of investmentJournal) {
+      if (!value(row, "id") || !value(row, "title")) continue;
+      journalStatement.run(
+        value(row, "id"),
+        value(row, "symbol"),
+        value(row, "title"),
+        value(row, "thesis"),
+        value(row, "created_at"),
+        value(row, "review_at"),
+        value(row, "status"),
+      );
+    }
+
     db.exec("COMMIT;");
   } catch (error) {
     db.exec("ROLLBACK;");
@@ -253,5 +320,8 @@ export function restoreExport(input: unknown) {
     holdings: holdings.length,
     transactions: transactions.length,
     snapshots: snapshots.length,
+    planTargets: planTargets.length,
+    planSettings: planSettings.length,
+    investmentJournal: investmentJournal.length,
   };
 }
