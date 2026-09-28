@@ -23,11 +23,12 @@ After that, ordinary use does not require an open terminal window.
 4. switches to `buuk`,
 5. runs `git pull --ff-only origin buuk`,
 6. updates npm dependencies,
-7. verifies port 3000 is free or already belongs to FinanceOS,
-8. starts Next.js bound to `127.0.0.1` in a hidden process,
-9. waits for `/api/health`,
-10. starts a hidden background sync worker,
-11. opens `http://127.0.0.1:3000`.
+7. builds the production bundle only when the Git revision changed,
+8. verifies port 3000 is free,
+9. starts Next.js production mode bound to `127.0.0.1` in a hidden process,
+10. waits for `/api/health`,
+11. starts a hidden background sync worker,
+12. opens `http://127.0.0.1:3000`.
 
 The sync worker requests a provider sync every 15 minutes even when the browser is
 closed. After a sync it also creates one credentials-free JSON backup per day under
