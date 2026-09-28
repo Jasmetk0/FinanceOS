@@ -45,25 +45,52 @@ export default async function AssetDetailPage({
           value={detail.currentValueCzk}
           format="currency"
         />
-        <StatCard
-          label="Unrealized P/L"
-          value={detail.unrealizedPnlCzk}
-          format="currency"
-          positive={detail.unrealizedPnlCzk >= 0}
-        />
-        <StatCard
-          label="Historical buys"
-          value={detail.summary.buysCzk}
-          format="currency"
-          hint="Z importované historie"
-        />
-        <StatCard
-          label="Dividends"
-          value={detail.summary.dividendsCzk}
-          format="currency"
-          hint="Z importované historie"
-          positive
-        />
+        {detail.assetClass === "p2p" ? (
+          <>
+            <StatCard
+              label="Received yield"
+              value={detail.summary.interestCzk}
+              format="currency"
+              hint="Výnosy, bonusové výnosy a úroky"
+              positive
+            />
+            <StatCard
+              label="Principal invested"
+              value={detail.summary.principalInCzk}
+              format="currency"
+              hint="Historicky vložená jistina"
+            />
+            <StatCard
+              label="Principal returned"
+              value={detail.summary.principalOutCzk}
+              format="currency"
+              hint="Splacení a odstoupení"
+              positive
+            />
+          </>
+        ) : (
+          <>
+            <StatCard
+              label="Unrealized P/L"
+              value={detail.unrealizedPnlCzk}
+              format="currency"
+              positive={detail.unrealizedPnlCzk >= 0}
+            />
+            <StatCard
+              label="Historical buys"
+              value={detail.summary.buysCzk}
+              format="currency"
+              hint="Z importované historie"
+            />
+            <StatCard
+              label="Dividends"
+              value={detail.summary.dividendsCzk}
+              format="currency"
+              hint="Z importované historie"
+              positive
+            />
+          </>
+        )}
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
@@ -134,7 +161,14 @@ export default async function AssetDetailPage({
           )}
         </SectionCard>
 
-        <SectionCard title="Trade history" subtitle="Nákupy, prodeje a dividendy">
+        <SectionCard
+          title={detail.assetClass === "p2p" ? "Project history" : "Trade history"}
+          subtitle={
+            detail.assetClass === "p2p"
+              ? "Investice, výnosy a splacení jistiny"
+              : "Nákupy, prodeje a dividendy"
+          }
+        >
           {detail.transactions.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] border-collapse text-left">
@@ -202,12 +236,20 @@ export default async function AssetDetailPage({
       <section className="mt-4">
         <SectionCard title="Cash-flow summary">
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Buys", detail.summary.buysCzk],
-              ["Sells", detail.summary.sellsCzk],
-              ["Dividends", detail.summary.dividendsCzk],
-              ["Fees", detail.summary.feesCzk],
-            ].map(([label, raw]) => (
+            {(detail.assetClass === "p2p"
+              ? [
+                  ["Principal invested", detail.summary.principalInCzk],
+                  ["Principal returned", detail.summary.principalOutCzk],
+                  ["Received yield", detail.summary.interestCzk],
+                  ["Fees", detail.summary.feesCzk],
+                ]
+              : [
+                  ["Buys", detail.summary.buysCzk],
+                  ["Sells", detail.summary.sellsCzk],
+                  ["Dividends", detail.summary.dividendsCzk],
+                  ["Fees", detail.summary.feesCzk],
+                ]
+            ).map(([label, raw]) => (
               <div
                 key={String(label)}
                 className="rounded-2xl border border-white/7 bg-white/[0.025] p-4"
