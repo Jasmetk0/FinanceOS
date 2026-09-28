@@ -97,6 +97,30 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function historyExternalKey(prefix: string, item: JsonObject): string {
+  const nestedOrder = asObject(item.order);
+  const nestedFill = asObject(item.fill);
+
+  const rawId =
+    prefix === "order"
+      ? stringValue(
+          nestedFill,
+          ["id", "fillId"],
+          stringValue(
+            nestedOrder,
+            ["fillId", "id"],
+            stringValue(item, ["fillId", "id"], cryptoLike(item)),
+          ),
+        )
+      : stringValue(
+          item,
+          ["id", "reference", "referenceId", "transactionId"],
+          cryptoLike(item),
+        );
+
+  return `${prefix}:${rawId}`;
+}
+
 async function fetchPaginated(
   environment: string,
   credentials: Trading212Credentials,
@@ -125,7 +149,7 @@ async function fetchPaginated(
 
     if (stopWhenKnownPrefix && items.length > 0) {
       const ids: string[] = items.map((item: JsonObject) =>
-        `${stopWhenKnownPrefix}:${stringValue(item, ["id", "reference", "referenceId", "transactionId"])}`,
+        historyExternalKey(stopWhenKnownPrefix, item),
       );
       const known = ids.filter((id: string) =>
         getDb()
@@ -166,10 +190,18 @@ export async function syncTrading212() {
 
   const { credentials, environment } = connection;
 
-  const [summaryRaw, positionsRaw] = await Promise.all([
+  const [summaryRaw, positionsRaw, instrumentsRaw] = await Promise.all([
     request<JsonObject>(environment, credentials, "/equity/account/summary"),
     request<unknown[]>(environment, credentials, "/equity/positions"),
+    request<unknown[]>(environment, credentials, "/equity/metadata/instruments"),
   ]);
+
+  const metadataByTicker = new Map<string, JsonObject>();
+  for (const rawInstrument of Array.isArray(instrumentsRaw) ? instrumentsRaw : []) {
+    const metadata = asObject(rawInstrument);
+    const ticker = stringValue(metadata, ["ticker"]);
+    if (ticker) metadataByTicker.set(ticker, metadata);
+  }
 
   const summary = asObject(summaryRaw);
   const cash = asObject(summary.cash);
@@ -226,30 +258,47 @@ export async function syncTrading212() {
     const ticker = stringValue(instrument, ["ticker"], stringValue(position, ["ticker"]));
     if (!ticker) continue;
 
+    const metadata = metadataByTicker.get(ticker) ?? instrument;
     const instrumentCurrency = stringValue(
-      instrument,
-      ["currency", "currencyCode"],
+      metadata,
+      ["currencyCode", "currency"],
+      stringValue(instrument, ["currency", "currencyCode"], currency),
+    ).toUpperCase();
+    const walletImpact = asObject(position.walletImpact);
+    const walletCurrency = stringValue(
+      walletImpact,
+      ["currency"],
       currency,
     ).toUpperCase();
+
     const quantity = numberValue(position, ["quantity"]);
     const averagePrice = numberValue(position, ["averagePricePaid"], 0);
     const currentPrice = numberValue(position, ["currentPrice"], 0);
-    const marketValue = quantity * currentPrice;
-    const cost = quantity * averagePrice;
-    const pnl = marketValue - cost;
+    const fallbackMarketValue = quantity * currentPrice;
+    const fallbackCost = quantity * averagePrice;
+    const marketValue = numberValue(
+      walletImpact,
+      ["currentValue"],
+      fallbackMarketValue,
+    );
+    const pnl = numberValue(
+      walletImpact,
+      ["unrealizedProfitLoss"],
+      marketValue - fallbackCost,
+    );
     const [marketValueCzk, pnlCzk] = await Promise.all([
-      toCzk(marketValue, instrumentCurrency),
-      toCzk(pnl, instrumentCurrency),
+      toCzk(marketValue, Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency),
+      toCzk(pnl, Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency),
     ]);
 
     const assetIdValue = upsertAsset({
       provider: "trading212",
       externalId: ticker,
       symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
-      name: stringValue(instrument, ["name", "shortName"], ticker),
-      assetClass: mapAssetClass(stringValue(instrument, ["type"], "OTHER")),
+      name: stringValue(metadata, ["name", "shortName"], ticker),
+      assetClass: mapAssetClass(stringValue(metadata, ["type"], "OTHER")),
       currency: instrumentCurrency,
-      raw: instrument,
+      raw: metadata,
     });
 
     holdings.push({
@@ -258,7 +307,7 @@ export async function syncTrading212() {
       quantity,
       averagePrice,
       currentPrice,
-      currency: instrumentCurrency,
+      currency: Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency,
       marketValue,
       marketValueCzk,
       unrealizedPnl: pnl,
@@ -289,44 +338,96 @@ export async function syncTrading212() {
     ),
   ]);
 
-  for (const order of orders) {
-    const id = stringValue(order, ["id"], cryptoLike(order));
-    const externalId = `order:${id}`;
-    const side = stringValue(order, ["side"]).toUpperCase();
-    const status = stringValue(order, ["status"]).toUpperCase();
+  for (const item of orders) {
+    const nestedOrder = asObject(item.order);
+    const nestedFill = asObject(item.fill);
+    const order = Object.keys(nestedOrder).length ? nestedOrder : item;
+    const fill = Object.keys(nestedFill).length ? nestedFill : item;
+    const walletImpact = asObject(fill.walletImpact);
+
+    const externalId = historyExternalKey("order", item);
+    const rawQuantity = numberValue(
+      fill,
+      ["quantity"],
+      numberValue(
+        order,
+        ["filledQuantity", "quantity", "orderedQuantity"],
+        numberValue(item, ["filledQuantity", "orderedQuantity", "quantity"]),
+      ),
+    );
+    const explicitSide = stringValue(order, ["side"], stringValue(item, ["side"])).toUpperCase();
+    const side =
+      explicitSide ||
+      (rawQuantity < 0 ? "SELL" : "BUY");
+    const status = stringValue(order, ["status"], stringValue(item, ["status"])).toUpperCase();
     if (status && !["FILLED", "PARTIALLY_FILLED"].includes(status)) continue;
 
     const instrument = asObject(order.instrument);
-    const ticker = stringValue(order, ["ticker"], stringValue(instrument, ["ticker"]));
-    const orderCurrency = stringValue(order, ["currency"], currency).toUpperCase();
-    const quantity = numberValue(order, ["filledQuantity", "quantity"]);
-    const filledValue = numberValue(order, ["filledValue", "value"]);
-    const price = quantity ? Math.abs(filledValue / quantity) : numberValue(order, ["price"]);
-    const occurredAt = stringValue(
+    const ticker = stringValue(
       order,
-      ["filledAt", "executedAt", "dateExecuted", "createdAt"],
-      new Date().toISOString(),
+      ["ticker"],
+      stringValue(item, ["ticker"], stringValue(instrument, ["ticker"])),
     );
-    let assetIdValue: string | null = null;
+    const metadata = ticker ? metadataByTicker.get(ticker) ?? instrument : instrument;
+    const instrumentCurrency = stringValue(
+      metadata,
+      ["currencyCode", "currency"],
+      stringValue(instrument, ["currency"], currency),
+    ).toUpperCase();
+    const walletCurrency = stringValue(
+      walletImpact,
+      ["currency"],
+      stringValue(order, ["currency"], currency),
+    ).toUpperCase();
 
-    if (ticker) {
-      assetIdValue = assetId("trading212", ticker);
-      const exists = getDb().prepare("SELECT id FROM assets WHERE id = ?").get(assetIdValue);
-      if (!exists) {
-        assetIdValue = upsertAsset({
-          provider: "trading212",
-          externalId: ticker,
-          symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
-          name: stringValue(instrument, ["name"], ticker),
-          assetClass: "other",
-          currency: orderCurrency,
-          raw: instrument,
-        });
-      }
-    }
-
+    const quantity = Math.abs(rawQuantity);
+    const price = numberValue(
+      fill,
+      ["price"],
+      numberValue(item, ["fillPrice", "price"], numberValue(order, ["price"])),
+    );
+    const walletNetValue = numberValue(walletImpact, ["netValue"], Number.NaN);
+    const filledValue = numberValue(
+      order,
+      ["filledValue", "value"],
+      numberValue(item, ["filledValue", "value"]),
+    );
+    const hasWalletValue = Number.isFinite(walletNetValue) && walletNetValue !== 0;
+    const absoluteAmount = hasWalletValue
+      ? Math.abs(walletNetValue)
+      : filledValue
+        ? Math.abs(filledValue)
+        : Math.abs(quantity * price);
+    const amountCurrency = hasWalletValue
+      ? walletCurrency
+      : filledValue
+        ? stringValue(order, ["currency"], currency).toUpperCase()
+        : instrumentCurrency;
     const signedAmount =
-      side === "BUY" ? -Math.abs(filledValue) : Math.abs(filledValue);
+      side === "SELL" ? Math.abs(absoluteAmount) : -Math.abs(absoluteAmount);
+
+    const occurredAt = stringValue(
+      fill,
+      ["filledAt"],
+      stringValue(
+        item,
+        ["dateExecuted", "dateModified", "dateCreated", "filledAt", "createdAt"],
+        stringValue(order, ["createdAt"], new Date().toISOString()),
+      ),
+    );
+
+    let assetIdValue: string | null = null;
+    if (ticker) {
+      assetIdValue = upsertAsset({
+        provider: "trading212",
+        externalId: ticker,
+        symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
+        name: stringValue(metadata, ["name", "shortName"], ticker),
+        assetClass: mapAssetClass(stringValue(metadata, ["type"], "OTHER")),
+        currency: instrumentCurrency,
+        raw: metadata,
+      });
+    }
 
     upsertTransaction({
       provider: "trading212",
@@ -334,14 +435,14 @@ export async function syncTrading212() {
       externalId,
       kind: side === "SELL" ? "sell" : "buy",
       occurredAt,
-      currency: orderCurrency,
+      currency: amountCurrency,
       amount: signedAmount,
-      amountCzk: await maybeToCzk(signedAmount, orderCurrency),
+      amountCzk: await maybeToCzk(signedAmount, amountCurrency),
       assetId: assetIdValue,
       quantity,
       price,
-      fee: numberValue(order, ["fee", "fxFee"], 0),
-      raw: order,
+      fee: 0,
+      raw: item,
     });
   }
 
@@ -370,7 +471,16 @@ export async function syncTrading212() {
 
     let assetIdValue: string | null = null;
     if (ticker) {
-      assetIdValue = assetId("trading212", ticker);
+      const metadata = metadataByTicker.get(ticker) ?? {};
+      assetIdValue = upsertAsset({
+        provider: "trading212",
+        externalId: ticker,
+        symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
+        name: stringValue(metadata, ["name", "shortName"], ticker),
+        assetClass: mapAssetClass(stringValue(metadata, ["type"], "OTHER")),
+        currency: stringValue(metadata, ["currencyCode", "currency"], dividendCurrency).toUpperCase(),
+        raw: metadata,
+      });
     }
 
     upsertTransaction({
