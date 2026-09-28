@@ -16,6 +16,8 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       defaultCurrency?: unknown;
+      positiveKind?: unknown;
+      negativeKind?: unknown;
       rows?: unknown;
     };
 
@@ -25,6 +27,8 @@ export async function POST(request: Request) {
 
     const result = await importCashFlow({
       defaultCurrency: String(body.defaultCurrency || "CZK"),
+      positiveKind: String(body.positiveKind || "income"),
+      negativeKind: String(body.negativeKind || "expense"),
       rows,
     });
 
