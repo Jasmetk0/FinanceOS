@@ -177,6 +177,12 @@ function finiteOptional(value: number | null | undefined) {
     : null;
 }
 
+function statementDate(row: InvestownImportRow, occurredIso: string) {
+  const original = normalize(row.occurredAt);
+  const match = original.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] || occurredIso.slice(0, 10);
+}
+
 export async function importInvestown(input: InvestownImportInput) {
   const accountCurrency = input.accountCurrency?.trim().toUpperCase() || "CZK";
 
@@ -455,7 +461,7 @@ export async function importInvestown(input: InvestownImportInput) {
       runningPrincipal += item.principalDelta;
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
 
-      const date = item.occurredIso.slice(0, 10);
+      const date = statementDate(item.row, item.occurredIso);
       lastDate = date;
       snapshots.set(date, {
         cash: Math.max(0, runningWallet),
