@@ -848,3 +848,136 @@ export function getAssetDetail(symbolInput: string) {
     },
   };
 }
+
+
+export function getHistoryData() {
+  const db = getDb();
+
+  const snapshotRows = db
+    .prepare(`
+      SELECT recorded_at, SUM(total_value_czk) AS total
+      FROM snapshots
+      GROUP BY recorded_at
+      ORDER BY recorded_at ASC
+    `)
+    .all()
+    .map((row) => ({
+      date: String(row.recorded_at),
+      valueCzk: num(row.total),
+    }));
+
+  const flowRows = db
+    .prepare(`
+      SELECT
+        substr(t.occurred_at, 1, 10) AS day,
+        t.kind,
+        SUM(ABS(t.amount_czk)) AS amount
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.amount_czk IS NOT NULL
+        AND t.kind IN ('deposit', 'withdrawal')
+      GROUP BY day, t.kind
+      ORDER BY day ASC
+    `)
+    .all();
+
+  const flowByDay = new Map<
+    string,
+    { depositsCzk: number; withdrawalsCzk: number }
+  >();
+
+  for (const row of flowRows) {
+    const day = String(row.day);
+    const current = flowByDay.get(day) ?? {
+      depositsCzk: 0,
+      withdrawalsCzk: 0,
+    };
+    if (String(row.kind) === "deposit") {
+      current.depositsCzk += num(row.amount);
+    } else {
+      current.withdrawalsCzk += num(row.amount);
+    }
+    flowByDay.set(day, current);
+  }
+
+  let cumulative = 0;
+  const contributionSeries = [...flowByDay.entries()].map(([date, flow]) => {
+    cumulative += flow.depositsCzk - flow.withdrawalsCzk;
+    return {
+      date,
+      depositsCzk: flow.depositsCzk,
+      withdrawalsCzk: flow.withdrawalsCzk,
+      netFlowCzk: flow.depositsCzk - flow.withdrawalsCzk,
+      cumulativeNetContributedCzk: cumulative,
+    };
+  });
+
+  const coverage = db
+    .prepare(`
+      SELECT
+        a.id,
+        a.provider,
+        a.name,
+        a.type,
+        COUNT(DISTINCT t.id) AS transaction_count,
+        MIN(t.occurred_at) AS oldest_transaction,
+        MAX(t.occurred_at) AS newest_transaction,
+        COUNT(DISTINCT s.recorded_at) AS snapshot_count,
+        MIN(s.recorded_at) AS first_snapshot,
+        MAX(s.recorded_at) AS last_snapshot
+      FROM accounts a
+      LEFT JOIN transactions t ON t.account_id = a.id
+      LEFT JOIN snapshots s ON s.account_id = a.id
+      GROUP BY a.id, a.provider, a.name, a.type
+      ORDER BY a.name ASC
+    `)
+    .all()
+    .map((row) => ({
+      id: String(row.id),
+      provider: String(row.provider),
+      name: String(row.name),
+      type: String(row.type),
+      transactionCount: num(row.transaction_count),
+      oldestTransaction: row.oldest_transaction
+        ? String(row.oldest_transaction)
+        : null,
+      newestTransaction: row.newest_transaction
+        ? String(row.newest_transaction)
+        : null,
+      snapshotCount: num(row.snapshot_count),
+      firstSnapshot: row.first_snapshot ? String(row.first_snapshot) : null,
+      lastSnapshot: row.last_snapshot ? String(row.last_snapshot) : null,
+    }));
+
+  const oldestKnownTransaction = coverage
+    .map((item) => item.oldestTransaction)
+    .filter((value): value is string => Boolean(value))
+    .sort()[0] ?? null;
+
+  const firstSnapshot = snapshotRows[0]?.date ?? null;
+  const latestSnapshot = snapshotRows.at(-1)?.date ?? null;
+
+  const depositsCzk = contributionSeries.reduce(
+    (sum, item) => sum + item.depositsCzk,
+    0,
+  );
+  const withdrawalsCzk = contributionSeries.reduce(
+    (sum, item) => sum + item.withdrawalsCzk,
+    0,
+  );
+
+  return {
+    snapshots: snapshotRows,
+    contributions: contributionSeries,
+    coverage,
+    summary: {
+      oldestKnownTransaction,
+      firstSnapshot,
+      latestSnapshot,
+      depositsCzk,
+      withdrawalsCzk,
+      netContributedCzk: depositsCzk - withdrawalsCzk,
+    },
+  };
+}
