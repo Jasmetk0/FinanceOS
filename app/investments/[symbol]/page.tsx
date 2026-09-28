@@ -39,6 +39,54 @@ export default async function AssetDetailPage({
         </div>
       </div>
 
+      {detail.assetClass === "p2p" && detail.metadata ? (
+        <section className="mt-5 rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div>
+              <p className="text-xs text-[var(--muted)]">Úvěr</p>
+              <p className="mt-1 text-sm font-medium">
+                {detail.metadata.loanName || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Typ projektu</p>
+              <p className="mt-1 text-sm font-medium">
+                {detail.metadata.projectType || "—"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Celkem vložená jistina</p>
+              <p className="mt-1 font-mono text-sm">
+                {(detail.metadata.investedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                Kč
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-[var(--muted)]">Vrácená jistina</p>
+              <p className="mt-1 font-mono text-sm">
+                {(detail.metadata.returnedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                })}{" "}
+                Kč
+              </p>
+            </div>
+          </div>
+
+          {detail.metadata.projectUrl ? (
+            <a
+              href={detail.metadata.projectUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-[var(--accent)] transition hover:border-[var(--accent)]/30"
+            >
+              Otevřít projekt v Investownu ↗
+            </a>
+          ) : null}
+        </section>
+      ) : null}
+
       <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Current value"
