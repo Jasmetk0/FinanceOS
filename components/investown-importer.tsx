@@ -28,6 +28,8 @@ const PRINCIPAL_OUT = new Set([
   "Částečné splacení jistiny",
   "Odstoupení",
 ]);
+const OFFER_LOCK = new Set(["Nabídka ke koupi"]);
+const OFFER_UNLOCK = new Set(["Vrácení nabídky"]);
 
 const inputClass =
   "mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
@@ -331,6 +333,7 @@ export function InvestownImporter() {
 
     let wallet = 0;
     let principal = 0;
+    let reserved = 0;
     const projects = new Set<string>();
     const types = new Set<string>();
     let earliest = "";
@@ -352,15 +355,19 @@ export function InvestownImporter() {
 
       if (PRINCIPAL_IN.has(type)) principal += Math.abs(amount);
       if (PRINCIPAL_OUT.has(type)) principal -= Math.abs(amount);
+      if (OFFER_LOCK.has(type)) reserved += Math.abs(amount);
+      if (OFFER_UNLOCK.has(type)) reserved -= Math.abs(amount);
     }
 
     if (Math.abs(wallet) < 0.005) wallet = 0;
     if (Math.abs(principal) < 0.005) principal = 0;
+    if (Math.abs(reserved) < 0.005) reserved = 0;
 
     return {
       wallet,
       principal: Math.max(0, principal),
-      total: Math.max(0, wallet + principal),
+      reserved: Math.max(0, reserved),
+      total: Math.max(0, wallet + principal + reserved),
       projects: projects.size,
       types: types.size,
       earliest,
@@ -584,6 +591,10 @@ export function InvestownImporter() {
             <Preview label="Projektů" value={preview.projects.toLocaleString("cs-CZ")} />
             <Preview label="Typů transakcí" value={preview.types.toLocaleString("cs-CZ")} />
             <Preview label="Aktivní jistina" value={money(preview.principal)} />
+            <Preview
+              label="Rezervované nabídky"
+              value={money(preview.reserved)}
+            />
             <Preview label="Odhad hodnoty" value={money(preview.total)} />
           </div>
         ) : null}
