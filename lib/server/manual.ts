@@ -21,25 +21,28 @@ const allowedKinds = new Set<TransactionKind>([
 ]);
 
 function recalculateManualAccount(accountIdValue: string) {
-  recalculateManualAccount(accountIdValue);
-}
+  // Manual income/expense entries form a cash-flow journal. They are not a
+  // substitute for the current bank/cash balance, otherwise salary and gifts
+  // would be double-counted in net worth when a real/manual balance is tracked.
+  upsertAccount({
+    provider: "manual",
+    externalId: "main",
+    name: "Cash Flow Ledger",
+    type: "manual",
+    currency: "CZK",
+    cashValue: 0,
+    investedValue: 0,
+    totalValue: 0,
+    realizedPnl: 0,
+    unrealizedPnl: 0,
+    cashValueCzk: 0,
+    investedValueCzk: 0,
+    totalValueCzk: 0,
+    realizedPnlCzk: 0,
+    unrealizedPnlCzk: 0,
+  });
 
-export function deleteManualTransaction(id: string) {
-  const db = getDb();
-  const row = db
-    .prepare("SELECT id, account_id, provider FROM transactions WHERE id = ?")
-    .get(id);
-
-  if (!row) {
-    throw new Error("Transaction was not found.");
-  }
-  if (String(row.provider) !== "manual") {
-    throw new Error("Only manual transactions can be deleted.");
-  }
-
-  const accountIdValue = String(row.account_id);
-  db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
-  recalculateManualAccount(accountIdValue);
+  recordSnapshot(accountIdValue);
 }
 
 export async function addManualTransaction(input: {
@@ -90,32 +93,23 @@ export async function addManualTransaction(input: {
     sourceLabel: input.sourceLabel?.trim() || null,
   });
 
-  const totalRow = getDb()
-    .prepare(`
-      SELECT COALESCE(SUM(amount_czk), 0) AS total
-      FROM transactions
-      WHERE account_id = ?
-    `)
-    .get(accountIdValue);
-  const totalCzk = Number(totalRow?.total ?? 0);
+  recalculateManualAccount(accountIdValue);
+}
 
-  upsertAccount({
-    provider: "manual",
-    externalId: "main",
-    name: "Manual",
-    type: "manual",
-    currency: "CZK",
-    cashValue: totalCzk,
-    investedValue: 0,
-    totalValue: totalCzk,
-    realizedPnl: 0,
-    unrealizedPnl: 0,
-    cashValueCzk: totalCzk,
-    investedValueCzk: 0,
-    totalValueCzk: totalCzk,
-    realizedPnlCzk: 0,
-    unrealizedPnlCzk: 0,
-  });
+export function deleteManualTransaction(id: string) {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id, account_id, provider FROM transactions WHERE id = ?")
+    .get(id);
 
-  recordSnapshot(accountIdValue);
+  if (!row) {
+    throw new Error("Transaction was not found.");
+  }
+  if (String(row.provider) !== "manual") {
+    throw new Error("Only manual transactions can be deleted.");
+  }
+
+  const accountIdValue = String(row.account_id);
+  db.prepare("DELETE FROM transactions WHERE id = ?").run(id);
+  recalculateManualAccount(accountIdValue);
 }
