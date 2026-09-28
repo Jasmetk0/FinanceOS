@@ -26,6 +26,8 @@ export async function addManualTransaction(input: {
   currency: string;
   occurredAt: string;
   note?: string;
+  category?: string;
+  sourceLabel?: string;
 }) {
   const kind = input.kind as TransactionKind;
   if (!allowedKinds.has(kind)) {
@@ -62,6 +64,8 @@ export async function addManualTransaction(input: {
     amount,
     amountCzk,
     note: input.note?.trim() || null,
+    category: input.category?.trim() || null,
+    sourceLabel: input.sourceLabel?.trim() || null,
   });
 
   const totalRow = getDb()
