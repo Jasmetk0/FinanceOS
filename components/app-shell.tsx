@@ -9,6 +9,7 @@ const navigation = [
   { href: "/", label: "Dashboard", short: "DB" },
   { href: "/investments", label: "Investments", short: "IN" },
   { href: "/performance", label: "Performance", short: "PF" },
+  { href: "/history", label: "History", short: "HI" },
   { href: "/insights", label: "Insights", short: "IS" },
   { href: "/analyst", label: "Analyst", short: "AI" },
   { href: "/transactions", label: "Transactions", short: "TX" },
