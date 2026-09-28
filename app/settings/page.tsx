@@ -37,12 +37,20 @@ export default function SettingsPage() {
           title="Data export"
           subtitle="Export neobsahuje API secrets ani encryption key"
         >
-          <a
-            href="/api/export"
-            className="inline-flex rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
-          >
-            Export all data (.json)
-          </a>
+          <div className="flex flex-wrap gap-3">
+            <a
+              href="/api/export"
+              className="inline-flex rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
+            >
+              Export all data (.json)
+            </a>
+            <a
+              href="/api/export/transactions"
+              className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white"
+            >
+              Export transactions (.csv)
+            </a>
+          </div>
         </SectionCard>
 
         <SectionCard title="Storage & security">
