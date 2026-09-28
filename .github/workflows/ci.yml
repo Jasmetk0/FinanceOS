@@ -31,3 +31,31 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: SQLite runtime smoke test
+        shell: pwsh
+        run: |
+          node -e "const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(':memory:'); db.exec('CREATE TABLE smoke(id INTEGER); INSERT INTO smoke VALUES (1);'); const row = db.prepare('SELECT id FROM smoke').get(); if (row.id !== 1) process.exit(1); db.close();"
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path scripts -Filter *.ps1 -File -Recurse | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $_.FullName,
+              [ref]$tokens,
+              [ref]$errors
+            ) | Out-Null
+
+            if ($errors.Count -gt 0) {
+              $failed = $true
+              Write-Host "::error file=$($_.FullName)::$($errors -join '; ')"
+            }
+          }
+
+          if ($failed) {
+            exit 1
+          }
