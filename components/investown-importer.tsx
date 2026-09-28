@@ -1,12 +1,36 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type CsvData = {
   headers: string[];
   rows: string[][];
 };
+
+type MappingSetter = (value: string) => void;
+
+const INVESTOWN_HEADERS = [
+  "Datum",
+  "Časová zóna",
+  "Typ",
+  "Detail",
+  "Částka [CZK]",
+  "Úvěr",
+  "Název projektu",
+  "Odkaz na projekt",
+  "Typ projektu",
+] as const;
+
+const PRINCIPAL_IN = new Set(["Investice", "Autoinvestice"]);
+const PRINCIPAL_OUT = new Set([
+  "Splacení jistiny",
+  "Částečné splacení jistiny",
+  "Odstoupení",
+]);
+
+const inputClass =
+  "mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
 
 function delimiterFor(line: string) {
   const choices = [",", ";", "\t"];
@@ -61,10 +85,7 @@ function parseCsv(text: string): CsvData {
     throw new Error("CSV musí obsahovat hlavičku a alespoň jeden datový řádek.");
   }
 
-  return {
-    headers: rows[0],
-    rows: rows.slice(1),
-  };
+  return { headers: rows[0], rows: rows.slice(1) };
 }
 
 function normalize(value: string) {
@@ -77,7 +98,6 @@ function normalize(value: string) {
 
 function autoColumn(headers: string[], aliases: string[]) {
   const wanted = aliases.map(normalize);
-
   return (
     headers.find((header) => {
       const value = normalize(header);
@@ -113,13 +133,24 @@ function parseNumber(value: string) {
   return negativeByParentheses ? -Math.abs(parsed) : parsed;
 }
 
-function parseDate(value: string) {
-  const direct = new Date(value);
+function parseDate(value: string, timezone?: string) {
+  const trimmed = value.trim();
+  const zone = (timezone || "").trim();
+
+  if (
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed) &&
+    /^[+-]\d{2}:\d{2}$/.test(zone)
+  ) {
+    const zoned = new Date(trimmed.replace(" ", "T") + zone);
+    if (!Number.isNaN(zoned.getTime())) return zoned.toISOString();
+  }
+
+  const direct = new Date(trimmed);
   if (!Number.isNaN(direct.getTime())) return direct.toISOString();
 
-  const match = value
-    .trim()
-    .match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  const match = trimmed.match(
+    /^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/,
+  );
 
   if (!match) return value;
 
@@ -133,16 +164,39 @@ function parseDate(value: string) {
   ).toISOString();
 }
 
+function isNativeInvestown(headers: string[]) {
+  const set = new Set(headers.map((header) => header.trim()));
+  return INVESTOWN_HEADERS.every((header) => set.has(header));
+}
+
+function money(value: number) {
+  return value.toLocaleString("cs-CZ", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }) + " Kč";
+}
+
+function optionalNumber(value: FormDataEntryValue | null) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const parsed = Number(text.replace(",", "."));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function InvestownImporter() {
   const router = useRouter();
   const [csv, setCsv] = useState<CsvData | null>(null);
   const [filename, setFilename] = useState("");
+  const [nativeFormat, setNativeFormat] = useState(false);
   const [dateColumn, setDateColumn] = useState("");
+  const [timezoneColumn, setTimezoneColumn] = useState("");
   const [amountColumn, setAmountColumn] = useState("");
   const [currencyColumn, setCurrencyColumn] = useState("");
   const [typeColumn, setTypeColumn] = useState("");
   const [descriptionColumn, setDescriptionColumn] = useState("");
+  const [loanColumn, setLoanColumn] = useState("");
   const [projectColumn, setProjectColumn] = useState("");
+  const [projectUrlColumn, setProjectUrlColumn] = useState("");
   const [projectTypeColumn, setProjectTypeColumn] = useState("");
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -151,62 +205,99 @@ export function InvestownImporter() {
   async function load(file: File) {
     try {
       const parsed = parseCsv(await file.text());
+      const native = isNativeInvestown(parsed.headers);
+
       setCsv(parsed);
       setFilename(file.name);
+      setNativeFormat(native);
 
       setDateColumn(
-        autoColumn(parsed.headers, [
-          "date",
-          "datum",
-          "transaction date",
-          "datum transakce",
-        ]),
+        native
+          ? "Datum"
+          : autoColumn(parsed.headers, [
+              "date",
+              "datum",
+              "transaction date",
+              "datum transakce",
+            ]),
+      );
+      setTimezoneColumn(
+        native
+          ? "Časová zóna"
+          : autoColumn(parsed.headers, ["timezone", "time zone", "časová zóna"]),
       );
       setAmountColumn(
-        autoColumn(parsed.headers, [
-          "amount",
-          "částka",
-          "castka",
-          "výše",
-          "vyse",
-          "transaction amount",
-        ]),
+        native
+          ? "Částka [CZK]"
+          : autoColumn(parsed.headers, [
+              "amount",
+              "částka",
+              "castka",
+              "výše",
+              "vyse",
+              "transaction amount",
+            ]),
       );
       setCurrencyColumn(
-        autoColumn(parsed.headers, ["currency", "ccy", "měna", "mena"]),
+        native
+          ? ""
+          : autoColumn(parsed.headers, ["currency", "ccy", "měna", "mena"]),
       );
       setTypeColumn(
-        autoColumn(parsed.headers, [
-          "type",
-          "typ",
-          "transaction type",
-          "typ transakce",
-        ]),
+        native
+          ? "Typ"
+          : autoColumn(parsed.headers, [
+              "type",
+              "typ",
+              "transaction type",
+              "typ transakce",
+            ]),
       );
       setDescriptionColumn(
-        autoColumn(parsed.headers, [
-          "description",
-          "details",
-          "poznámka",
-          "poznamka",
-          "popis",
-        ]),
+        native
+          ? "Detail"
+          : autoColumn(parsed.headers, [
+              "description",
+              "details",
+              "detail",
+              "poznámka",
+              "poznamka",
+              "popis",
+            ]),
+      );
+      setLoanColumn(
+        native
+          ? "Úvěr"
+          : autoColumn(parsed.headers, ["loan", "úvěr", "uver"]),
       );
       setProjectColumn(
-        autoColumn(parsed.headers, [
-          "project",
-          "project name",
-          "název projektu",
-          "nazev projektu",
-          "projekt",
-        ]),
+        native
+          ? "Název projektu"
+          : autoColumn(parsed.headers, [
+              "project",
+              "project name",
+              "název projektu",
+              "nazev projektu",
+              "projekt",
+            ]),
+      );
+      setProjectUrlColumn(
+        native
+          ? "Odkaz na projekt"
+          : autoColumn(parsed.headers, [
+              "project url",
+              "url",
+              "odkaz na projekt",
+            ]),
       );
       setProjectTypeColumn(
-        autoColumn(parsed.headers, [
-          "project type",
-          "typ projektu",
-          "kategorie projektu",
-        ]),
+        native
+          ? "Typ projektu"
+          : autoColumn(parsed.headers, [
+              "project type",
+              "typ projektu",
+              "kategorie projektu",
+            ]),
       );
       setIdColumn(
         autoColumn(parsed.headers, [
@@ -222,13 +313,127 @@ export function InvestownImporter() {
     } catch (error) {
       setCsv(null);
       setFilename("");
+      setNativeFormat(false);
       setMessage(error instanceof Error ? error.message : String(error));
     }
   }
 
+  const preview = useMemo(() => {
+    if (!csv) return null;
+
+    const index = (name: string) => (name ? csv.headers.indexOf(name) : -1);
+    const amountIndex = index(amountColumn);
+    const typeIndex = index(typeColumn);
+    const projectIndex = index(projectColumn);
+    const dateIndex = index(dateColumn);
+
+    if (amountIndex < 0 || typeIndex < 0 || dateIndex < 0) return null;
+
+    let wallet = 0;
+    let principal = 0;
+    const projects = new Set<string>();
+    const types = new Set<string>();
+    let earliest = "";
+    let latest = "";
+
+    for (const row of csv.rows) {
+      const amount = parseNumber(String(row[amountIndex] || ""));
+      if (!Number.isFinite(amount)) continue;
+
+      wallet += amount;
+      const type = String(row[typeIndex] || "").trim();
+      const project = projectIndex >= 0 ? String(row[projectIndex] || "").trim() : "";
+      const date = String(row[dateIndex] || "").trim();
+
+      if (type) types.add(type);
+      if (project) projects.add(project);
+      if (date && (!earliest || date < earliest)) earliest = date;
+      if (date && (!latest || date > latest)) latest = date;
+
+      if (PRINCIPAL_IN.has(type)) principal += Math.abs(amount);
+      if (PRINCIPAL_OUT.has(type)) principal -= Math.abs(amount);
+    }
+
+    if (Math.abs(wallet) < 0.005) wallet = 0;
+    if (Math.abs(principal) < 0.005) principal = 0;
+
+    return {
+      wallet,
+      principal: Math.max(0, principal),
+      total: Math.max(0, wallet + principal),
+      projects: projects.size,
+      types: types.size,
+      earliest,
+      latest,
+    };
+  }, [csv, amountColumn, typeColumn, projectColumn, dateColumn]);
+
+  function buildRows(accountCurrency: string) {
+    if (!csv) return [];
+
+    const index = (column: string) =>
+      column ? csv.headers.indexOf(column) : -1;
+
+    const dateIndex = index(dateColumn);
+    const timezoneIndex = index(timezoneColumn);
+    const amountIndex = index(amountColumn);
+    const currencyIndex = index(currencyColumn);
+    const typeIndex = index(typeColumn);
+    const descriptionIndex = index(descriptionColumn);
+    const loanIndex = index(loanColumn);
+    const projectIndex = index(projectColumn);
+    const projectUrlIndex = index(projectUrlColumn);
+    const projectTypeIndex = index(projectTypeColumn);
+    const idIndex = index(idColumn);
+
+    return csv.rows
+      .map((row) => {
+        const timezone =
+          timezoneIndex >= 0 ? String(row[timezoneIndex] || "") : "";
+
+        return {
+          externalId: idIndex >= 0 ? row[idIndex] : undefined,
+          occurredAt: parseDate(String(row[dateIndex] || ""), timezone),
+          timezone: timezone || undefined,
+          amount: parseNumber(String(row[amountIndex] || "")),
+          currency:
+            currencyIndex >= 0
+              ? String(row[currencyIndex] || accountCurrency).toUpperCase()
+              : accountCurrency,
+          type: typeIndex >= 0 ? String(row[typeIndex] || "") : undefined,
+          description:
+            descriptionIndex >= 0
+              ? String(row[descriptionIndex] || "")
+              : undefined,
+          loanName: loanIndex >= 0 ? String(row[loanIndex] || "") : undefined,
+          projectName:
+            projectIndex >= 0 ? String(row[projectIndex] || "") : undefined,
+          projectUrl:
+            projectUrlIndex >= 0
+              ? String(row[projectUrlIndex] || "")
+              : undefined,
+          projectType:
+            projectTypeIndex >= 0
+              ? String(row[projectTypeIndex] || "")
+              : undefined,
+        };
+      })
+      .filter(
+        (row) =>
+          row.occurredAt &&
+          Number.isFinite(row.amount) &&
+          row.currency,
+      );
+  }
+
   async function submit(form: HTMLFormElement) {
-    if (csv && (!dateColumn || !amountColumn)) {
-      setMessage("Pro import historie namapuj minimálně Date a Amount.");
+    if (!csv) {
+      setMessage("Nejdřív vyber Investown CSV soubor.");
+      return;
+    }
+
+    if (!dateColumn || !amountColumn || !typeColumn) {
+      setMessage("Namapuj minimálně Date, Amount a Type.");
       return;
     }
 
@@ -236,48 +441,7 @@ export function InvestownImporter() {
     const accountCurrency = String(
       data.get("accountCurrency") || "CZK",
     ).toUpperCase();
-
-    const index = (column: string) =>
-      csv && column ? csv.headers.indexOf(column) : -1;
-
-    const dateIndex = index(dateColumn);
-    const amountIndex = index(amountColumn);
-    const currencyIndex = index(currencyColumn);
-    const typeIndex = index(typeColumn);
-    const descriptionIndex = index(descriptionColumn);
-    const projectIndex = index(projectColumn);
-    const projectTypeIndex = index(projectTypeColumn);
-    const idIndex = index(idColumn);
-
-    const rows = csv
-      ? csv.rows
-          .map((row) => ({
-            externalId: idIndex >= 0 ? row[idIndex] : undefined,
-            occurredAt: parseDate(String(row[dateIndex] || "")),
-            amount: parseNumber(String(row[amountIndex] || "")),
-            currency:
-              currencyIndex >= 0
-                ? String(row[currencyIndex] || accountCurrency).toUpperCase()
-                : accountCurrency,
-            type: typeIndex >= 0 ? String(row[typeIndex] || "") : undefined,
-            description:
-              descriptionIndex >= 0
-                ? String(row[descriptionIndex] || "")
-                : undefined,
-            projectName:
-              projectIndex >= 0 ? String(row[projectIndex] || "") : undefined,
-            projectType:
-              projectTypeIndex >= 0
-                ? String(row[projectTypeIndex] || "")
-                : undefined,
-          }))
-          .filter(
-            (row) =>
-              row.occurredAt &&
-              Number.isFinite(row.amount) &&
-              row.currency,
-          )
-      : [];
+    const rows = buildRows(accountCurrency);
 
     setBusy(true);
     setMessage(null);
@@ -288,9 +452,11 @@ export function InvestownImporter() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountCurrency,
-          currentValue: Number(data.get("currentValue")),
-          walletCash: Number(data.get("walletCash") || 0),
+          currentValue: optionalNumber(data.get("currentValue")),
+          walletCash: optionalNumber(data.get("walletCash")),
           rows,
+          replaceExisting: true,
+          sourceFormat: nativeFormat ? "investown-native" : "mapped",
         }),
       });
 
@@ -298,26 +464,40 @@ export function InvestownImporter() {
         result?: {
           imported: number;
           skipped: number;
+          derived: {
+            walletCashCzk: number;
+            investedPrincipalCzk: number;
+            totalValueCzk: number;
+            activeProjects: number;
+            allProjects: number;
+          };
+          effective: {
+            walletCashCzk: number;
+            investedValueCzk: number;
+            totalValueCzk: number;
+          };
+          coverage: {
+            unknownTypes: string[];
+          };
         };
         error?: string;
       };
 
-      if (!response.ok) {
+      if (!response.ok || !payload.result) {
         throw new Error(payload.error || "Investown import selhal.");
       }
 
+      const unknown = payload.result.coverage.unknownTypes;
       setMessage(
-        rows.length
-          ? "Investown aktualizován · " +
-              String(payload.result?.imported ?? rows.length) +
-              " importovaných řádků" +
-              (payload.result?.skipped
-                ? " · " +
-                  String(payload.result.skipped) +
-                  " přeskočeno"
-                : "") +
-              "."
-          : "Aktuální hodnota Investownu byla uložena.",
+        "Hotovo · " +
+          payload.result.imported.toLocaleString("cs-CZ") +
+          " transakcí · " +
+          payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
+          " aktivních projektů · hodnota " +
+          money(payload.result.effective.totalValueCzk) +
+          (unknown.length
+            ? " · Neznámé typy: " + unknown.join(", ")
+            : " · Všechny typy transakcí rozpoznány."),
       );
 
       router.refresh();
@@ -328,32 +508,35 @@ export function InvestownImporter() {
     }
   }
 
-  const selectors = csv
+  const selectors: Array<[string, string, MappingSetter]> = csv && !nativeFormat
     ? [
         ["Date *", dateColumn, setDateColumn],
+        ["Timezone", timezoneColumn, setTimezoneColumn],
         ["Amount *", amountColumn, setAmountColumn],
         ["Currency", currencyColumn, setCurrencyColumn],
-        ["Type", typeColumn, setTypeColumn],
-        ["Project", projectColumn, setProjectColumn],
-        ["Project type", projectTypeColumn, setProjectTypeColumn],
+        ["Type *", typeColumn, setTypeColumn],
         ["Description", descriptionColumn, setDescriptionColumn],
+        ["Loan", loanColumn, setLoanColumn],
+        ["Project", projectColumn, setProjectColumn],
+        ["Project URL", projectUrlColumn, setProjectUrlColumn],
+        ["Project type", projectTypeColumn, setProjectTypeColumn],
         ["External ID", idColumn, setIdColumn],
-      ] as const
+      ]
     : [];
 
   return (
     <article className="rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Investown import</h2>
+          <h2 className="text-lg font-semibold">Investown</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-            Aktuální hodnotu a peněženku můžeš aktualizovat ručně. Pokud přidáš
-            Investown CSV výkaz transakcí, FinanceOS navíc importuje historii,
-            výnosy a projekty a pokusí se typy transakcí automaticky rozpoznat.
+            Nahraj originální CSV historii z Investownu. FinanceOS z ní načte
+            transakce, výnosy, bonusové výnosy, vklady, výběry, investice,
+            splacení jistiny, sekundární nabídky i jednotlivé projekty.
           </p>
         </div>
-        <span className="rounded-full border border-[var(--warning)]/25 bg-[var(--warning)]/8 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-[var(--warning)]">
-          CSV / balance
+        <span className="rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/8 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-[var(--accent)]">
+          Native CSV
         </span>
       </div>
 
@@ -364,43 +547,12 @@ export function InvestownImporter() {
           void submit(event.currentTarget);
         }}
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Account currency">
-            <input
-              name="accountCurrency"
-              defaultValue="CZK"
-              required
-              className="input"
-            />
-          </Field>
-          <Field label="Current total value">
-            <input
-              name="currentValue"
-              type="number"
-              step="0.01"
-              min="0"
-              required
-              className="input"
-            />
-          </Field>
-          <Field label="Wallet cash">
-            <input
-              name="walletCash"
-              type="number"
-              step="0.01"
-              min="0"
-              defaultValue="0"
-              className="input"
-            />
-          </Field>
-        </div>
-
         <label className="block rounded-2xl border border-dashed border-white/12 bg-white/[0.015] p-5 text-center">
           <span className="block text-sm font-medium">
-            {filename || "Vyber Investown CSV výkaz"}
+            {filename || "Vyber Investown CSV historii"}
           </span>
           <span className="mt-1 block text-xs text-[var(--muted)]">
-            Volitelné · mapování sloupců zkontroluješ před importem
+            Originální Investown export se rozpozná a namapuje automaticky.
           </span>
           <input
             type="file"
@@ -413,64 +565,127 @@ export function InvestownImporter() {
           />
         </label>
 
-        {csv ? (
-          <>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {selectors.map(([label, value, setter]) => (
-                <Field key={label} label={label}>
-                  <select
-                    value={value}
-                    onChange={(event) => setter(event.target.value)}
-                    className="input"
-                  >
-                    <option value="">— not mapped —</option>
-                    {csv.headers.map((header) => (
-                      <option key={header} value={header}>
-                        {header}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              ))}
-            </div>
+        {csv && nativeFormat ? (
+          <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-4">
+            <p className="text-sm font-semibold text-[var(--accent)]">
+              Originální Investown export rozpoznán ✓
+            </p>
+            <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+              Všech 9 sloupců bylo namapováno automaticky včetně časové zóny,
+              úvěru, názvu projektu, odkazu a typu projektu.
+            </p>
+          </div>
+        ) : null}
 
-            <div className="overflow-x-auto rounded-2xl border border-white/7">
-              <table className="min-w-full border-collapse text-left text-xs">
-                <thead className="bg-white/[0.025] text-[var(--muted)]">
-                  <tr>
-                    {csv.headers.map((header) => (
-                      <th
+        {preview ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <Preview label="Řádků" value={csv?.rows.length.toLocaleString("cs-CZ") || "0"} />
+            <Preview label="Projektů" value={preview.projects.toLocaleString("cs-CZ")} />
+            <Preview label="Typů transakcí" value={preview.types.toLocaleString("cs-CZ")} />
+            <Preview label="Aktivní jistina" value={money(preview.principal)} />
+            <Preview label="Odhad hodnoty" value={money(preview.total)} />
+          </div>
+        ) : null}
+
+        {preview ? (
+          <p className="text-xs leading-5 text-[var(--muted)]">
+            Pokrytí výpisu: {preview.earliest || "—"} → {preview.latest || "—"}.
+            Odhad peněženky z kompletní historie: {money(preview.wallet)}.
+          </p>
+        ) : null}
+
+        {selectors.length ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {selectors.map(([label, value, setter]) => (
+              <Field key={label} label={label}>
+                <select
+                  value={value}
+                  onChange={(event) => setter(event.target.value)}
+                  className={inputClass}
+                >
+                  <option value="">— not mapped —</option>
+                  {csv?.headers.map((header) => (
+                    <option key={header} value={header}>
+                      {header}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            ))}
+          </div>
+        ) : null}
+
+        {csv ? (
+          <div className="overflow-x-auto rounded-2xl border border-white/7">
+            <table className="min-w-full border-collapse text-left text-xs">
+              <thead className="bg-white/[0.025] text-[var(--muted)]">
+                <tr>
+                  {csv.headers.map((header) => (
+                    <th
+                      key={header}
+                      className="whitespace-nowrap px-3 py-2 font-medium"
+                    >
+                      {header}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {csv.rows.slice(0, 4).map((row, rowIndex) => (
+                  <tr key={rowIndex} className="border-t border-white/6">
+                    {csv.headers.map((header, columnIndex) => (
+                      <td
                         key={header}
-                        className="whitespace-nowrap px-3 py-2 font-medium"
+                        className="max-w-[260px] truncate whitespace-nowrap px-3 py-2 text-[var(--muted)]"
                       >
-                        {header}
-                      </th>
+                        {row[columnIndex] || ""}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {csv.rows.slice(0, 4).map((row, rowIndex) => (
-                    <tr key={rowIndex} className="border-t border-white/6">
-                      {csv.headers.map((header, columnIndex) => (
-                        <td
-                          key={header}
-                          className="max-w-[260px] truncate whitespace-nowrap px-3 py-2 text-[var(--muted)]"
-                        >
-                          {row[columnIndex] || ""}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <p className="text-xs leading-5 text-[var(--muted)]">
-              Načteno {csv.rows.length.toLocaleString("cs-CZ")} řádků.
-              Opakovaný import stejných transakcí nevytváří duplicity.
-            </p>
-          </>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
+
+        <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+          <p className="text-sm font-medium">Current balance override</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
+            U kompletního Investown CSV nech obě hodnoty prázdné. FinanceOS
+            dopočítá peněženku, nesplacenou jistinu i celkovou hodnotu sám.
+            Override použij jen u neúplného výpisu.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Field label="Account currency">
+              <input
+                name="accountCurrency"
+                defaultValue="CZK"
+                required
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Current total value (optional)">
+              <input
+                name="currentValue"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Auto from statement"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Wallet cash (optional)">
+              <input
+                name="walletCash"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Auto from statement"
+                className={inputClass}
+              />
+            </Field>
+          </div>
+        </div>
 
         {message ? (
           <p className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-xs leading-5">
@@ -480,35 +695,18 @@ export function InvestownImporter() {
 
         <button
           type="submit"
-          disabled={busy}
+          disabled={busy || !csv}
           className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy
-            ? "Ukládám…"
-            : csv
-              ? "Update balance & import Investown"
-              : "Update Investown balance"}
+          {busy ? "Zpracovávám celý výpis…" : "Importovat Investown kompletně"}
         </button>
       </form>
 
       <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-        FinanceOS nepoužívá neveřejné Investown endpointy ani tvoje přihlašovací
-        heslo. Až Investown nabídne podporované read-only API pro investory,
-        můžeme tento provider přepnout na automatickou synchronizaci.
+        Nový kompletní výpis nahradí předchozí Investown import a znovu
+        rekonstruuje portfolio i historii. Tím se po opakovaném importu
+        nehromadí staré nebo duplicitní záznamy.
       </p>
-
-      <style jsx>{`
-        .input {
-          margin-top: 0.375rem;
-          width: 100%;
-          border-radius: 0.75rem;
-          border: 1px solid rgba(255, 255, 255, 0.09);
-          background: #0b1511;
-          padding: 0.625rem 0.75rem;
-          font-size: 0.875rem;
-          outline: none;
-        }
-      `}</style>
     </article>
   );
 }
@@ -525,5 +723,16 @@ function Field({
       <span className="text-xs text-[var(--muted)]">{label}</span>
       {children}
     </label>
+  );
+}
+
+function Preview({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-3">
+      <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+        {label}
+      </p>
+      <p className="mt-1 font-mono text-sm">{value}</p>
+    </div>
   );
 }
