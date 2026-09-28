@@ -47,6 +47,7 @@ export interface InvestownImportStatus {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  typeCounts: Array<{ type: string; count: number }>;
 }
 
 export function getInvestownImportStatus(): InvestownImportStatus | null {
@@ -83,6 +84,18 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     )
     .get();
 
+  const typeCounts = db
+    .prepare(
+      "SELECT COALESCE(NULLIF(category, ''), 'Unknown') AS type, COUNT(*) AS count " +
+        "FROM transactions WHERE provider = 'investown' " +
+        "GROUP BY type ORDER BY count DESC, type ASC",
+    )
+    .all()
+    .map((row) => ({
+      type: String(row.type),
+      count: Number(row.count) || 0,
+    }));
+
   let mode = "unknown";
   try {
     const raw = account.raw_json
@@ -106,6 +119,7 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     firstAt: transactionStats?.first_at ? String(transactionStats.first_at) : null,
     lastAt: transactionStats?.last_at ? String(transactionStats.last_at) : null,
     unknownTypes: Number(transactionStats?.unknown) || 0,
+    typeCounts,
   };
 }
 
