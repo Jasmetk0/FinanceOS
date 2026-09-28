@@ -172,14 +172,36 @@ export function getDashboardData() {
     );
   }
 
-  const p2pRow = db
+  // P2P accounts can expose project-level holdings (Investown) or only
+  // an account total (Mintos). Add only the account value that is not already
+  // represented by P2P holdings, otherwise allocation would double count it.
+  const p2pAccounts = db
     .prepare(
-      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts WHERE type = 'p2p'",
+      "SELECT id, total_value_czk FROM accounts WHERE type = 'p2p'",
     )
-    .get();
-  const p2pValue = Math.max(0, num(p2pRow?.total));
-  if (p2pValue) {
-    allocationMap.set("p2p", (allocationMap.get("p2p") ?? 0) + p2pValue);
+    .all();
+
+  let p2pResidual = 0;
+  for (const account of p2pAccounts) {
+    const represented = db
+      .prepare(
+        "SELECT COALESCE(SUM(h.market_value_czk), 0) AS total " +
+          "FROM holdings h JOIN assets a ON a.id = h.asset_id " +
+          "WHERE h.account_id = ? AND a.asset_class = 'p2p'",
+      )
+      .get(String(account.id));
+
+    p2pResidual += Math.max(
+      0,
+      num(account.total_value_czk) - num(represented?.total),
+    );
+  }
+
+  if (p2pResidual) {
+    allocationMap.set(
+      "p2p",
+      (allocationMap.get("p2p") ?? 0) + p2pResidual,
+    );
   }
 
   const manualCashRow = db
@@ -765,13 +787,18 @@ export function getInsightsData() {
     }
   }
 
-  if (dashboard.connections.length === 0 && !dashboard.accounts.some((a) => a.provider === "mintos")) {
+  if (
+    dashboard.connections.length === 0 &&
+    !dashboard.accounts.some(
+      (a) => a.provider === "mintos" || a.provider === "investown",
+    )
+  ) {
     warnings.push({
       id: "no-connections",
       severity: "info",
       title: "Žádný live provider",
       detail:
-        "Připoj Trading 212 nebo Kraken, případně importuj Mintos, aby dashboard začal používat reálná investiční data.",
+        "Připoj Trading 212 nebo Kraken, případně importuj Mintos nebo Investown, aby dashboard začal používat reálná investiční data.",
     });
   }
 
@@ -899,10 +926,25 @@ export function getAssetDetail(symbolInput: string) {
       if (tx.kind === "buy") acc.buysCzk += Math.abs(amount);
       if (tx.kind === "sell") acc.sellsCzk += Math.abs(amount);
       if (tx.kind === "dividend") acc.dividendsCzk += Math.max(0, amount);
+      if (tx.kind === "interest") acc.interestCzk += Math.max(0, amount);
       if (tx.kind === "fee") acc.feesCzk += Math.abs(amount);
+      if (tx.kind === "transfer" && amount < 0) {
+        acc.principalInCzk += Math.abs(amount);
+      }
+      if (tx.kind === "transfer" && amount > 0) {
+        acc.principalOutCzk += amount;
+      }
       return acc;
     },
-    { buysCzk: 0, sellsCzk: 0, dividendsCzk: 0, feesCzk: 0 },
+    {
+      buysCzk: 0,
+      sellsCzk: 0,
+      dividendsCzk: 0,
+      interestCzk: 0,
+      principalInCzk: 0,
+      principalOutCzk: 0,
+      feesCzk: 0,
+    },
   );
 
   const currentValueCzk = holdings.reduce(
