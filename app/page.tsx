@@ -1,69 +1,197 @@
-import Image from "next/image";
+import { StatCard, SectionCard, Pill } from "@/components/ui";
+import {
+  allocation,
+  platformBalances,
+  portfolioSeries,
+  recentTransactions,
+  summary,
+} from "@/lib/mock-data";
+
+function PortfolioChart() {
+  const points = portfolioSeries
+    .map((item, index) => {
+      const x = (index / (portfolioSeries.length - 1)) * 100;
+      const values = portfolioSeries.map((point) => point.valueCzk);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const y = 94 - ((item.valueCzk - min) / (max - min || 1)) * 78;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="mt-4">
+      <svg
+        viewBox="0 0 100 100"
+        className="h-52 w-full overflow-visible"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Ukázkový graf historického vývoje portfolia"
+      >
+        <defs>
+          <linearGradient id="portfolioFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#69e3aa" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#69e3aa" stopOpacity="0" />
+          </linearGradient>
+        </defs>
+        {[20, 40, 60, 80].map((y) => (
+          <line
+            key={y}
+            x1="0"
+            x2="100"
+            y1={y}
+            y2={y}
+            stroke="rgba(255,255,255,0.06)"
+            strokeWidth="0.4"
+          />
+        ))}
+        <polygon
+          points={`0,100 ${points} 100,100`}
+          fill="url(#portfolioFill)"
+        />
+        <polyline
+          points={points}
+          fill="none"
+          stroke="#69e3aa"
+          strokeWidth="1.4"
+          vectorEffect="non-scaling-stroke"
+        />
+      </svg>
+      <div className="mt-2 flex justify-between text-xs text-[var(--muted)]">
+        {portfolioSeries.map((item) => (
+          <span key={item.label}>{item.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
+      <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <Pill>Demo data</Pill>
+          <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
+            Přehled majetku
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)] sm:text-base">
+            První UI kostra FinanceOS. Čísla níže jsou pouze ukázková a nejsou
+            připojena k žádnému účtu.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        <div className="text-left sm:text-right">
+          <p className="text-sm text-[var(--muted)]">Poslední synchronizace</p>
+          <p className="mt-1 text-sm font-medium">Zatím nepřipojeno</p>
         </div>
-      </main>
-    </div>
+      </div>
+
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Celkový majetek"
+          value={summary.netWorthCzk}
+          format="currency"
+          hint="+2,8 % tento měsíc"
+          positive
+        />
+        <StatCard
+          label="Investováno"
+          value={summary.investedCzk}
+          format="currency"
+          hint="Čisté vklady do investic"
+        />
+        <StatCard
+          label="Nerealizovaný P/L"
+          value={summary.unrealizedPnlCzk}
+          format="currency"
+          hint="+11,8 %"
+          positive
+        />
+        <StatCard
+          label="Hotovost"
+          value={summary.cashCzk}
+          format="currency"
+          hint="Napříč účty"
+        />
+      </section>
+
+      <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
+        <SectionCard
+          title="Vývoj kapitálu"
+          subtitle="Ukázková denní hodnota všech aktiv v CZK"
+        >
+          <PortfolioChart />
+        </SectionCard>
+
+        <SectionCard title="Platformy" subtitle="Ukázkové rozložení majetku">
+          <div className="space-y-5">
+            {platformBalances.map((platform) => (
+              <div key={platform.name}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="font-medium">{platform.name}</p>
+                    <p className="mt-1 text-xs text-[var(--muted)]">
+                      {platform.kind}
+                    </p>
+                  </div>
+                  <p className="font-mono text-sm">
+                    {platform.valueCzk.toLocaleString("cs-CZ")} Kč
+                  </p>
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/6">
+                  <div
+                    className="h-full rounded-full bg-[var(--accent)]"
+                    style={{ width: `${platform.share}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </section>
+
+      <section className="mt-4 grid gap-4 xl:grid-cols-2">
+        <SectionCard title="Alokace" subtitle="Ukázkové rozdělení podle třídy aktiv">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {allocation.map((item) => (
+              <div
+                key={item.label}
+                className="rounded-2xl border border-white/7 bg-white/[0.025] p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-[var(--muted)]">{item.label}</span>
+                  <span className="font-mono text-sm">{item.share}%</span>
+                </div>
+                <p className="mt-2 text-xl font-semibold">
+                  {item.valueCzk.toLocaleString("cs-CZ")} Kč
+                </p>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+
+        <SectionCard title="Poslední aktivita" subtitle="Ukázkové transakce">
+          <div className="divide-y divide-white/7">
+            {recentTransactions.map((tx) => (
+              <div
+                key={tx.id}
+                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{tx.title}</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    {tx.account} · {tx.date}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="font-mono text-sm">{tx.amount}</p>
+                  <p className="mt-1 text-xs text-[var(--muted)]">{tx.kind}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      </section>
+    </main>
   );
 }
