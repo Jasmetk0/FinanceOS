@@ -408,6 +408,15 @@ export async function importInvestown(input: InvestownImportInput) {
     projects.set(externalId, project);
   }
 
+  const negativePrincipalProjects = [...projects.values()]
+    .filter((project) => project.principal < -0.02)
+    .map((project) => project.name)
+    .sort();
+  const negativeReservationProjects = [...projects.values()]
+    .filter((project) => project.reserved < -0.02)
+    .map((project) => project.name)
+    .sort();
+
   const derivedPrincipal = [...projects.values()].reduce(
     (sum, project) => sum + Math.max(0, project.principal),
     0,
@@ -427,6 +436,21 @@ export async function importInvestown(input: InvestownImportInput) {
 
   const overrideCash = finiteOptional(input.walletCash);
   const overrideTotal = finiteOptional(input.currentValue);
+
+  if (
+    input.sourceFormat === "investown-native" &&
+    overrideCash === null &&
+    overrideTotal === null &&
+    (negativePrincipalProjects.length > 0 ||
+      negativeReservationProjects.length > 0)
+  ) {
+    throw new Error(
+      "Investown statement cannot be reconstructed as a complete history. " +
+        "Some projects return more principal/reservations than the file contains. " +
+        "Export the full account history or use the current-balance override.",
+    );
+  }
+
   const walletCash = overrideCash ?? derivedWallet;
   const totalValue = overrideTotal ?? Math.max(0, walletCash + derivedInvested);
   const investedValue = Math.max(0, totalValue - walletCash);
@@ -671,6 +695,8 @@ export async function importInvestown(input: InvestownImportInput) {
           [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
         ),
         unknownTypes: [...unknownTypes].sort(),
+        negativePrincipalProjects,
+        negativeReservationProjects,
       },
     };
 
