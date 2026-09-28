@@ -26,11 +26,15 @@ After that, ordinary use does not require an open terminal window.
 7. verifies port 3000 is free or already belongs to FinanceOS,
 8. starts Next.js bound to `127.0.0.1` in a hidden process,
 9. waits for `/api/health`,
-10. opens `http://127.0.0.1:3000`.
+10. starts a hidden background sync worker,
+11. opens `http://127.0.0.1:3000`.
+
+The sync worker requests a provider sync every 15 minutes even when the browser is
+closed. `FinanceOS Stop` stops both the web server and the background worker.
 
 ## Logs
 
-Launcher and server logs are stored under:
+Launcher, server, and background-sync logs are stored under:
 
 `%LOCALAPPDATA%\FinanceOS`
 
