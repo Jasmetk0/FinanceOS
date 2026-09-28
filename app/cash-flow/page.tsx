@@ -1,5 +1,6 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { ManualTransactionForm } from "@/components/manual-transaction-form";
+import { CashFlowCsvImporter } from "@/components/cashflow-csv-importer";
 import { getCashFlowData } from "@/lib/server/analytics";
 
 export const runtime = "nodejs";
@@ -239,6 +240,15 @@ export default function CashFlowPage() {
           )}
         </SectionCard>
       </section>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Import cash-flow history"
+          subtitle="Bankovní nebo vlastní CSV se signed amount sloupcem"
+        >
+          <CashFlowCsvImporter />
+        </SectionCard>
+      </div>
     </main>
   );
 }
