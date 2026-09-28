@@ -22,3 +22,8 @@ export function getDatabasePath(): string {
 export function getMasterKeyPath(): string {
   return path.join(getFinanceOsDataDir(), "master.key");
 }
+
+
+export function getProtectedMasterKeyPath(): string {
+  return path.join(getFinanceOsDataDir(), "master.key.dpapi");
+}
