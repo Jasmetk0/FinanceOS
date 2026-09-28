@@ -182,12 +182,18 @@ async function priceAssetInCzk(
   rawAsset: string,
   quantity: number,
   pairs: Record<string, JsonObject>,
-): Promise<{ price: number | null; valueCzk: number; quote: string | null }> {
+): Promise<{
+  price: number | null;
+  valueQuote: number;
+  valueCzk: number;
+  quote: string | null;
+}> {
   const normalized = normalizeAssetCode(rawAsset);
 
   if (isFiat(normalized)) {
     return {
       price: 1,
+      valueQuote: quantity,
       valueCzk: await toCzk(quantity, normalized),
       quote: normalized,
     };
@@ -195,7 +201,7 @@ async function priceAssetInCzk(
 
   const pair = pairForAsset(rawAsset, pairs);
   if (!pair) {
-    return { price: null, valueCzk: 0, quote: null };
+    return { price: null, valueQuote: 0, valueCzk: 0, quote: null };
   }
 
   const tickerResult = await publicRequest<Record<string, JsonObject>>(
@@ -208,6 +214,7 @@ async function priceAssetInCzk(
 
   return {
     price,
+    valueQuote: quoteValue,
     valueCzk: await toCzk(quoteValue, pair.quote),
     quote: pair.quote,
   };
@@ -357,6 +364,7 @@ export async function syncKraken() {
     quantity: number;
     currentPrice: number | null;
     quote: string;
+    valueQuote: number;
     valueCzk: number;
   }> = [];
 
@@ -375,6 +383,7 @@ export async function syncKraken() {
       quantity,
       currentPrice: priced.price,
       quote: priced.quote || normalized,
+      valueQuote: priced.valueQuote,
       valueCzk: priced.valueCzk,
     });
   }
@@ -418,7 +427,7 @@ export async function syncKraken() {
       averagePrice: null,
       currentPrice: item.currentPrice,
       currency: item.quote,
-      marketValue: item.valueCzk,
+      marketValue: item.valueQuote,
       marketValueCzk: item.valueCzk,
       unrealizedPnl: null,
       unrealizedPnlCzk: null,
