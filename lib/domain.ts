@@ -17,6 +17,7 @@ export type AccountType =
   | "crypto"
   | "p2p"
   | "cash"
+  | "liability"
   | "manual";
 
 export type AssetClass =
