@@ -34,6 +34,7 @@ timeline.
 - privacy-safe AI context export and Analyst workspace
 - installable PWA metadata and FinanceOS app icon
 - Mintos CSV import with flexible column mapping and balance-only updates
+- Investown CSV transaction import with project mapping and manual current-balance updates
 - JSON data export without API secrets
 - Excel-friendly transaction CSV export
 - automatic 15-minute background provider sync
