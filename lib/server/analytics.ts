@@ -204,16 +204,18 @@ export function getDashboardData() {
     );
   }
 
-  const manualCashRow = db
+  const standaloneCashRow = db
     .prepare(
-      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts WHERE provider = 'manual' AND type = 'cash' AND external_id LIKE 'balance:%'",
+      "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts " +
+        "WHERE type = 'cash' " +
+        "AND NOT (provider = 'manual' AND external_id = 'main')",
     )
     .get();
-  const manualCash = Math.max(0, num(manualCashRow?.total));
-  if (manualCash) {
+  const standaloneCash = Math.max(0, num(standaloneCashRow?.total));
+  if (standaloneCash) {
     allocationMap.set(
       "cash",
-      (allocationMap.get("cash") ?? 0) + manualCash,
+      (allocationMap.get("cash") ?? 0) + standaloneCash,
     );
   }
 
