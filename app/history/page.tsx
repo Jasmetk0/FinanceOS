@@ -1,5 +1,10 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getHistoryData } from "@/lib/server/analytics";
+import { HistoricalPriceImporter } from "@/components/historical-price-importer";
+import {
+  listPriceImportAssets,
+  reconstructPricedHoldingsHistory,
+} from "@/lib/server/historical-prices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -79,6 +84,8 @@ function LineChart({
 
 export default function HistoryPage() {
   const data = getHistoryData();
+  const priceAssets = listPriceImportAssets();
+  const reconstructed = reconstructPricedHoldingsHistory();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -148,6 +155,96 @@ export default function HistoryPage() {
           />
         </SectionCard>
       </section>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Reconstructed priced positions"
+          subtitle="Z transakčních quantity změn a importovaných historical close cen; bez hotovosti"
+        >
+          <LineChart
+            data={reconstructed.series}
+            valueKey="valueCzk"
+            emptyText="Importuj historical close ceny alespoň pro jeden asset. FinanceOS potom zpětně dopočítá hodnotu držených pozic v dnech, pro které má cenová data."
+          />
+          {reconstructed.series.length ? (
+            <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+              Tato křivka není plný historical net worth: zahrnuje pouze pozice
+              s dostupnou cenovou historií a nezahrnuje historickou hotovost.
+            </p>
+          ) : null}
+        </SectionCard>
+      </div>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Historical price coverage"
+          subtitle="Které assety už mají importované denní close ceny"
+        >
+          {reconstructed.assetCoverage.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[820px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                    <th className="pb-3 font-medium">Asset</th>
+                    <th className="pb-3 font-medium">Provider</th>
+                    <th className="pb-3 text-right font-medium">Prices</th>
+                    <th className="pb-3 font-medium">Coverage</th>
+                    <th className="pb-3 text-right font-medium">Missing CZK</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {reconstructed.assetCoverage.map((item) => (
+                    <tr
+                      key={item.assetId}
+                      className="border-b border-white/6 last:border-0"
+                    >
+                      <td className="py-4">
+                        <p className="text-sm font-medium">{item.symbol}</p>
+                        <p className="mt-1 max-w-[280px] truncate text-xs text-[var(--muted)]">
+                          {item.name}
+                        </p>
+                      </td>
+                      <td className="py-4 text-sm text-[var(--muted)]">
+                        {item.provider}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {item.priceCount.toLocaleString("cs-CZ")}
+                      </td>
+                      <td className="py-4 text-sm text-[var(--muted)]">
+                        {item.firstPrice && item.lastPrice
+                          ? new Date(
+                              item.firstPrice + "T12:00:00",
+                            ).toLocaleDateString("cs-CZ") +
+                            " → " +
+                            new Date(
+                              item.lastPrice + "T12:00:00",
+                            ).toLocaleDateString("cs-CZ")
+                          : "—"}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {item.missingCzk.toLocaleString("cs-CZ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              Zatím nebyly importovány žádné historical prices.
+            </p>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Import historical prices"
+          subtitle="CSV import pro zpětnou rekonstrukci hodnoty pozic"
+        >
+          <HistoricalPriceImporter assets={priceAssets} />
+        </SectionCard>
+      </div>
 
       <div className="mt-4">
         <SectionCard
@@ -225,12 +322,13 @@ export default function HistoryPage() {
       </div>
 
       <div className="mt-4 rounded-3xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-5">
-        <p className="text-sm font-semibold">Co ještě chybí k úplné historii</p>
+        <p className="text-sm font-semibold">Přesnost historical reconstruction</p>
         <p className="mt-2 max-w-5xl text-sm leading-6 text-[var(--muted)]">
-          Transakce můžeme stáhnout hluboko do minulosti, ale přesnou hodnotu
-          každé pozice v každém historickém dni potřebujeme dopočítat z
-          historických cen instrumentů. Tento graf proto zatím zobrazuje jen
-          skutečné snapshoty a známé cash flow, ne vymyšlenou zpětnou křivku.
+          FinanceOS už umí historické close ceny importovat a z quantity změn
+          rekonstruovat hodnotu pozic. Pro úplný historical net worth ještě
+          potřebujeme pokrýt všechny držené assety a historickou hotovost.
+          Skutečné denní snapshoty proto zůstávají oddělené od rekonstruované
+          křivky.
         </p>
       </div>
     </main>
