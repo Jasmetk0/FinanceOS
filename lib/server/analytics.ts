@@ -366,3 +366,211 @@ export function getCashFlowData(months = 18) {
     sources: sourceRows,
   };
 }
+
+
+type DatedCashFlow = { date: Date; amount: number };
+
+function xnpv(rate: number, flows: DatedCashFlow[]): number {
+  if (!flows.length || rate <= -0.999999) return Number.NaN;
+  const origin = flows[0].date.getTime();
+  const yearMs = 365.2425 * 24 * 60 * 60 * 1000;
+
+  return flows.reduce((sum, flow) => {
+    const years = (flow.date.getTime() - origin) / yearMs;
+    return sum + flow.amount / Math.pow(1 + rate, years);
+  }, 0);
+}
+
+function solveXirr(flows: DatedCashFlow[]): number | null {
+  const valid = flows
+    .filter(
+      (flow) =>
+        Number.isFinite(flow.amount) &&
+        !Number.isNaN(flow.date.getTime()) &&
+        flow.amount !== 0,
+    )
+    .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  if (
+    valid.length < 2 ||
+    !valid.some((flow) => flow.amount < 0) ||
+    !valid.some((flow) => flow.amount > 0)
+  ) {
+    return null;
+  }
+
+  let low = -0.9999;
+  let high = 10;
+  let lowValue = xnpv(low, valid);
+  let highValue = xnpv(high, valid);
+
+  for (let expansion = 0; expansion < 8 && lowValue * highValue > 0; expansion += 1) {
+    high *= 5;
+    highValue = xnpv(high, valid);
+  }
+
+  if (
+    !Number.isFinite(lowValue) ||
+    !Number.isFinite(highValue) ||
+    lowValue * highValue > 0
+  ) {
+    return null;
+  }
+
+  for (let iteration = 0; iteration < 120; iteration += 1) {
+    const mid = (low + high) / 2;
+    const value = xnpv(mid, valid);
+    if (!Number.isFinite(value)) return null;
+    if (Math.abs(value) < 0.0001) return mid;
+
+    if (lowValue * value <= 0) {
+      high = mid;
+      highValue = value;
+    } else {
+      low = mid;
+      lowValue = value;
+    }
+  }
+
+  return (low + high) / 2;
+}
+
+export function getPerformanceData() {
+  const db = getDb();
+
+  const accounts = db
+    .prepare(`
+      SELECT
+        id, provider, name, type, total_value_czk,
+        realized_pnl_czk, unrealized_pnl_czk
+      FROM accounts
+      WHERE type IN ('brokerage', 'crypto', 'p2p')
+      ORDER BY total_value_czk DESC
+    `)
+    .all();
+
+  const now = new Date();
+  const accountRows = accounts.map((account) => {
+    const id = String(account.id);
+    const cashRows = db
+      .prepare(`
+        SELECT kind, occurred_at, amount_czk
+        FROM transactions
+        WHERE account_id = ?
+          AND amount_czk IS NOT NULL
+          AND kind IN ('deposit', 'withdrawal')
+        ORDER BY occurred_at ASC
+      `)
+      .all(id);
+
+    let deposits = 0;
+    let withdrawals = 0;
+    const flows: DatedCashFlow[] = [];
+
+    for (const row of cashRows) {
+      const kind = String(row.kind);
+      const amount = Math.abs(num(row.amount_czk));
+      const date = new Date(String(row.occurred_at));
+
+      if (kind === "deposit") {
+        deposits += amount;
+        flows.push({ date, amount: -amount });
+      } else {
+        withdrawals += amount;
+        flows.push({ date, amount });
+      }
+    }
+
+    const currentValue = num(account.total_value_czk);
+    if (currentValue > 0) {
+      flows.push({ date: now, amount: currentValue });
+    }
+
+    const netContributed = deposits - withdrawals;
+    const estimatedProfit = currentValue - netContributed;
+    const simpleReturn =
+      netContributed > 0 ? (estimatedProfit / netContributed) * 100 : null;
+    const xirr = solveXirr(flows);
+
+    return {
+      id,
+      provider: String(account.provider),
+      name: String(account.name),
+      type: String(account.type),
+      currentValueCzk: currentValue,
+      depositsCzk: deposits,
+      withdrawalsCzk: withdrawals,
+      netContributedCzk: netContributed,
+      estimatedProfitCzk: estimatedProfit,
+      simpleReturnPct: simpleReturn,
+      xirrPct: xirr === null ? null : xirr * 100,
+      realizedPnlCzk: num(account.realized_pnl_czk),
+      unrealizedPnlCzk: num(account.unrealized_pnl_czk),
+      externalFlowCount: cashRows.length,
+    };
+  });
+
+  const totals = accountRows.reduce(
+    (acc, account) => {
+      acc.currentValueCzk += account.currentValueCzk;
+      acc.depositsCzk += account.depositsCzk;
+      acc.withdrawalsCzk += account.withdrawalsCzk;
+      acc.realizedPnlCzk += account.realizedPnlCzk;
+      acc.unrealizedPnlCzk += account.unrealizedPnlCzk;
+      return acc;
+    },
+    {
+      currentValueCzk: 0,
+      depositsCzk: 0,
+      withdrawalsCzk: 0,
+      realizedPnlCzk: 0,
+      unrealizedPnlCzk: 0,
+    },
+  );
+
+  const portfolioFlows: DatedCashFlow[] = db
+    .prepare(`
+      SELECT t.kind, t.occurred_at, t.amount_czk
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.amount_czk IS NOT NULL
+        AND t.kind IN ('deposit', 'withdrawal')
+      ORDER BY t.occurred_at ASC
+    `)
+    .all()
+    .map((row) => ({
+      date: new Date(String(row.occurred_at)),
+      amount:
+        String(row.kind) === "deposit"
+          ? -Math.abs(num(row.amount_czk))
+          : Math.abs(num(row.amount_czk)),
+    }));
+
+  if (totals.currentValueCzk > 0) {
+    portfolioFlows.push({ date: now, amount: totals.currentValueCzk });
+  }
+
+  const netContributedCzk = totals.depositsCzk - totals.withdrawalsCzk;
+  const estimatedProfitCzk = totals.currentValueCzk - netContributedCzk;
+
+  return {
+    accounts: accountRows,
+    totals: {
+      ...totals,
+      netContributedCzk,
+      estimatedProfitCzk,
+      simpleReturnPct:
+        netContributedCzk > 0
+          ? (estimatedProfitCzk / netContributedCzk) * 100
+          : null,
+      xirrPct: (() => {
+        const value = solveXirr(portfolioFlows);
+        return value === null ? null : value * 100;
+      })(),
+      externalFlowCount: portfolioFlows.length
+        ? Math.max(0, portfolioFlows.length - 1)
+        : 0,
+    },
+  };
+}
