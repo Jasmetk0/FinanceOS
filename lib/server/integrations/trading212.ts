@@ -113,20 +113,21 @@ async function fetchPaginated(
       await sleep(10_500);
     }
 
-    const result = await request<{ items?: unknown[]; nextPagePath?: string | null }>(
-      environment,
-      credentials,
-      path,
-    );
-    const items = Array.isArray(result.items)
-      ? result.items.map(asObject)
+    const result: { items?: unknown[]; nextPagePath?: string | null } =
+      await request<{ items?: unknown[]; nextPagePath?: string | null }>(
+        environment,
+        credentials,
+        path,
+      );
+    const items: JsonObject[] = Array.isArray(result.items)
+      ? result.items.map((item: unknown) => asObject(item))
       : [];
 
     if (stopWhenKnownPrefix && items.length > 0) {
-      const ids = items.map((item) =>
+      const ids: string[] = items.map((item: JsonObject) =>
         `${stopWhenKnownPrefix}:${stringValue(item, ["id", "reference", "referenceId", "transactionId"])}`,
       );
-      const known = ids.filter((id) =>
+      const known = ids.filter((id: string) =>
         getDb()
           .prepare("SELECT 1 FROM transactions WHERE provider = 'trading212' AND external_id = ?")
           .get(id),
