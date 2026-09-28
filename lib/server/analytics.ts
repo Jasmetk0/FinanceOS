@@ -78,6 +78,8 @@ export function getDashboardData() {
         t.amount,
         t.amount_czk,
         t.note,
+        t.category,
+        t.source_label,
         ac.name AS account_name,
         COALESCE(a.symbol, '') AS symbol
       FROM transactions t
@@ -95,6 +97,8 @@ export function getDashboardData() {
       amount: num(row.amount),
       amountCzk: row.amount_czk === null ? null : num(row.amount_czk),
       note: row.note ? String(row.note) : null,
+      category: row.category ? String(row.category) : null,
+      sourceLabel: row.source_label ? String(row.source_label) : null,
       accountName: String(row.account_name),
       symbol: String(row.symbol || ""),
     }));
@@ -216,4 +220,149 @@ export function getAccounts() {
 
 export function getHoldings() {
   return getDashboardData().holdings;
+}
+
+
+export interface CashFlowMonth {
+  month: string;
+  incomeCzk: number;
+  giftsCzk: number;
+  expensesCzk: number;
+  interestCzk: number;
+  netCzk: number;
+  savingsRate: number | null;
+}
+
+export function getCashFlowData(months = 18) {
+  const db = getDb();
+  const rows = db
+    .prepare(`
+      SELECT kind, occurred_at, amount_czk, category, source_label
+      FROM transactions
+      WHERE provider = 'manual'
+        AND amount_czk IS NOT NULL
+        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      ORDER BY occurred_at ASC
+    `)
+    .all();
+
+  const byMonth = new Map<string, CashFlowMonth>();
+
+  for (const row of rows) {
+    const occurredAt = String(row.occurred_at);
+    const month = occurredAt.slice(0, 7);
+    if (!month) continue;
+
+    const item =
+      byMonth.get(month) ??
+      {
+        month,
+        incomeCzk: 0,
+        giftsCzk: 0,
+        expensesCzk: 0,
+        interestCzk: 0,
+        netCzk: 0,
+        savingsRate: null,
+      };
+
+    const kind = String(row.kind);
+    const amount = num(row.amount_czk);
+
+    if (kind === "income") item.incomeCzk += Math.max(0, amount);
+    if (kind === "gift") item.giftsCzk += Math.max(0, amount);
+    if (kind === "interest") item.interestCzk += Math.max(0, amount);
+    if (kind === "expense" || kind === "fee") {
+      item.expensesCzk += Math.abs(amount);
+    }
+
+    byMonth.set(month, item);
+  }
+
+  const allMonths = [...byMonth.values()]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .slice(-Math.max(1, months))
+    .map((item) => {
+      const grossIncome = item.incomeCzk + item.giftsCzk + item.interestCzk;
+      const netCzk = grossIncome - item.expensesCzk;
+      return {
+        ...item,
+        netCzk,
+        savingsRate: grossIncome > 0 ? (netCzk / grossIncome) * 100 : null,
+      };
+    });
+
+  const totals = allMonths.reduce(
+    (acc, item) => {
+      acc.incomeCzk += item.incomeCzk;
+      acc.giftsCzk += item.giftsCzk;
+      acc.expensesCzk += item.expensesCzk;
+      acc.interestCzk += item.interestCzk;
+      acc.netCzk += item.netCzk;
+      return acc;
+    },
+    {
+      incomeCzk: 0,
+      giftsCzk: 0,
+      expensesCzk: 0,
+      interestCzk: 0,
+      netCzk: 0,
+    },
+  );
+
+  const categoryRows = db
+    .prepare(`
+      SELECT
+        COALESCE(NULLIF(category, ''), 'Uncategorized') AS category,
+        kind,
+        SUM(ABS(amount_czk)) AS total
+      FROM transactions
+      WHERE provider = 'manual'
+        AND amount_czk IS NOT NULL
+        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      GROUP BY category, kind
+      ORDER BY total DESC
+    `)
+    .all()
+    .map((row) => ({
+      category: String(row.category),
+      kind: String(row.kind),
+      totalCzk: num(row.total),
+    }));
+
+  const sourceRows = db
+    .prepare(`
+      SELECT
+        COALESCE(NULLIF(source_label, ''), 'Unspecified') AS source,
+        SUM(CASE
+          WHEN kind IN ('income', 'gift', 'interest') THEN ABS(amount_czk)
+          ELSE 0
+        END) AS total
+      FROM transactions
+      WHERE provider = 'manual'
+        AND amount_czk IS NOT NULL
+      GROUP BY source
+      HAVING total > 0
+      ORDER BY total DESC
+      LIMIT 20
+    `)
+    .all()
+    .map((row) => ({
+      source: String(row.source),
+      totalCzk: num(row.total),
+    }));
+
+  const grossIncome =
+    totals.incomeCzk + totals.giftsCzk + totals.interestCzk;
+
+  return {
+    months: allMonths,
+    totals: {
+      ...totals,
+      grossIncomeCzk: grossIncome,
+      savingsRate:
+        grossIncome > 0 ? (totals.netCzk / grossIncome) * 100 : null,
+    },
+    categories: categoryRows,
+    sources: sourceRows,
+  };
 }
