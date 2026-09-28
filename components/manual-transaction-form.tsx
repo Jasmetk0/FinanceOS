@@ -8,6 +8,7 @@ export function ManualTransactionForm() {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [defaultOccurredAt, setDefaultOccurredAt] = useState("");
 
   async function submit(form: HTMLFormElement) {
     const data = new FormData(form);
@@ -46,7 +47,14 @@ export function ManualTransactionForm() {
         {message ? <span className="text-xs text-[var(--muted)]">{message}</span> : null}
         <button
           type="button"
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            const now = new Date();
+            const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+              .toISOString()
+              .slice(0, 16);
+            setDefaultOccurredAt(local);
+            setOpen(true);
+          }}
           className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
         >
           + Add manual transaction
@@ -105,9 +113,7 @@ export function ManualTransactionForm() {
           <input
             name="occurredAt"
             type="datetime-local"
-            defaultValue={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
-              .toISOString()
-              .slice(0, 16)}
+            defaultValue={defaultOccurredAt}
             required
             className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
           />
