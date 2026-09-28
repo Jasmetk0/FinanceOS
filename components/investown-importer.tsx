@@ -394,6 +394,7 @@ export function InvestownImporter() {
         return {
           externalId: idIndex >= 0 ? row[idIndex] : undefined,
           occurredAt: parseDate(String(row[dateIndex] || ""), timezone),
+          sourceDate: String(row[dateIndex] || ""),
           timezone: timezone || undefined,
           amount: parseNumber(String(row[amountIndex] || "")),
           currency:
