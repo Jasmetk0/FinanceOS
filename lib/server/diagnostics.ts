@@ -139,7 +139,7 @@ export function getDiagnostics() {
 
   const accountRows = db
     .prepare(
-      "SELECT a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk, COALESCE(SUM(h.market_value_czk), 0) AS holdings_value_czk FROM accounts a LEFT JOIN holdings h ON h.account_id = a.id GROUP BY a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk ORDER BY a.name"
+      "SELECT a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk, COALESCE(SUM(CASE WHEN ast.asset_class = 'cash' THEN 0 ELSE h.market_value_czk END), 0) AS holdings_value_czk FROM accounts a LEFT JOIN holdings h ON h.account_id = a.id LEFT JOIN assets ast ON ast.id = h.asset_id GROUP BY a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk ORDER BY a.name"
     )
     .all();
 
