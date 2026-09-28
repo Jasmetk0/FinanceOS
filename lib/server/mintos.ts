@@ -80,8 +80,8 @@ export async function importMintos(input: {
   if (input.cashValue > input.currentValue) {
     throw new Error("Mintos cash value cannot exceed total current value.");
   }
-  if (!Array.isArray(input.rows) || input.rows.length === 0) {
-    throw new Error("No Mintos rows were provided.");
+  if (!Array.isArray(input.rows)) {
+    throw new Error("Mintos rows must be an array.");
   }
   if (input.rows.length > 20_000) {
     throw new Error("A single Mintos import is limited to 20,000 rows.");
