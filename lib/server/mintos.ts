@@ -50,8 +50,8 @@ function classifyMintos(row: MintosImportRow): TransactionKind {
   return "adjustment";
 }
 
-function stableRowId(row: MintosImportRow): string {
-  if (row.externalId?.trim()) return row.externalId.trim();
+function stableRowBase(row: MintosImportRow): string {
+  if (row.externalId?.trim()) return "external:" + row.externalId.trim();
 
   const payload = JSON.stringify({
     occurredAt: row.occurredAt,
@@ -59,9 +59,9 @@ function stableRowId(row: MintosImportRow): string {
     currency: row.currency,
     description: row.description || "",
     type: row.type || "",
-    sourceIndex: row.sourceIndex ?? null,
   });
-  return crypto.createHash("sha256").update(payload).digest("hex").slice(0, 32);
+  return "hash:" +
+    crypto.createHash("sha256").update(payload).digest("hex").slice(0, 32);
 }
 
 export async function importMintos(input: {
@@ -115,6 +115,7 @@ export async function importMintos(input: {
 
   let imported = 0;
   let skipped = 0;
+  const duplicateOrdinals = new Map<string, number>();
 
   for (const row of input.rows) {
     const amount = Number(row.amount);
@@ -133,11 +134,17 @@ export async function importMintos(input: {
     const occurredIso = occurredAt.toISOString();
     const amountCzk = await maybeToCzk(amount, currency, occurredIso);
     const kind = classifyMintos(row);
+    const base = stableRowBase(row);
+    const ordinal = duplicateOrdinals.get(base) ?? 0;
+    duplicateOrdinals.set(base, ordinal + 1);
+    const stableId = base.startsWith("external:")
+      ? base
+      : base + ":" + String(ordinal);
 
     upsertTransaction({
       provider: "mintos",
       accountId,
-      externalId: `statement:${stableRowId(row)}`,
+      externalId: "statement:" + stableId,
       kind,
       occurredAt: occurredIso,
       currency,
