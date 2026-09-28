@@ -29,6 +29,7 @@ export function restoreExport(input: unknown) {
   const holdings = rows(backup.holdings);
   const transactions = rows(backup.transactions);
   const snapshots = rows(backup.snapshots);
+  const assetPrices = rows(backup.assetPrices);
   const planTargets = rows(backup.planTargets);
   const planSettings = rows(backup.planSettings);
   const investmentJournal = rows(backup.investmentJournal);
@@ -39,6 +40,7 @@ export function restoreExport(input: unknown) {
     holdings.length > 100_000 ||
     transactions.length > 500_000 ||
     snapshots.length > 500_000 ||
+    assetPrices.length > 2_000_000 ||
     planTargets.length > 100 ||
     planSettings.length > 100 ||
     investmentJournal.length > 10_000
@@ -247,6 +249,32 @@ export function restoreExport(input: unknown) {
       );
     }
 
+    const assetPriceStatement = db.prepare(`
+      INSERT INTO asset_prices(
+        asset_id, price_date, close, currency, close_czk, source, imported_at
+      )
+      VALUES(?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(asset_id, price_date) DO UPDATE SET
+        close = excluded.close,
+        currency = excluded.currency,
+        close_czk = excluded.close_czk,
+        source = excluded.source,
+        imported_at = excluded.imported_at
+    `);
+
+    for (const row of assetPrices) {
+      if (!value(row, "asset_id") || !value(row, "price_date")) continue;
+      assetPriceStatement.run(
+        value(row, "asset_id"),
+        value(row, "price_date"),
+        value(row, "close"),
+        value(row, "currency"),
+        value(row, "close_czk"),
+        value(row, "source"),
+        value(row, "imported_at"),
+      );
+    }
+
     const planTargetStatement = db.prepare(`
       INSERT INTO plan_targets(asset_class, target_pct, updated_at)
       VALUES(?, ?, ?)
@@ -320,6 +348,7 @@ export function restoreExport(input: unknown) {
     holdings: holdings.length,
     transactions: transactions.length,
     snapshots: snapshots.length,
+    assetPrices: assetPrices.length,
     planTargets: planTargets.length,
     planSettings: planSettings.length,
     investmentJournal: investmentJournal.length,
