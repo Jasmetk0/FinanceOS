@@ -13,6 +13,7 @@ const navigation = [
   { href: "/insights", label: "Insights", short: "IS" },
   { href: "/plan", label: "Plan", short: "PL" },
   { href: "/analyst", label: "Analyst", short: "AI" },
+  { href: "/reports", label: "Reports", short: "RP" },
   { href: "/journal", label: "Journal", short: "JR" },
   { href: "/transactions", label: "Transactions", short: "TX" },
   { href: "/cash-flow", label: "Cash Flow", short: "CF" },

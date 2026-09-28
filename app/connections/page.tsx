@@ -1,6 +1,7 @@
 import { Pill } from "@/components/ui";
 import { ConnectionsManager } from "@/components/connections-manager";
 import { MintosImporter } from "@/components/mintos-importer";
+import { InvestownImporter } from "@/components/investown-importer";
 import { listConnections } from "@/lib/server/repository";
 
 export const runtime = "nodejs";
@@ -28,6 +29,10 @@ export default function ConnectionsPage() {
 
       <div className="mt-4">
         <MintosImporter />
+      </div>
+
+      <div className="mt-4">
+        <InvestownImporter />
       </div>
 
       <div className="mt-4 rounded-3xl border border-[var(--accent)]/15 bg-[var(--accent)]/[0.035] p-5">
