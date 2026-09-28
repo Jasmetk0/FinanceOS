@@ -59,6 +59,9 @@ const PRINCIPAL_OUT_TYPES = new Set([
   "Odstoupení",
 ]);
 
+const OFFER_LOCK_TYPES = new Set(["Nabídka ke koupi"]);
+const OFFER_UNLOCK_TYPES = new Set(["Vrácení nabídky"]);
+
 function normalize(value: string | undefined) {
   return (value || "").trim();
 }
@@ -168,6 +171,14 @@ function principalDelta(row: InvestownImportRow) {
   return 0;
 }
 
+function reservationDelta(row: InvestownImportRow) {
+  const type = normalize(row.type);
+  const amount = Math.abs(Number(row.amount));
+  if (OFFER_LOCK_TYPES.has(type)) return amount;
+  if (OFFER_UNLOCK_TYPES.has(type)) return -amount;
+  return 0;
+}
+
 function transactionQuantity(row: InvestownImportRow) {
   const delta = principalDelta(row);
   return delta === 0 ? null : delta;
@@ -202,6 +213,7 @@ export async function importInvestown(input: InvestownImportInput) {
     amountCzk: number | null;
     kind: TransactionKind;
     principalDelta: number;
+    reservationDelta: number;
   }> = [];
 
   const typeCounts = new Map<string, number>();
@@ -232,6 +244,7 @@ export async function importInvestown(input: InvestownImportInput) {
       amountCzk,
       kind,
       principalDelta: principalDelta(row),
+      reservationDelta: reservationDelta(row),
     });
   }
 
@@ -253,6 +266,7 @@ export async function importInvestown(input: InvestownImportInput) {
     invested: number;
     returned: number;
     interest: number;
+    reserved: number;
   }>();
 
   let derivedWallet = 0;
@@ -275,6 +289,7 @@ export async function importInvestown(input: InvestownImportInput) {
       invested: 0,
       returned: 0,
       interest: 0,
+      reserved: 0,
     };
 
     if (item.principalDelta > 0) {
@@ -290,12 +305,29 @@ export async function importInvestown(input: InvestownImportInput) {
       project.interest += Math.max(0, item.amountCzk);
     }
 
+    if (item.reservationDelta !== 0) {
+      project.reserved += item.reservationDelta;
+    }
+
     if (project.principal < 0 && project.principal > -0.02) project.principal = 0;
+    if (project.reserved < 0 && project.reserved > -0.02) project.reserved = 0;
     projects.set(externalId, project);
   }
 
-  const derivedInvested = [...projects.values()].reduce(
+  const derivedPrincipal = [...projects.values()].reduce(
     (sum, project) => sum + Math.max(0, project.principal),
+    0,
+  );
+  const derivedReserved = [...projects.values()].reduce(
+    (sum, project) => sum + Math.max(0, project.reserved),
+    0,
+  );
+  const derivedInvested = derivedPrincipal + derivedReserved;
+  const derivedInterest = prepared.reduce(
+    (sum, item) =>
+      item.kind === "interest" && item.amountCzk !== null
+        ? sum + Math.max(0, item.amountCzk)
+        : sum,
     0,
   );
 
@@ -330,12 +362,12 @@ export async function importInvestown(input: InvestownImportInput) {
     cashValue: Math.max(0, walletCash),
     investedValue,
     totalValue,
-    realizedPnl: 0,
+    realizedPnl: derivedInterest,
     unrealizedPnl: 0,
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
-    realizedPnlCzk: 0,
+    realizedPnlCzk: derivedInterest,
     unrealizedPnlCzk: 0,
     raw: {
       imported: true,
@@ -345,7 +377,10 @@ export async function importInvestown(input: InvestownImportInput) {
           ? "manual-override"
           : "derived-from-full-statement",
       derivedWallet,
+      derivedPrincipal,
+      derivedReserved,
       derivedInvested,
+      derivedInterest,
       statementRows: prepared.length,
       statementFirstAt: prepared[0]?.occurredIso || null,
       statementLastAt: prepared[prepared.length - 1]?.occurredIso || null,
@@ -358,6 +393,7 @@ export async function importInvestown(input: InvestownImportInput) {
     db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
     db.prepare("DELETE FROM holdings WHERE account_id = ?").run(accountId);
     db.prepare("DELETE FROM snapshots WHERE account_id = ?").run(accountId);
+    db.prepare("DELETE FROM assets WHERE provider = 'investown'").run();
   }
 
   const assetIds = new Map<string, string>();
@@ -376,6 +412,7 @@ export async function importInvestown(input: InvestownImportInput) {
         investedPrincipal: project.invested,
         returnedPrincipal: project.returned,
         receivedInterestCzk: project.interest,
+        reservedOfferCzk: Math.max(0, project.reserved),
         imported: true,
       },
     });
@@ -420,13 +457,17 @@ export async function importInvestown(input: InvestownImportInput) {
         originalTimezone: row.timezone || null,
         financeOsClassification: item.kind,
         financeOsPrincipalDelta: item.principalDelta,
+        financeOsReservationDelta: item.reservationDelta,
       },
     });
     imported += 1;
   }
 
   const holdings = [...projects.values()]
-    .filter((project) => project.principal > 0.005)
+    .filter(
+      (project) =>
+        project.principal > 0.005 || project.reserved > 0.005,
+    )
     .map((project) => {
       const assetIdValue = assetIds.get(project.externalId);
       if (!assetIdValue) throw new Error("Investown project asset was not created.");
@@ -434,16 +475,17 @@ export async function importInvestown(input: InvestownImportInput) {
       return {
         accountId,
         assetId: assetIdValue,
-        quantity: project.principal,
+        quantity: Math.max(0, project.principal + project.reserved),
         averagePrice: 1,
         currentPrice: 1,
         currency: accountCurrency,
-        marketValue: project.principal,
-        marketValueCzk: project.principal,
+        marketValue: Math.max(0, project.principal + project.reserved),
+        marketValueCzk: Math.max(0, project.principal + project.reserved),
         unrealizedPnl: 0,
         unrealizedPnlCzk: 0,
         raw: {
           principal: project.principal,
+          reservedOfferCzk: Math.max(0, project.reserved),
           investedPrincipal: project.invested,
           returnedPrincipal: project.returned,
           receivedInterestCzk: project.interest,
@@ -459,20 +501,26 @@ export async function importInvestown(input: InvestownImportInput) {
   if (replaceExisting && input.sourceFormat === "investown-native") {
     let runningWallet = 0;
     let runningPrincipal = 0;
+    let runningReserved = 0;
     let lastDate = "";
     const snapshots = new Map<string, { cash: number; invested: number; total: number }>();
 
     for (const item of prepared) {
       runningWallet += item.amountCzk ?? 0;
       runningPrincipal += item.principalDelta;
+      runningReserved += item.reservationDelta;
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
+      if (runningReserved < 0 && runningReserved > -0.02) runningReserved = 0;
 
       const date = statementDate(item.row, item.occurredIso);
       lastDate = date;
       snapshots.set(date, {
         cash: Math.max(0, runningWallet),
-        invested: Math.max(0, runningPrincipal),
-        total: Math.max(0, runningWallet + runningPrincipal),
+        invested: Math.max(0, runningPrincipal + runningReserved),
+        total: Math.max(
+          0,
+          runningWallet + runningPrincipal + runningReserved,
+        ),
       });
     }
 
@@ -505,7 +553,9 @@ export async function importInvestown(input: InvestownImportInput) {
     sourceFormat: input.sourceFormat || "mapped",
     derived: {
       walletCashCzk: derivedWallet,
-      investedPrincipalCzk: derivedInvested,
+      investedPrincipalCzk: derivedPrincipal,
+      reservedOffersCzk: derivedReserved,
+      receivedInterestCzk: derivedInterest,
       totalValueCzk: derivedWallet + derivedInvested,
       activeProjects: holdings.length,
       allProjects: projects.size,
