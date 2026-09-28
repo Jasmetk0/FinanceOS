@@ -13,13 +13,14 @@ if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path $desktop)) {
 }
 
 $launcherPath = Join-Path $desktop "FinanceOS.cmd"
+$batchRepoRoot = $repoRoot.Replace("%", "%%")
 
-$launcher = @"
+$launcherTemplate = @'
 @echo off
 setlocal EnableExtensions
 title FinanceOS Launcher
 
-cd /d "$repoRoot"
+cd /d "__REPO_ROOT__"
 
 where git >nul 2>&1
 if errorlevel 1 (
@@ -73,7 +74,7 @@ powershell.exe -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 3000 -St
 if not errorlevel 1 goto :openbrowser
 
 echo Starting FinanceOS development server...
-start "FinanceOS Dev Server" cmd /k "cd /d ""$repoRoot"" && npm run dev"
+start "FinanceOS Dev Server" cmd /k "cd /d ""__REPO_ROOT__"" && npm run dev"
 
 echo.
 echo [4/4] Waiting for FinanceOS...
@@ -97,9 +98,10 @@ echo FinanceOS update or startup failed.
 echo Nothing was force-reset or overwritten.
 pause
 exit /b 1
-"@
+'@
 
-Set-Content -Path $launcherPath -Value $launcher -Encoding ASCII
+$launcher = $launcherTemplate.Replace("__REPO_ROOT__", $batchRepoRoot)
+Set-Content -Path $launcherPath -Value $launcher -Encoding Default
 
 Write-Host ""
 Write-Host "Created desktop launcher:"
