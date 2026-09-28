@@ -10,6 +10,7 @@ export interface CashFlowImportRow {
   description?: string;
   category?: string;
   sourceLabel?: string;
+  kind?: string;
 }
 
 function stableBase(row: CashFlowImportRow): string {
@@ -32,8 +33,27 @@ function stableBase(row: CashFlowImportRow): string {
   );
 }
 
+const ALLOWED_KINDS = new Set([
+  "income",
+  "expense",
+  "gift",
+  "deposit",
+  "withdrawal",
+  "interest",
+  "fee",
+  "transfer",
+  "adjustment",
+]);
+
+function normalizeKind(value: unknown): string | null {
+  const kind = String(value || "").trim().toLowerCase();
+  return ALLOWED_KINDS.has(kind) ? kind : null;
+}
+
 export async function importCashFlow(input: {
   defaultCurrency?: string;
+  positiveKind?: string;
+  negativeKind?: string;
   rows: CashFlowImportRow[];
 }) {
   if (!Array.isArray(input.rows)) {
@@ -49,6 +69,8 @@ export async function importCashFlow(input: {
   const accountId = ensureManualAccount();
   const defaultCurrency =
     input.defaultCurrency?.trim().toUpperCase() || "CZK";
+  const positiveKind = normalizeKind(input.positiveKind) || "income";
+  const negativeKind = normalizeKind(input.negativeKind) || "expense";
   const duplicateOrdinals = new Map<string, number>();
   let imported = 0;
   let skipped = 0;
@@ -72,7 +94,9 @@ export async function importCashFlow(input: {
 
     const occurredAt = occurred.toISOString();
     const amountCzk = await maybeToCzk(amount, currency, occurredAt);
-    const kind = amount > 0 ? "income" : "expense";
+    const kind =
+      normalizeKind(row.kind) ||
+      (amount > 0 ? positiveKind : negativeKind);
     const base = stableBase({
       ...row,
       occurredAt,
