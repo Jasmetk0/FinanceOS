@@ -161,14 +161,15 @@ export function MintosImporter() {
   }
 
   async function submit(form: HTMLFormElement) {
-    if (!csv || !dateColumn || !amountColumn) {
-      setMessage("Vyber CSV a namapuj Date a Amount.");
+    if (csv && (!dateColumn || !amountColumn)) {
+      setMessage("Pro CSV import namapuj Date a Amount.");
       return;
     }
 
     const data = new FormData(form);
     const accountCurrency = String(data.get("accountCurrency") || "EUR").toUpperCase();
-    const index = (column: string) => (column ? csv.headers.indexOf(column) : -1);
+    const index = (column: string) =>
+      csv && column ? csv.headers.indexOf(column) : -1;
     const dateIndex = index(dateColumn);
     const amountIndex = index(amountColumn);
     const currencyIndex = index(currencyColumn);
@@ -176,20 +177,23 @@ export function MintosImporter() {
     const typeIndex = index(typeColumn);
     const idIndex = index(idColumn);
 
-    const rows = csv.rows
-      .map((row, sourceIndex) => ({
-        externalId: idIndex >= 0 ? row[idIndex] : undefined,
-        occurredAt: parseDate(String(row[dateIndex] || "")),
-        amount: parseAmount(String(row[amountIndex] || "")),
-        currency:
-          currencyIndex >= 0
-            ? String(row[currencyIndex] || accountCurrency).toUpperCase()
-            : accountCurrency,
-        description: descriptionIndex >= 0 ? row[descriptionIndex] : undefined,
-        type: typeIndex >= 0 ? row[typeIndex] : undefined,
-        sourceIndex,
-      }))
-      .filter((row) => row.occurredAt && Number.isFinite(row.amount));
+    const rows = csv
+      ? csv.rows
+          .map((row, sourceIndex) => ({
+            externalId: idIndex >= 0 ? row[idIndex] : undefined,
+            occurredAt: parseDate(String(row[dateIndex] || "")),
+            amount: parseAmount(String(row[amountIndex] || "")),
+            currency:
+              currencyIndex >= 0
+                ? String(row[currencyIndex] || accountCurrency).toUpperCase()
+                : accountCurrency,
+            description:
+              descriptionIndex >= 0 ? row[descriptionIndex] : undefined,
+            type: typeIndex >= 0 ? row[typeIndex] : undefined,
+            sourceIndex,
+          }))
+          .filter((row) => row.occurredAt && Number.isFinite(row.amount))
+      : [];
 
     setBusy(true);
     setMessage(null);
@@ -244,8 +248,9 @@ export function MintosImporter() {
         <div>
           <h2 className="text-lg font-semibold">Mintos import</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
-            Nahraj CSV export. FinanceOS se pokusí sloupce rozpoznat a před
-            importem je můžeš ručně opravit.
+            Aktuální hodnotu můžeš aktualizovat i bez souboru. Pokud přidáš CSV
+            export, FinanceOS navíc importuje historii a před importem můžeš
+            namapování sloupců ručně opravit.
           </p>
         </div>
         <span className="rounded-full border border-[var(--warning)]/25 bg-[var(--warning)]/8 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-[var(--warning)]">
@@ -373,10 +378,14 @@ export function MintosImporter() {
 
         <button
           type="submit"
-          disabled={!csv || busy}
+          disabled={busy}
           className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? "Importuji…" : "Import Mintos"}
+          {busy
+            ? "Ukládám…"
+            : csv
+              ? "Update balance & import Mintos"
+              : "Update Mintos balance"}
         </button>
       </form>
       <style jsx>{`
