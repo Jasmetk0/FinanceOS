@@ -17,6 +17,9 @@ export function buildExport() {
     snapshots: db
       .prepare("SELECT * FROM snapshots ORDER BY recorded_at ASC")
       .all(),
+    assetPrices: db
+      .prepare("SELECT * FROM asset_prices ORDER BY asset_id, price_date ASC")
+      .all(),
     planTargets: db
       .prepare("SELECT * FROM plan_targets ORDER BY asset_class ASC")
       .all(),
