@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getDashboardData, getHoldings } from "@/lib/server/analytics";
 
@@ -61,7 +62,12 @@ export default function InvestmentsPage() {
                       className="border-b border-white/6 last:border-0"
                     >
                       <td className="py-4">
-                        <p className="font-semibold">{holding.symbol}</p>
+                        <Link
+                          href={"/investments/" + encodeURIComponent(holding.symbol)}
+                          className="font-semibold underline decoration-white/15 underline-offset-4 transition hover:decoration-[var(--accent)]"
+                        >
+                          {holding.symbol}
+                        </Link>
                         <p className="mt-1 max-w-[280px] truncate text-xs text-[var(--muted)]">
                           {holding.name}
                         </p>
