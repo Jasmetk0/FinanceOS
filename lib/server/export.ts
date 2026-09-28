@@ -17,5 +17,14 @@ export function buildExport() {
     snapshots: db
       .prepare("SELECT * FROM snapshots ORDER BY recorded_at ASC")
       .all(),
+    planTargets: db
+      .prepare("SELECT * FROM plan_targets ORDER BY asset_class ASC")
+      .all(),
+    planSettings: db
+      .prepare("SELECT * FROM plan_settings ORDER BY key ASC")
+      .all(),
+    investmentJournal: db
+      .prepare("SELECT * FROM investment_journal ORDER BY created_at ASC")
+      .all(),
   };
 }
