@@ -1,4 +1,4 @@
-export type CurrencyCode = "CZK" | "EUR" | "USD" | "GBP" | "BTC" | "ETH";
+export type CurrencyCode = string;
 
 export type ProviderId =
   | "trading212"
@@ -17,6 +17,8 @@ export type AccountType =
   | "crypto"
   | "p2p"
   | "cash"
+  | "asset"
+  | "liability"
   | "manual";
 
 export type AssetClass =
@@ -39,7 +41,8 @@ export type TransactionKind =
   | "transfer"
   | "income"
   | "expense"
-  | "gift";
+  | "gift"
+  | "adjustment";
 
 export interface ProviderConnection {
   id: string;

@@ -19,6 +19,17 @@ export const metadata: Metadata = {
     template: "%s · FinanceOS",
   },
   description: "Personal finance and investment dashboard.",
+  manifest: "/manifest.webmanifest",
+  applicationName: "FinanceOS",
+  appleWebApp: {
+    capable: true,
+    title: "FinanceOS",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: "/financeos-icon.svg",
+    apple: "/financeos-icon.svg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

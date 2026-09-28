@@ -3,11 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { AutoSync } from "@/components/auto-sync";
 
 const navigation = [
   { href: "/", label: "Dashboard", short: "DB" },
   { href: "/investments", label: "Investments", short: "IN" },
+  { href: "/performance", label: "Performance", short: "PF" },
+  { href: "/history", label: "History", short: "HI" },
+  { href: "/insights", label: "Insights", short: "IS" },
+  { href: "/plan", label: "Plan", short: "PL" },
+  { href: "/analyst", label: "Analyst", short: "AI" },
+  { href: "/journal", label: "Journal", short: "JR" },
   { href: "/transactions", label: "Transactions", short: "TX" },
+  { href: "/cash-flow", label: "Cash Flow", short: "CF" },
   { href: "/accounts", label: "Accounts", short: "AC" },
   { href: "/connections", label: "Connections", short: "CN" },
   { href: "/settings", label: "Settings", short: "ST" },
@@ -56,7 +64,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
+    <>
+      <AutoSync />
+      <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="hidden min-h-screen border-r border-white/7 bg-black/10 p-4 lg:flex lg:flex-col">
         <div className="px-2 py-3">
           <p className="text-xs font-medium uppercase tracking-[0.24em] text-[var(--muted)]">
@@ -82,10 +92,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
           <div className="mt-3 flex items-center gap-2 text-sm">
             <span className="h-2 w-2 rounded-full bg-[var(--warning)]" />
-            <span>Demo mode</span>
+            <span>Local mode</span>
           </div>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-            Žádné reálné účty ani API klíče zatím nejsou připojené.
+            Data i API credentials zůstávají lokálně na tomto počítači.
           </p>
         </div>
       </aside>
@@ -128,6 +138,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
         {children}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

@@ -1,0 +1,171 @@
+import { Pill, SectionCard, StatCard } from "@/components/ui";
+import { getPerformanceData } from "@/lib/server/analytics";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+function pct(value: number | null) {
+  return value === null
+    ? "—"
+    : value.toLocaleString("cs-CZ", {
+        maximumFractionDigits: 2,
+        minimumFractionDigits: 0,
+      }) + " %";
+}
+
+export default function PerformancePage() {
+  const data = getPerformanceData();
+
+  return (
+    <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
+      <Pill>Money-weighted analytics</Pill>
+      <div className="mt-3">
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          Performance
+        </h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
+          Výnos oddělený od vkladů a výběrů. XIRR používá skutečné časování
+          externích cash flow a dnešní hodnotu portfolia.
+        </p>
+      </div>
+
+      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          label="Investiční majetek"
+          value={data.totals.currentValueCzk}
+          format="currency"
+          hint="Broker + crypto + P2P"
+        />
+        <StatCard
+          label="Čisté vklady"
+          value={data.totals.netContributedCzk}
+          format="currency"
+          hint={
+            data.totals.externalFlowCount
+              ? String(data.totals.externalFlowCount) + " cash-flow záznamů"
+              : "Zatím bez historie vkladů"
+          }
+        />
+        <StatCard
+          label="Odhad zisku"
+          value={data.totals.estimatedProfitCzk}
+          format="currency"
+          hint="Aktuální hodnota mínus čisté vklady"
+          positive={data.totals.estimatedProfitCzk >= 0}
+        />
+        <StatCard
+          label="XIRR"
+          value={data.totals.xirrPct ?? 0}
+          format="percent"
+          hint={
+            data.totals.xirrPct === null
+              ? "Nedostatek cash-flow dat"
+              : "Annualizovaný money-weighted return"
+          }
+          positive={(data.totals.xirrPct ?? 0) >= 0}
+        />
+      </section>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Výkon podle účtu"
+          subtitle="Odhad je přesný jen tehdy, pokud provider/import obsahuje kompletní vklady a výběry"
+        >
+          {data.accounts.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1100px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                    <th className="pb-3 font-medium">Account</th>
+                    <th className="pb-3 text-right font-medium">Current value</th>
+                    <th className="pb-3 text-right font-medium">Deposits</th>
+                    <th className="pb-3 text-right font-medium">Withdrawals</th>
+                    <th className="pb-3 text-right font-medium">Net contributed</th>
+                    <th className="pb-3 text-right font-medium">Est. profit</th>
+                    <th className="pb-3 text-right font-medium">Simple return</th>
+                    <th className="pb-3 text-right font-medium">XIRR</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.accounts.map((account) => (
+                    <tr
+                      key={account.id}
+                      className="border-b border-white/6 last:border-0"
+                    >
+                      <td className="py-4">
+                        <p className="font-medium">{account.name}</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          {account.provider} · {account.externalFlowCount} external flows
+                        </p>
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.currentValueCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.depositsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.withdrawalsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.netContributedCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td
+                        className={[
+                          "py-4 text-right font-mono text-sm",
+                          account.estimatedProfitCzk > 0
+                            ? "text-[var(--accent)]"
+                            : account.estimatedProfitCzk < 0
+                              ? "text-[var(--danger)]"
+                              : "",
+                        ].join(" ")}
+                      >
+                        {account.estimatedProfitCzk > 0 ? "+" : ""}
+                        {account.estimatedProfitCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {pct(account.simpleReturnPct)}
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {pct(account.xirrPct)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              Připoj investiční účet nebo importuj Mintos.
+            </p>
+          )}
+        </SectionCard>
+      </div>
+
+      <div className="mt-4 rounded-3xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-5">
+        <p className="text-sm font-semibold">Jak číst tato čísla</p>
+        <p className="mt-2 max-w-5xl text-sm leading-6 text-[var(--muted)]">
+          Nákupy a prodeje uvnitř účtu nejsou externí cash flow a XIRR je
+          nepočítá jako nové peníze. Vklad na investiční účet ano, výběr z něj
+          také. Pokud starší vklady v provider historii chybí, FinanceOS raději
+          zobrazí omezený odhad než aby si historii vymýšlel.
+        </p>
+      </div>
+    </main>
+  );
+}

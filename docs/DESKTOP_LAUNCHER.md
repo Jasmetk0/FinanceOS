@@ -1,36 +1,52 @@
 # FinanceOS desktop launcher
 
-FinanceOS includes a small Windows helper that creates a launcher on your Desktop.
+FinanceOS ships with a Windows helper that creates two shortcuts on the Desktop:
 
-## Install once
+- `FinanceOS` — update GitHub, update npm dependencies, start FinanceOS in the background, and open it in the browser.
+- `FinanceOS Stop` — stop the hidden local FinanceOS server.
+
+## Install once after this upgrade
 
 From the FinanceOS repository, double-click:
 
 `INSTALL_DESKTOP_LAUNCHER.cmd`
 
-It creates:
+The installer replaces the older `FinanceOS.cmd` launcher with Windows shortcuts.
 
-`FinanceOS.cmd`
+After that, ordinary use does not require an open terminal window.
 
-on your Windows Desktop.
+## What FinanceOS does when started
 
-## What the Desktop launcher does
-
-Every time you start `FinanceOS.cmd`, it:
-
-1. checks that Git and npm are available,
-2. refuses to continue if the repository has uncommitted changes, so local work is not overwritten,
+1. verifies Git and npm,
+2. refuses to continue if the repository contains uncommitted changes,
 3. fetches GitHub,
-4. switches to the `buuk` branch,
+4. switches to `buuk`,
 5. runs `git pull --ff-only origin buuk`,
-6. runs `npm install --no-audit --no-fund`,
-7. starts `npm run dev` when port 3000 is not already in use,
-8. waits for FinanceOS to respond,
-9. opens `http://localhost:3000` in the default browser.
+6. updates npm dependencies,
+7. builds the production bundle only when the Git revision changed,
+8. verifies port 3000 is free,
+9. starts Next.js production mode bound to `127.0.0.1` in a hidden process,
+10. waits for `/api/health`,
+11. starts a hidden background sync worker,
+12. opens `http://127.0.0.1:3000`.
 
-The installer can be run again safely. It overwrites only the generated Desktop launcher.
+The sync worker requests a provider sync every 15 minutes even when the browser is
+closed. After a sync it also creates one credentials-free JSON backup per day under
+`%LOCALAPPDATA%\FinanceOS\backups` and keeps the latest 60 days.
+`FinanceOS Stop` stops both the web server and the background worker.
 
-## Important
+## Logs
 
-The launcher intentionally does **not** use `git reset --hard`, auto-stash, or any other destructive Git command.
-If local uncommitted changes are detected, it stops and shows `git status --short`.
+Launcher, server, and background-sync logs are stored under:
+
+`%LOCALAPPDATA%\FinanceOS`
+
+The same directory contains the local database and encryption key.
+
+## Safety
+
+The launcher deliberately never uses destructive Git commands such as
+`git reset --hard` and never automatically stashes local work. If the working
+tree is dirty, startup stops and shows an error instead of overwriting files.
+
+The local server is bound to `127.0.0.1`, so it is not exposed to the local network.
