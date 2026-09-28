@@ -143,6 +143,7 @@ export function CashFlowCsvImporter() {
   const [descriptionColumn, setDescriptionColumn] = useState("");
   const [categoryColumn, setCategoryColumn] = useState("");
   const [sourceColumn, setSourceColumn] = useState("");
+  const [kindColumn, setKindColumn] = useState("");
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -191,6 +192,9 @@ export function CashFlowCsvImporter() {
       setSourceColumn(
         autoColumn(parsed.headers, ["source", "merchant", "counterparty", "protistrana"]),
       );
+      setKindColumn(
+        autoColumn(parsed.headers, ["kind", "financeos kind", "transaction kind"]),
+      );
       setIdColumn(
         autoColumn(parsed.headers, [
           "id",
@@ -220,6 +224,12 @@ export function CashFlowCsvImporter() {
     const defaultSource = String(
       formData.get("defaultSource") || "CSV import",
     ).trim();
+    const positiveKind = String(
+      formData.get("positiveKind") || "income",
+    );
+    const negativeKind = String(
+      formData.get("negativeKind") || "expense",
+    );
 
     const index = (column: string) =>
       column ? csv.headers.indexOf(column) : -1;
@@ -230,6 +240,7 @@ export function CashFlowCsvImporter() {
     const descriptionIndex = index(descriptionColumn);
     const categoryIndex = index(categoryColumn);
     const sourceIndex = index(sourceColumn);
+    const kindIndex = index(kindColumn);
     const idIndex = index(idColumn);
 
     const rows = csv.rows
@@ -251,6 +262,7 @@ export function CashFlowCsvImporter() {
           sourceIndex >= 0
             ? String(row[sourceIndex] || defaultSource)
             : defaultSource,
+        kind: kindIndex >= 0 ? String(row[kindIndex] || "") : undefined,
       }))
       .filter(
         (row) =>
@@ -274,6 +286,8 @@ export function CashFlowCsvImporter() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           defaultCurrency,
+          positiveKind,
+          negativeKind,
           rows,
         }),
       });
@@ -312,6 +326,7 @@ export function CashFlowCsvImporter() {
         ["Description", descriptionColumn, setDescriptionColumn],
         ["Category", categoryColumn, setCategoryColumn],
         ["Source", sourceColumn, setSourceColumn],
+        ["Kind", kindColumn, setKindColumn],
         ["External ID", idColumn, setIdColumn],
       ] as const
     : [];
@@ -322,9 +337,10 @@ export function CashFlowCsvImporter() {
         <div>
           <h2 className="font-semibold">Cash-flow CSV import</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-            Importuj bankovní nebo vlastní CSV historii. Kladná částka se uloží
-            jako income, záporná jako expense. Import mění cash-flow historii,
-            ne aktuální bankovní zůstatek v net worth.
+            Importuj bankovní nebo vlastní CSV historii. U kladných i záporných
+            částek si zvolíš výchozí typ; interní převody tak nemusíš omylem
+            počítat jako příjem nebo výdaj. Import mění cash-flow historii, ne
+            aktuální bankovní zůstatek v net worth.
           </p>
         </div>
         <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
@@ -339,7 +355,7 @@ export function CashFlowCsvImporter() {
           void submit(event.currentTarget);
         }}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label>
             <span className="text-xs text-[var(--muted)]">Default currency</span>
             <input
@@ -356,6 +372,35 @@ export function CashFlowCsvImporter() {
               defaultValue="Bank CSV"
               className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
             />
+          </label>
+          <label>
+            <span className="text-xs text-[var(--muted)]">Positive amounts</span>
+            <select
+              name="positiveKind"
+              defaultValue="income"
+              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            >
+              <option value="income">Income</option>
+              <option value="gift">Gift</option>
+              <option value="interest">Interest</option>
+              <option value="deposit">Deposit / transfer in</option>
+              <option value="transfer">Internal transfer</option>
+              <option value="adjustment">Adjustment</option>
+            </select>
+          </label>
+          <label>
+            <span className="text-xs text-[var(--muted)]">Negative amounts</span>
+            <select
+              name="negativeKind"
+              defaultValue="expense"
+              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            >
+              <option value="expense">Expense</option>
+              <option value="fee">Fee</option>
+              <option value="withdrawal">Withdrawal / transfer out</option>
+              <option value="transfer">Internal transfer</option>
+              <option value="adjustment">Adjustment</option>
+            </select>
           </label>
         </div>
 
