@@ -78,6 +78,9 @@ export interface TransactionInput {
   note?: string | null;
   category?: string | null;
   sourceLabel?: string | null;
+  flowScope?: "external" | "internal" | "unclassified" | "not_applicable" | "legacy";
+  counterpartyRef?: string | null;
+  transferValueCzk?: number | null;
   raw?: unknown;
 }
 
@@ -312,9 +315,10 @@ export function upsertTransaction(input: TransactionInput) {
       INSERT INTO transactions(
         id, provider, account_id, external_id, kind, occurred_at, currency,
         amount, amount_czk, asset_id, quantity, price, fee, note,
-        category, source_label, raw_json
+        category, source_label, flow_scope, counterparty_ref,
+        transfer_value_czk, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         account_id = excluded.account_id,
         kind = excluded.kind,
@@ -329,6 +333,9 @@ export function upsertTransaction(input: TransactionInput) {
         note = excluded.note,
         category = excluded.category,
         source_label = excluded.source_label,
+        flow_scope = excluded.flow_scope,
+        counterparty_ref = excluded.counterparty_ref,
+        transfer_value_czk = excluded.transfer_value_czk,
         raw_json = excluded.raw_json
     `)
     .run(
@@ -348,6 +355,9 @@ export function upsertTransaction(input: TransactionInput) {
       input.note ?? null,
       input.category ?? null,
       input.sourceLabel ?? null,
+      input.flowScope ?? "legacy",
+      input.counterpartyRef ?? null,
+      input.transferValueCzk ?? null,
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
 }
