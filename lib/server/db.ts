@@ -1,5 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
 import { getDatabasePath } from "@/lib/server/paths";
+import {
+  canonicalCryptoIdentity,
+  canonicalSecurityIdentity,
+} from "@/lib/shared/finance-normalization.mjs";
 
 const globalDb = globalThis as typeof globalThis & {
   __financeOsDb?: DatabaseSync;
@@ -8,6 +12,155 @@ const globalDb = globalThis as typeof globalThis & {
 function hasColumn(db: DatabaseSync, table: string, column: string): boolean {
   const rows = db.prepare(`PRAGMA table_info(${table})`).all();
   return rows.some((row) => String(row.name) === column);
+}
+
+
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function backfillLegacyFlowScopes(db: DatabaseSync) {
+  // Old exports predate explicit flow_scope. Bring them in line with the
+  // provider semantics used by current sync/import code instead of silently
+  // excluding them from performance analytics.
+  db.exec(`
+    UPDATE transactions
+    SET
+      flow_scope = CASE
+        WHEN kind = 'deposit' THEN 'external'
+        WHEN kind = 'withdrawal' THEN 'unclassified'
+        WHEN kind = 'transfer' THEN 'internal'
+        ELSE 'not_applicable'
+      END,
+      category = CASE
+        WHEN category IS NOT NULL AND category != '' THEN category
+        WHEN kind = 'deposit' THEN 'external_deposit'
+        WHEN kind = 'withdrawal' THEN 'cash_out_unclassified'
+        WHEN kind = 'transfer' THEN 'internal_transfer'
+        ELSE category
+      END
+    WHERE provider = 'trading212'
+      AND flow_scope = 'legacy';
+
+    UPDATE transactions
+    SET flow_scope = CASE
+      WHEN kind IN ('deposit', 'withdrawal') THEN 'external'
+      WHEN kind = 'transfer' THEN 'internal'
+      ELSE 'not_applicable'
+    END
+    WHERE provider = 'investown'
+      AND flow_scope = 'legacy';
+
+    UPDATE transactions
+    SET flow_scope = 'not_applicable'
+    WHERE provider = 'kraken'
+      AND flow_scope = 'legacy'
+      AND kind IN ('buy', 'sell', 'dividend', 'interest', 'fee', 'adjustment');
+
+    UPDATE transactions
+    SET flow_scope = 'not_applicable'
+    WHERE provider = 'manual'
+      AND flow_scope = 'legacy';
+  `);
+}
+
+function backfillAccountCoverage(db: DatabaseSync) {
+  const investownRows = db
+    .prepare(
+      "SELECT id, raw_json, realized_pnl_status, unrealized_pnl_status " +
+        "FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+
+  const update = db.prepare(
+    "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ? WHERE id = ?",
+  );
+
+  for (const row of investownRows) {
+    const raw = parseJsonObject(row.raw_json);
+    const isCompleteNativeStatement =
+      raw.importMode === "investown-native" &&
+      raw.balanceMode === "derived-from-full-statement";
+
+    if (!isCompleteNativeStatement) continue;
+
+    const realized =
+      String(row.realized_pnl_status || "unknown") === "unknown"
+        ? "available"
+        : String(row.realized_pnl_status);
+    const unrealized =
+      String(row.unrealized_pnl_status || "unknown") === "unknown"
+        ? "not_applicable"
+        : String(row.unrealized_pnl_status);
+
+    update.run(realized, unrealized, String(row.id));
+  }
+}
+
+function backfillCanonicalAssets(db: DatabaseSync) {
+  const rows = db
+    .prepare(
+      "SELECT id, provider, external_id, symbol, asset_class, isin, raw_json " +
+        "FROM assets WHERE provider IN ('trading212', 'kraken')",
+    )
+    .all();
+
+  const update = db.prepare(
+    "UPDATE assets SET symbol = ?, canonical_key = ?, isin = ?, listing_symbol = ? WHERE id = ?",
+  );
+
+  for (const row of rows) {
+    const provider = String(row.provider);
+    const raw = parseJsonObject(row.raw_json);
+
+    if (provider === "trading212") {
+      const rawIsin =
+        typeof raw.isin === "string" && raw.isin
+          ? raw.isin
+          : row.isin
+            ? String(row.isin)
+            : "";
+      const shortName =
+        typeof raw.shortName === "string" ? raw.shortName : "";
+      const identity = canonicalSecurityIdentity(
+        String(row.external_id),
+        rawIsin,
+        shortName,
+      );
+      update.run(
+        identity.canonicalSymbol,
+        identity.canonicalKey,
+        identity.isin,
+        identity.listingSymbol,
+        String(row.id),
+      );
+      continue;
+    }
+
+    const symbol = String(row.symbol || "").toUpperCase();
+    if (!symbol) continue;
+    const identity = canonicalCryptoIdentity(
+      symbol,
+      String(row.external_id || symbol),
+    );
+    update.run(
+      identity.canonicalSymbol,
+      String(row.asset_class) === "cash"
+        ? "currency:" + identity.canonicalSymbol
+        : identity.canonicalKey,
+      null,
+      identity.listingSymbol,
+      String(row.id),
+    );
+  }
 }
 
 function initialize(db: DatabaseSync) {
@@ -98,6 +251,11 @@ function initialize(db: DatabaseSync) {
       price REAL,
       fee REAL,
       note TEXT,
+      category TEXT,
+      source_label TEXT,
+      flow_scope TEXT NOT NULL DEFAULT 'legacy',
+      counterparty_ref TEXT,
+      transfer_value_czk REAL,
       raw_json TEXT,
       UNIQUE(provider, external_id)
     );
@@ -117,9 +275,6 @@ function initialize(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_transactions_account_occurred
       ON transactions(account_id, occurred_at ASC);
-
-    CREATE INDEX IF NOT EXISTS idx_transactions_account_kind_scope
-      ON transactions(account_id, kind, flow_scope, occurred_at ASC);
 
     CREATE INDEX IF NOT EXISTS idx_holdings_account
       ON holdings(account_id);
@@ -229,6 +384,15 @@ function initialize(db: DatabaseSync) {
   if (!hasColumn(db, "transactions", "transfer_value_czk")) {
     db.exec("ALTER TABLE transactions ADD COLUMN transfer_value_czk REAL;");
   }
+
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_transactions_account_kind_scope " +
+      "ON transactions(account_id, kind, flow_scope, occurred_at ASC);",
+  );
+
+  backfillLegacyFlowScopes(db);
+  backfillAccountCoverage(db);
+  backfillCanonicalAssets(db);
 }
 
 export function getDb(): DatabaseSync {
