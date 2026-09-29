@@ -922,6 +922,18 @@ export function getTrading212CardStatus() {
         SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
         SUM(
           CASE
+            WHEN category = 'card_cashback'
+              AND source_label LIKE '%· inferred'
+            THEN 1 ELSE 0
+          END
+        ) AS inferred_cashback_count,
+        SUM(
+          CASE
+            WHEN external_id LIKE 'card-export:%' THEN 1 ELSE 0
+          END
+        ) AS rich_export_row_count,
+        SUM(
+          CASE
             WHEN flow_scope = 'unclassified' AND kind = 'deposit' THEN 1
             ELSE 0
           END
@@ -1047,6 +1059,16 @@ export function getTrading212CardStatus() {
   const refundsCzk = Number(stats?.refunds) || 0;
   const cashbackCzk = Number(stats?.cashback) || 0;
   const netSpendCzk = Math.max(0, spendCzk - refundsCzk);
+  const inferredCashbackCount = Number(stats?.inferred_cashback_count) || 0;
+  const richExportRowCount = Number(stats?.rich_export_row_count) || 0;
+  const classificationSource =
+    richExportRowCount > 0 && inferredCashbackCount > 0
+      ? "mixed"
+      : richExportRowCount > 0
+        ? "rich_export"
+        : inferredCashbackCount > 0
+          ? "validated_public_history"
+          : "none";
 
   return {
     detected: hasTrading212CardEvidence(),
@@ -1059,6 +1081,9 @@ export function getTrading212CardStatus() {
       netSpendCzk > 0 ? (cashbackCzk / netSpendCzk) * 100 : null,
     spendCount: Number(stats?.spend_count) || 0,
     cashbackCount: Number(stats?.cashback_count) || 0,
+    inferredCashbackCount,
+    richExportRowCount,
+    classificationSource,
     unresolvedCashInCount: Number(stats?.unresolved_cash_in_count) || 0,
     unresolvedCashInCzk: Number(stats?.unresolved_cash_in_czk) || 0,
     enrichmentOnlyCount: Number(stats?.enrichment_only_count) || 0,
