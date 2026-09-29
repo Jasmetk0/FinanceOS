@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Pill, SectionCard, StatCard } from "@/components/ui";
-import { getDashboardData, getHoldings } from "@/lib/server/analytics";
+import { getDashboardData } from "@/lib/server/analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default function InvestmentsPage() {
   const dashboard = getDashboardData();
-  const holdings = getHoldings();
+  const holdings = dashboard.holdings;
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -68,6 +68,7 @@ export default function InvestmentsPage() {
                       <td className="py-4">
                         <Link
                           href={"/investments/" + encodeURIComponent(holding.symbol)}
+                          prefetch={false}
                           className="font-semibold underline decoration-white/15 underline-offset-4 transition hover:decoration-[var(--accent)]"
                         >
                           {holding.symbol}
