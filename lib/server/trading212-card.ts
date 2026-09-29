@@ -528,10 +528,7 @@ async function enrichReportRows(input: {
 
     if (!id || !occurredAt) continue;
 
-    const enrichmentOnly =
-      classification.cardEvidence &&
-      classification.category !== "external_deposit" &&
-      classification.category !== "external_withdrawal";
+    const enrichmentOnly = classification.cardEvidence;
 
     upsertTransaction({
       provider: "trading212",
