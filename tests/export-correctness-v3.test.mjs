@@ -154,10 +154,13 @@ test("Trading 212 cashback is external reward capital, not investment return", (
   const analytics = source("lib/server/analytics.ts");
   const performancePage = source("app/performance/page.tsx");
 
-  assert.match(
-    card,
-    /action\.includes\("cashback"\)[\s\S]{0,220}flowScope: "external"[\s\S]{0,120}category: "card_cashback"/,
-  );
+  const cashbackStart = card.indexOf('if (action.includes("cashback"))');
+  const cashbackEnd = card.indexOf('if (action === "deposit")', cashbackStart);
+  const cashbackBlock = card.slice(cashbackStart, cashbackEnd);
+  assert.ok(cashbackStart >= 0);
+  assert.ok(cashbackEnd > cashbackStart);
+  assert.ok(cashbackBlock.includes('flowScope: "external"'));
+  assert.ok(cashbackBlock.includes('category: "card_cashback"'));
   assert.ok(analytics.includes("externalRewardsCzk"));
   assert.ok(analytics.includes("performanceExternalCapitalCzk"));
   assert.ok(
