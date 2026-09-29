@@ -1,6 +1,14 @@
+param(
+    [string]$RepoRootOverride = ""
+)
+
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = if ([string]::IsNullOrWhiteSpace($RepoRootOverride)) {
+    (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else {
+    (Resolve-Path $RepoRootOverride).Path
+}
 $gitDir = Join-Path $repoRoot ".git"
 
 if (-not (Test-Path $gitDir)) {
