@@ -69,11 +69,26 @@ try {
 
     Push-Location $repoRoot
     try {
-        $dirty = git status --porcelain
+        $dirty = @(git status --porcelain)
         if ($LASTEXITCODE -ne 0) {
             throw "Could not read Git status."
         }
-        if ($dirty) {
+        if ($dirty.Count -gt 0) {
+            $dirtyPaths = @(
+                $dirty |
+                    ForEach-Object {
+                        if ($_.Length -gt 3) { $_.Substring(3).Trim() } else { "" }
+                    } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+
+            if (
+                $dirtyPaths.Count -eq 1 -and
+                $dirtyPaths[0].Replace("\\", "/") -eq "package-lock.json"
+            ) {
+                throw "FinanceOS found only a local package-lock.json change. Older launcher versions could create this themselves by running npm install. If you did not edit dependencies manually, run 'git restore -- package-lock.json' once in the FinanceOS folder, then start FinanceOS again."
+            }
+
             throw "FinanceOS has local uncommitted changes. Commit, stash, or discard them before starting FinanceOS."
         }
 
