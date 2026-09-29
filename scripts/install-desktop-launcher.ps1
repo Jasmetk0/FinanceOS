@@ -59,8 +59,8 @@ function New-FinanceShortcut(
 $startShortcut = Join-Path $desktop "FinanceOS.lnk"
 $stopShortcut = Join-Path $desktop "FinanceOS Stop.lnk"
 
-New-FinanceShortcut `$startShortcut `$localBootstrap (' -RepoRoot "' + `$repoRoot + '"') "Download latest launcher, update and open FinanceOS" "`$env:SystemRoot\System32\shell32.dll,167"
-New-FinanceShortcut `$stopShortcut `$localStop "" "Stop the local FinanceOS server" "`$env:SystemRoot\System32\shell32.dll,131"
+New-FinanceShortcut $startShortcut $localBootstrap (' -RepoRoot "' + $repoRoot + '"') "Download latest launcher, update and open FinanceOS" "$env:SystemRoot\System32\shell32.dll,167"
+New-FinanceShortcut $stopShortcut $localStop "" "Stop the local FinanceOS server" "$env:SystemRoot\System32\shell32.dll,131"
 
 $legacyLauncher = Join-Path $desktop "FinanceOS.cmd"
 if (Test-Path $legacyLauncher) {
