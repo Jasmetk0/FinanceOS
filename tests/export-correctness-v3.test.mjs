@@ -163,10 +163,9 @@ test("Trading 212 cashback is external reward capital, not investment return", (
   assert.ok(cashbackBlock.includes('category: "card_cashback"'));
   assert.ok(analytics.includes("externalRewardsCzk"));
   assert.ok(analytics.includes("performanceExternalCapitalCzk"));
-  assert.ok(
-    analytics.includes(
-      "performanceExternalCapitalCzk =\n    netContributedCzk + totals.externalRewardsCzk",
-    ),
+  assert.match(
+    analytics,
+    /performanceExternalCapitalCzk\s*=\s*netContributedCzk\s*\+\s*totals\.externalRewardsCzk/,
   );
   assert.ok(performancePage.includes('label="Externí odměny"'));
 });
