@@ -81,9 +81,12 @@ export interface PortfolioHistoryPoint {
 function historyMetric(
   valueCzk: number | null,
   contributedCzk: number,
+  performanceComplete = true,
 ): PortfolioHistoryMetric {
   const profitCzk =
-    valueCzk === null ? null : valueCzk - contributedCzk;
+    valueCzk === null || !performanceComplete
+      ? null
+      : valueCzk - contributedCzk;
 
   return {
     valueCzk,
@@ -166,6 +169,31 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   const unlinkedWalletStart = unlinkedWalletRow?.first_gap
     ? String(unlinkedWalletRow.first_gap)
     : null;
+
+  const unclassifiedPerformanceRows = db
+    .prepare(`
+      SELECT
+        t.provider,
+        MIN(substr(t.occurred_at, 1, 10)) AS first_gap
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.flow_scope = 'unclassified'
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+      GROUP BY t.provider
+    `)
+    .all();
+
+  const performanceGapByProvider = new Map<string, string>();
+  for (const row of unclassifiedPerformanceRows) {
+    if (!row.first_gap) continue;
+    performanceGapByProvider.set(
+      String(row.provider),
+      String(row.first_gap),
+    );
+  }
+  const firstPerformanceGap =
+    [...performanceGapByProvider.values()].sort()[0] ?? null;
 
   const flowRows = db
     .prepare(`
@@ -304,7 +332,14 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
             ? null
             : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
-      providerMetrics[provider] = historyMetric(value, contributed);
+      const providerPerformanceGap = performanceGapByProvider.get(provider);
+      const providerPerformanceComplete =
+        !providerPerformanceGap || date < providerPerformanceGap;
+      providerMetrics[provider] = historyMetric(
+        value,
+        contributed,
+        providerPerformanceComplete,
+      );
 
       if (!providerShouldExist) continue;
       if (value === null) {
@@ -332,6 +367,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       total: historyMetric(
         complete ? totalValue : null,
         totalExternalContribution,
+        !firstPerformanceGap || date < firstPerformanceGap,
       ),
       providers: providerMetrics,
       coverage: {
@@ -936,14 +972,28 @@ export function getPerformanceData() {
       `)
       .all(id);
 
-    const unclassifiedTransferRow = db
+    const unresolvedAccountFlowRow = db
       .prepare(`
-        SELECT COUNT(*) AS count
+        SELECT
+          COUNT(*) AS count,
+          SUM(
+            CASE
+              WHEN kind IN ('deposit', 'withdrawal')
+                AND amount_czk IS NOT NULL
+              THEN ABS(amount_czk)
+              ELSE 0
+            END
+          ) AS known_value_czk
         FROM transactions
         WHERE account_id = ?
-          AND kind = 'transfer'
           AND flow_scope = 'unclassified'
-          AND transfer_value_czk IS NULL
+          AND (
+            kind IN ('deposit', 'withdrawal')
+            OR (
+              kind = 'transfer'
+              AND transfer_value_czk IS NULL
+            )
+          )
       `)
       .get(id);
 
@@ -989,10 +1039,21 @@ export function getPerformanceData() {
     // transfers. Portfolio-level contribution below remains external-only.
     const netContributed =
       deposits - withdrawals + transferIn - transferOut;
-    const estimatedProfit = currentValue - netContributed;
+    const unclassifiedFlowCount = num(unresolvedAccountFlowRow?.count);
+    const knownUnclassifiedFlowCzk = num(
+      unresolvedAccountFlowRow?.known_value_czk,
+    );
+    const accountPerformanceComplete = unclassifiedFlowCount === 0;
+    const estimatedProfit = accountPerformanceComplete
+      ? currentValue - netContributed
+      : null;
     const simpleReturn =
-      netContributed > 0 ? (estimatedProfit / netContributed) * 100 : null;
-    const xirr = solveXirr(flows);
+      accountPerformanceComplete &&
+      estimatedProfit !== null &&
+      netContributed > 0
+        ? (estimatedProfit / netContributed) * 100
+        : null;
+    const xirr = accountPerformanceComplete ? solveXirr(flows) : null;
 
     return {
       id,
@@ -1019,7 +1080,9 @@ export function getPerformanceData() {
       realizedPnlStatus: String(account.realized_pnl_status || "unknown"),
       unrealizedPnlStatus: String(account.unrealized_pnl_status || "unknown"),
       externalFlowCount: cashRows.length,
-      unclassifiedTransferCount: num(unclassifiedTransferRow?.count),
+      performanceStatus: accountPerformanceComplete ? "complete" : "partial",
+      unclassifiedFlowCount,
+      knownUnclassifiedFlowCzk,
     };
   });
 
@@ -1056,26 +1119,44 @@ export function getPerformanceData() {
   const unrealizedPnlCzk =
     totals.unrealizedPnlUnknown > 0 ? null : totals.unrealizedPnlCzk;
 
-  const portfolioWalletGap = db
+  const portfolioGap = db
     .prepare(`
       SELECT
         COUNT(*) AS count,
         SUM(
           CASE
-            WHEN transfer_value_czk < 0 THEN ABS(transfer_value_czk)
+            WHEN t.kind = 'transfer'
+              AND t.transfer_value_czk IS NOT NULL
+            THEN ABS(t.transfer_value_czk)
+            WHEN t.kind IN ('deposit', 'withdrawal')
+              AND t.amount_czk IS NOT NULL
+            THEN ABS(t.amount_czk)
             ELSE 0
           END
-        ) AS known_book_value_out
-      FROM transactions
-      WHERE kind = 'transfer'
-        AND flow_scope = 'unclassified'
+        ) AS known_value_czk,
+        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS wallet_count,
+        SUM(
+          CASE
+            WHEN t.kind = 'transfer'
+              AND t.transfer_value_czk < 0
+            THEN ABS(t.transfer_value_czk)
+            ELSE 0
+          END
+        ) AS known_wallet_book_value_out
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.flow_scope = 'unclassified'
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
     `)
     .get();
-  const unlinkedWalletTransferCount = num(portfolioWalletGap?.count);
+  const unclassifiedFlowCount = num(portfolioGap?.count);
+  const knownUnclassifiedFlowCzk = num(portfolioGap?.known_value_czk);
+  const unlinkedWalletTransferCount = num(portfolioGap?.wallet_count);
   const unlinkedWalletBookValueOutCzk = num(
-    portfolioWalletGap?.known_book_value_out,
+    portfolioGap?.known_wallet_book_value_out,
   );
-  const portfolioPerformanceComplete = unlinkedWalletTransferCount === 0;
+  const portfolioPerformanceComplete = unclassifiedFlowCount === 0;
 
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
@@ -1138,6 +1219,8 @@ export function getPerformanceData() {
         ? Math.max(0, portfolioFlows.length - 1)
         : 0,
       performanceStatus: portfolioPerformanceComplete ? "complete" : "partial",
+      unclassifiedFlowCount,
+      knownUnclassifiedFlowCzk,
       unlinkedWalletTransferCount,
       unlinkedWalletBookValueOutCzk,
     },
@@ -1220,6 +1303,25 @@ export function getInsightsData() {
     }
   }
 
+  for (const account of dashboard.accounts) {
+    if (
+      account.reconciliationStatus === "warning" &&
+      Math.abs(account.reconciliationDifferenceCzk) > 0.01
+    ) {
+      warnings.push({
+        id: "reconciliation-" + account.id,
+        severity: "warning",
+        title: "Nevysvětlená hodnota: " + account.name,
+        detail:
+          "Provider total se liší od známých pozic a hotovosti o " +
+          Math.abs(account.reconciliationDifferenceCzk).toLocaleString("cs-CZ", {
+            maximumFractionDigits: 0,
+          }) +
+          " Kč. FinanceOS rozdíl zachovává jako nezařazenou hodnotu místo hádání jeho původu.",
+      });
+    }
+  }
+
   if (largestHolding && investableTotal > 0) {
     const share = (largestHolding.valueCzk / investableTotal) * 100;
     if (share >= 25) {
@@ -1236,8 +1338,30 @@ export function getInsightsData() {
     }
   }
 
+  if (performance.totals.performanceStatus === "partial") {
+    warnings.push({
+      id: "portfolio-performance-partial",
+      severity: "warning",
+      title: "Performance obsahuje neklasifikované cash flow",
+      detail:
+        "FinanceOS eviduje " +
+        performance.totals.unclassifiedFlowCount +
+        " investiční cash-flow záznamů, u kterých není bezpečně známé, zda jsou externí nebo interní. Celkový zisk a XIRR proto zůstávají prázdné.",
+    });
+  }
+
   for (const account of performance.accounts) {
-    if (account.currentValueCzk > 0 && account.externalFlowCount === 0) {
+    if (account.performanceStatus === "partial") {
+      warnings.push({
+        id: "flows-" + account.id,
+        severity: "warning",
+        title: "Neúplná performance historie: " + account.name,
+        detail:
+          "Účet má " +
+          account.unclassifiedFlowCount +
+          " nevyřešených cash-flow záznamů. FinanceOS proto nevydává odhad zisku ani XIRR za přesný.",
+      });
+    } else if (account.currentValueCzk > 0 && account.externalFlowCount === 0) {
       warnings.push({
         id: "flows-" + account.id,
         severity: "info",

@@ -1,4 +1,4 @@
-import { getDb } from "@/lib/server/db";
+import { getDb, repairStoredData } from "@/lib/server/db";
 
 type Row = Record<string, unknown>;
 
@@ -367,6 +367,7 @@ export function restoreExport(input: unknown) {
       );
     }
 
+    repairStoredData(db);
     db.exec("COMMIT;");
   } catch (error) {
     db.exec("ROLLBACK;");

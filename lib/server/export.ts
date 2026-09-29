@@ -48,6 +48,14 @@ export function buildExport() {
     0,
   );
 
+  const legacyFlows = transactions.reduce(
+    (count, row) =>
+      String(row.flow_scope || "legacy") === "legacy"
+        ? count + 1
+        : count,
+    0,
+  );
+
   const connectionErrors = connections
     .filter((connection) => connection.status === "error")
     .map((connection) => ({
@@ -64,10 +72,17 @@ export function buildExport() {
     return acc;
   }, {});
 
+  const canonicalEligible = assets.filter((row) =>
+    ["trading212", "kraken", "mintos"].includes(String(row.provider)),
+  );
   const canonicalIdentity = {
     withCanonicalKey: assets.filter((row) => Boolean(row.canonical_key)).length,
     withIsin: assets.filter((row) => Boolean(row.isin)).length,
     total: assets.length,
+    eligible: canonicalEligible.length,
+    eligibleWithCanonicalKey: canonicalEligible.filter((row) =>
+      Boolean(row.canonical_key),
+    ).length,
   };
 
   return {
@@ -78,6 +93,7 @@ export function buildExport() {
       reconciliation,
       missingTransactionCzk,
       unclassifiedFlows,
+      legacyFlows,
       historicalPriceRows: assetPrices.length,
       connectionErrors,
       pnlCoverage,
