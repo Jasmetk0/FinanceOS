@@ -100,3 +100,13 @@ test("Trading 212 card export cadence avoids repeated export notifications", () 
   assert.ok(card.includes("timeTo: nowIso"));
   assert.equal(card.includes("REPORT_WINDOW_MS"), false);
 });
+
+
+test("provider sync state survives full backup and restore", () => {
+  const exportSource = source("lib/server/export.ts");
+  const restore = source("lib/server/restore.ts");
+  assert.ok(exportSource.includes("providerSyncState"));
+  assert.ok(exportSource.includes("FROM provider_sync_state"));
+  assert.ok(restore.includes("rows(backup.providerSyncState)"));
+  assert.ok(restore.includes("INSERT INTO provider_sync_state"));
+});
