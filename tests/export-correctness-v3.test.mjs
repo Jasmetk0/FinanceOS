@@ -184,6 +184,7 @@ test("Trading 212 deposit fallback requires repeated provider cashback signature
   const db = source("lib/server/db.ts");
   assert.ok(db.includes("matchedDates.length < 3"));
   assert.ok(db.includes("previousWithdrawals * 0.015"));
+  assert.ok(db.includes("kind = 'income'"));
   assert.ok(db.includes("category = 'card_cashback'"));
   assert.ok(db.includes("category = 'external_deposit'"));
   assert.ok(
