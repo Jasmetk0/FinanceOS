@@ -2,88 +2,10 @@ import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { ManualTransactionForm } from "@/components/manual-transaction-form";
 import { CashFlowCsvImporter } from "@/components/cashflow-csv-importer";
 import { getCashFlowData } from "@/lib/server/analytics";
+import { InteractiveCashFlowChart } from "@/components/interactive-cash-flow-chart";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function CashFlowChart({
-  months,
-}: {
-  months: Array<{
-    month: string;
-    incomeCzk: number;
-    giftsCzk: number;
-    expensesCzk: number;
-    interestCzk: number;
-    netCzk: number;
-  }>;
-}) {
-  if (!months.length) {
-    return (
-      <div className="grid h-52 place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.015] text-center">
-        <div className="px-6">
-          <p className="text-sm font-medium">Zatím žádný cash-flow záznam</p>
-          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-            Přidej první výplatu, dar nebo výdaj přes Add manual transaction.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const max = Math.max(
-    1,
-    ...months.flatMap((item) => [
-      item.incomeCzk + item.giftsCzk + item.interestCzk,
-      item.expensesCzk,
-    ]),
-  );
-
-  return (
-    <div className="overflow-x-auto">
-      <div className="flex min-w-[640px] items-end gap-3 pt-6">
-        {months.map((item) => {
-          const income = item.incomeCzk + item.giftsCzk + item.interestCzk;
-          const incomeHeight = Math.max(2, (income / max) * 150);
-          const expenseHeight = Math.max(2, (item.expensesCzk / max) * 150);
-
-          return (
-            <div key={item.month} className="flex min-w-[58px] flex-1 flex-col items-center">
-              <div className="flex h-40 items-end gap-1.5">
-                <div
-                  className="w-4 rounded-t-md bg-[var(--accent)]"
-                  style={{ height: incomeHeight }}
-                  title={`Příjmy ${income.toLocaleString("cs-CZ")} Kč`}
-                />
-                <div
-                  className="w-4 rounded-t-md bg-white/25"
-                  style={{ height: expenseHeight }}
-                  title={`Výdaje ${item.expensesCzk.toLocaleString("cs-CZ")} Kč`}
-                />
-              </div>
-              <p className="mt-2 text-[10px] text-[var(--muted)]">
-                {new Date(item.month + "-01T12:00:00").toLocaleDateString("cs-CZ", {
-                  month: "short",
-                  year: "2-digit",
-                })}
-              </p>
-            </div>
-          );
-        })}
-      </div>
-      <div className="mt-4 flex gap-5 text-xs text-[var(--muted)]">
-        <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-[var(--accent)]" />
-          Příjmy
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-sm bg-white/25" />
-          Výdaje
-        </span>
-      </div>
-    </div>
-  );
-}
 
 export default function CashFlowPage() {
   const data = getCashFlowData(18);
@@ -140,9 +62,9 @@ export default function CashFlowPage() {
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]">
         <SectionCard
           title="Měsíční cash flow"
-          subtitle="Zeleně příjmy, šedě výdaje"
+          subtitle="Přesné částky po najetí, filtry období a čisté cash flow"
         >
-          <CashFlowChart months={data.months} />
+          <InteractiveCashFlowChart months={data.months} />
         </SectionCard>
 
         <SectionCard
