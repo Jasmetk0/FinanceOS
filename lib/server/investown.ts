@@ -636,7 +636,6 @@ export async function importInvestown(input: InvestownImportInput) {
     let runningWallet = 0;
     let runningPrincipal = 0;
     let runningReserved = 0;
-    let lastDate = "";
     const snapshots = new Map<string, { cash: number; invested: number; total: number }>();
 
     for (const item of prepared) {
@@ -647,7 +646,6 @@ export async function importInvestown(input: InvestownImportInput) {
       if (runningReserved < 0 && runningReserved > -0.02) runningReserved = 0;
 
       const date = statementDate(item.row, item.occurredIso);
-      lastDate = date;
       snapshots.set(date, {
         cash: Math.max(0, runningWallet),
         invested: Math.max(0, runningPrincipal + runningReserved),

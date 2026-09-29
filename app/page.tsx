@@ -1,94 +1,16 @@
 import Link from "next/link";
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { SyncButton } from "@/components/sync-button";
-import { getDashboardData } from "@/lib/server/analytics";
+import { getDashboardData, getHistoryData } from "@/lib/server/analytics";
+import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
+import { providerColor, providerLabel } from "@/lib/provider-visuals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function PortfolioChart({
-  data,
-}: {
-  data: Array<{ date: string; valueCzk: number }>;
-}) {
-  if (data.length < 2) {
-    return (
-      <div className="grid h-52 place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.015] text-center">
-        <div className="px-6">
-          <p className="text-sm font-medium">Historie se teprve začne tvořit</p>
-          <p className="mt-2 max-w-md text-xs leading-5 text-[var(--muted)]">
-            FinanceOS ukládá denní snapshot při každé synchronizaci. Starší
-            přesné tržní hodnoty doplní samostatný historical-price engine.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const values = data.map((item) => item.valueCzk);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const points = data
-    .map((item, index) => {
-      const x = (index / Math.max(1, data.length - 1)) * 100;
-      const y = 94 - ((item.valueCzk - min) / (max - min || 1)) * 78;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  const labels =
-    data.length <= 6
-      ? data
-      : [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]];
-
-  return (
-    <div className="mt-4">
-      <svg
-        viewBox="0 0 100 100"
-        className="h-52 w-full overflow-visible"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="Vývoj celkové hodnoty portfolia"
-      >
-        <defs>
-          <linearGradient id="portfolioFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#69e3aa" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#69e3aa" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {[20, 40, 60, 80].map((y) => (
-          <line
-            key={y}
-            x1="0"
-            x2="100"
-            y1={y}
-            y2={y}
-            stroke="rgba(255,255,255,0.06)"
-            strokeWidth="0.4"
-          />
-        ))}
-        <polygon points={`0,100 ${points} 100,100`} fill="url(#portfolioFill)" />
-        <polyline
-          points={points}
-          fill="none"
-          stroke="#69e3aa"
-          strokeWidth="1.4"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div className="mt-2 flex justify-between text-xs text-[var(--muted)]">
-        {labels.map((item) => (
-          <span key={item.date}>
-            {new Date(item.date + "T12:00:00").toLocaleDateString("cs-CZ")}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   const data = getDashboardData();
+  const history = getHistoryData();
   const hasPortfolioData =
     data.connections.length > 0 ||
     data.accounts.some((account) => account.provider !== "manual");
@@ -155,10 +77,10 @@ export default function Home() {
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
         <SectionCard
-          title="Vývoj kapitálu"
-          subtitle="Denní snapshoty v CZK od prvního syncu"
+          title="Vývoj investičního portfolia"
+          subtitle="Interaktivně: hodnota, vklady, zisk/ztráta, výnos %, platformy a období"
         >
-          <PortfolioChart data={data.portfolioSeries} />
+          <PortfolioHistoryChart data={history.chart} compact />
         </SectionCard>
 
         <SectionCard title="Účty" subtitle="Aktuální hodnota podle zdroje">
@@ -180,7 +102,7 @@ export default function Home() {
                       <div>
                         <p className="font-medium">{account.name}</p>
                         <p className="mt-1 text-xs text-[var(--muted)]">
-                          {account.type} · {account.provider}
+                          {account.type} · {providerLabel(account.provider)}
                         </p>
                       </div>
                       <p className="font-mono text-sm">
@@ -192,8 +114,11 @@ export default function Home() {
                     </div>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/6">
                       <div
-                        className="h-full rounded-full bg-[var(--accent)]"
-                        style={{ width: `${share}%` }}
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${share}%`,
+                          backgroundColor: providerColor(account.provider),
+                        }}
                       />
                     </div>
                   </div>

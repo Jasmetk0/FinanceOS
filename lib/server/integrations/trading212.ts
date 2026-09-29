@@ -1,7 +1,6 @@
 import type { ProviderId, TransactionKind } from "@/lib/domain";
 import { maybeToCzk, toCzk } from "@/lib/server/fx";
 import {
-  assetId,
   getConnectionSecret,
   recordSnapshot,
   replaceHoldings,

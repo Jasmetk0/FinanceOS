@@ -1,5 +1,6 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getInsightsData } from "@/lib/server/analytics";
+import { providerColor, providerLabel } from "@/lib/provider-visuals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -105,8 +106,12 @@ export default function InsightsPage() {
               {data.providerRanking.map((item) => (
                 <div key={item.provider}>
                   <div className="flex items-center justify-between gap-4">
-                    <span className="text-sm font-medium capitalize">
-                      {item.provider}
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: providerColor(item.provider) }}
+                      />
+                      {providerLabel(item.provider)}
                     </span>
                     <span className="font-mono text-sm">
                       {item.sharePct.toLocaleString("cs-CZ", {
@@ -117,10 +122,11 @@ export default function InsightsPage() {
                   </div>
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/6">
                     <div
-                      className="h-full rounded-full bg-[var(--accent)]"
+                      className="h-full rounded-full"
                       style={{
                         width:
                           Math.max(0, Math.min(100, item.sharePct)).toString() + "%",
+                        backgroundColor: providerColor(item.provider),
                       }}
                     />
                   </div>

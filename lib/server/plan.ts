@@ -88,16 +88,15 @@ function currentAllocation(): Record<PlanAssetClass, number> {
     );
   }
 
-  const manualCash = db
+  const standaloneCash = db
     .prepare(`
       SELECT COALESCE(SUM(total_value_czk), 0) AS total
       FROM accounts
-      WHERE provider = 'manual'
-        AND type = 'cash'
-        AND external_id LIKE 'balance:%'
+      WHERE type = 'cash'
+        AND NOT (provider = 'manual' AND external_id = 'main')
     `)
     .get();
-  result.cash += Math.max(0, num(manualCash?.total));
+  result.cash += Math.max(0, num(standaloneCash?.total));
 
   const manualAssets = db
     .prepare(`

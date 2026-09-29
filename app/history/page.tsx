@@ -5,82 +5,13 @@ import {
   listPriceImportAssets,
   reconstructPricedHoldingsHistory,
 } from "@/lib/server/historical-prices";
+import {
+  InteractiveTimeSeriesChart,
+  PortfolioHistoryChart,
+} from "@/components/portfolio-history-chart";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function LineChart({
-  data,
-  valueKey,
-  emptyText,
-}: {
-  data: Array<Record<string, string | number>>;
-  valueKey: string;
-  emptyText: string;
-}) {
-  if (data.length < 2) {
-    return (
-      <div className="grid h-52 place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.015] px-6 text-center">
-        <p className="max-w-lg text-sm leading-6 text-[var(--muted)]">
-          {emptyText}
-        </p>
-      </div>
-    );
-  }
-
-  const values = data.map((item) => Number(item[valueKey] || 0));
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
-  const points = data
-    .map((item, index) => {
-      const x = (index / Math.max(1, data.length - 1)) * 100;
-      const value = Number(item[valueKey] || 0);
-      const y = 92 - ((value - min) / (max - min || 1)) * 78;
-      return String(x) + "," + String(y);
-    })
-    .join(" ");
-
-  const selected =
-    data.length <= 5
-      ? data
-      : [data[0], data[Math.floor(data.length / 2)], data[data.length - 1]];
-
-  return (
-    <div>
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="h-52 w-full overflow-visible"
-      >
-        {[20, 40, 60, 80].map((y) => (
-          <line
-            key={y}
-            x1="0"
-            x2="100"
-            y1={y}
-            y2={y}
-            stroke="rgba(255,255,255,0.06)"
-            strokeWidth="0.4"
-          />
-        ))}
-        <polyline
-          points={points}
-          fill="none"
-          stroke="#69e3aa"
-          strokeWidth="1.5"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <div className="mt-2 flex justify-between text-[10px] text-[var(--muted)]">
-        {selected.map((item) => (
-          <span key={String(item.date)}>
-            {new Date(String(item.date) + "T12:00:00").toLocaleDateString("cs-CZ")}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export default function HistoryPage() {
   const data = getHistoryData();
@@ -132,38 +63,27 @@ export default function HistoryPage() {
         />
       </section>
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4">
         <SectionCard
-          title="Skutečná hodnota portfolia"
-          subtitle="Denní snapshoty vytvořené FinanceOS"
+          title="Interaktivní historie investičního portfolia"
+          subtitle="Přepínej hodnotu, čisté vklady, P/L a procentní výnos; filtruj období i jednotlivé platformy"
         >
-          <LineChart
-            data={data.snapshots}
-            valueKey="valueCzk"
-            emptyText="Po první synchronizaci začne FinanceOS ukládat denní hodnotu. Pro dobu před prvním snapshotem zatím neodhadujeme tržní cenu bez historických market dat."
-          />
+          <PortfolioHistoryChart data={data.chart} />
         </SectionCard>
-
-        <SectionCard
-          title="Známý vložený kapitál"
-          subtitle="Kumulativní externí vklady mínus výběry"
-        >
-          <LineChart
-            data={data.contributions}
-            valueKey="cumulativeNetContributedCzk"
-            emptyText="Provider zatím neposkytl dostatek záznamů vkladů/výběrů, nebo ještě nebyl proveden první sync."
-          />
-        </SectionCard>
-      </section>
+      </div>
 
       <div className="mt-4">
         <SectionCard
           title="Reconstructed priced positions"
           subtitle="Z transakčních quantity změn a importovaných historical close cen; bez hotovosti"
         >
-          <LineChart
-            data={reconstructed.series}
-            valueKey="valueCzk"
+          <InteractiveTimeSeriesChart
+            data={reconstructed.series.map((item) => ({
+              date: item.date,
+              value: item.valueCzk,
+            }))}
+            label="Reconstructed priced positions"
+            valueFormat="currency"
             emptyText="Importuj historical close ceny alespoň pro jeden asset. FinanceOS potom zpětně dopočítá hodnotu držených pozic v dnech, pro které má cenová data."
           />
           {reconstructed.series.length ? (

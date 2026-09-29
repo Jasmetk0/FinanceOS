@@ -4,6 +4,8 @@ import { MintosImporter } from "@/components/mintos-importer";
 import { InvestownImporter } from "@/components/investown-importer";
 import { listConnections } from "@/lib/server/repository";
 import { getInvestownImportStatus } from "@/lib/server/investown";
+import { Trading212SpendingPot } from "@/components/trading212-spending-pot";
+import { getTrading212SpendingPot } from "@/lib/server/trading212-auxiliary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +13,7 @@ export const dynamic = "force-dynamic";
 export default function ConnectionsPage() {
   const connections = listConnections();
   const investownStatus = getInvestownImportStatus();
+  const trading212SpendingPot = getTrading212SpendingPot();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -27,6 +30,10 @@ export default function ConnectionsPage() {
 
       <div className="mt-7">
         <ConnectionsManager initialConnections={connections} />
+      </div>
+
+      <div className="mt-4">
+        <Trading212SpendingPot initialValue={trading212SpendingPot} />
       </div>
 
       <div className="mt-4">
