@@ -34,6 +34,9 @@ export async function GET(request: Request) {
         t.fee,
         t.category,
         t.source_label,
+        t.flow_scope,
+        t.counterparty_ref,
+        t.transfer_value_czk,
         t.note,
         t.external_id
       FROM transactions t
@@ -58,6 +61,9 @@ export async function GET(request: Request) {
     "fee",
     "category",
     "source",
+    "flow_scope",
+    "counterparty_ref",
+    "transfer_value_czk",
     "note",
     "external_id",
   ];
@@ -80,6 +86,9 @@ export async function GET(request: Request) {
         row.fee,
         row.category,
         row.source_label,
+        row.flow_scope,
+        row.counterparty_ref,
+        row.transfer_value_czk,
         row.note,
         row.external_id,
       ]

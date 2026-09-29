@@ -1,9 +1,11 @@
 import { getDb } from "@/lib/server/db";
 import { listConnections } from "@/lib/server/repository";
+import { getTrading212CardStatus } from "@/lib/server/trading212-card";
 
 export function buildExport() {
   const db = getDb();
   const connections = listConnections();
+  const trading212Card = getTrading212CardStatus();
   const accounts = db
     .prepare("SELECT * FROM accounts ORDER BY provider, name")
     .all();
@@ -21,6 +23,9 @@ export function buildExport() {
     .all();
   const assetPrices = db
     .prepare("SELECT * FROM asset_prices ORDER BY asset_id, price_date ASC")
+    .all();
+  const providerSyncState = db
+    .prepare("SELECT * FROM provider_sync_state ORDER BY provider, key")
     .all();
 
   const reconciliation = accounts.reduce<Record<string, number>>(
@@ -98,12 +103,14 @@ export function buildExport() {
       connectionErrors,
       pnlCoverage,
       canonicalIdentity,
+      trading212Card,
       counts: {
         accounts: accounts.length,
         assets: assets.length,
         holdings: holdings.length,
         transactions: transactions.length,
         snapshots: snapshots.length,
+        providerSyncState: providerSyncState.length,
       },
       note:
         "Unknown/unclassified values are intentionally preserved instead of being coerced to zero or guessed.",
@@ -115,6 +122,7 @@ export function buildExport() {
     transactions,
     snapshots,
     assetPrices,
+    providerSyncState,
     planTargets: db
       .prepare("SELECT * FROM plan_targets ORDER BY asset_class ASC")
       .all(),

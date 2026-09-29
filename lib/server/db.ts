@@ -35,15 +35,15 @@ function backfillLegacyFlowScopes(db: DatabaseSync) {
     UPDATE transactions
     SET
       flow_scope = CASE
-        WHEN kind = 'deposit' THEN 'external'
-        WHEN kind = 'withdrawal' THEN 'unclassified'
+        WHEN kind = 'deposit' THEN 'unclassified'
+        WHEN kind = 'withdrawal' THEN 'external'
         WHEN kind = 'transfer' THEN 'internal'
         ELSE 'not_applicable'
       END,
       category = CASE
         WHEN category IS NOT NULL AND category != '' THEN category
-        WHEN kind = 'deposit' THEN 'external_deposit'
-        WHEN kind = 'withdrawal' THEN 'cash_out_unclassified'
+        WHEN kind = 'deposit' THEN 'cash_in_unclassified'
+        WHEN kind = 'withdrawal' THEN 'cash_out_external'
         WHEN kind = 'transfer' THEN 'internal_transfer'
         ELSE category
       END
@@ -70,6 +70,114 @@ function backfillLegacyFlowScopes(db: DatabaseSync) {
     WHERE provider = 'manual'
       AND flow_scope = 'legacy';
   `);
+}
+
+export function repairTrading212CashSemantics(db: DatabaseSync) {
+  // PR #16 initially classified legacy T212 deposits as external and generic
+  // withdrawals as unclassified. The 212 Card audit showed that the public
+  // endpoint mixes real deposits with cashback, while card purchases surface
+  // as withdrawals. Revisit only coarse rows that have not been enriched by
+  // the richer CSV export.
+  db.exec(`
+    UPDATE transactions
+    SET
+      flow_scope = 'unclassified',
+      category = 'cash_in_unclassified'
+    WHERE provider = 'trading212'
+      AND kind = 'deposit'
+      AND category = 'external_deposit'
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%';
+
+    UPDATE transactions
+    SET
+      flow_scope = 'external',
+      category = 'cash_out_external'
+    WHERE provider = 'trading212'
+      AND kind = 'withdrawal'
+      AND category = 'cash_out_unclassified'
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%';
+
+    UPDATE transactions
+    SET
+      flow_scope = 'unclassified',
+      category = 'cash_in_unclassified'
+    WHERE provider = 'trading212'
+      AND kind = 'deposit'
+      AND flow_scope = 'external'
+      AND COALESCE(category, '') = ''
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%';
+
+    UPDATE transactions
+    SET
+      flow_scope = 'external',
+      category = 'cash_out_external'
+    WHERE provider = 'trading212'
+      AND kind = 'withdrawal'
+      AND flow_scope = 'unclassified'
+      AND COALESCE(category, '') = ''
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%';
+  `);
+
+  // The superficial API also represents manual FX conversion as a DEPOSIT
+  // and WITHDRAW at the exact same timestamp in different currencies, often
+  // with a fee row beside them. That is an internal value-preserving movement,
+  // not money entering/leaving the portfolio.
+  const conversionRows = db
+    .prepare(`
+      SELECT DISTINCT
+        a.account_id,
+        a.occurred_at,
+        a.amount_czk AS deposit_czk,
+        b.amount_czk AS withdrawal_czk
+      FROM transactions a
+      JOIN transactions b
+        ON b.provider = a.provider
+       AND b.account_id = a.account_id
+       AND b.occurred_at = a.occurred_at
+      WHERE a.provider = 'trading212'
+        AND a.kind = 'deposit'
+        AND b.kind = 'withdrawal'
+        AND UPPER(a.currency) != UPPER(b.currency)
+        AND a.amount_czk IS NOT NULL
+        AND b.amount_czk IS NOT NULL
+        AND COALESCE(a.raw_json, '') NOT LIKE '%financeOsCardExport%'
+        AND COALESCE(b.raw_json, '') NOT LIKE '%financeOsCardExport%'
+    `)
+    .all();
+
+  const markConversion = db.prepare(`
+    UPDATE transactions
+    SET
+      kind = 'transfer',
+      flow_scope = 'internal',
+      category = 'currency_conversion',
+      counterparty_ref = ?
+    WHERE provider = 'trading212'
+      AND account_id = ?
+      AND occurred_at = ?
+      AND kind IN ('deposit', 'withdrawal')
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'
+  `);
+
+  for (const row of conversionRows) {
+    const depositCzk = Math.abs(Number(row.deposit_czk));
+    const withdrawalCzk = Math.abs(Number(row.withdrawal_czk));
+    const tolerance = Math.max(
+      5,
+      Math.max(depositCzk, withdrawalCzk) * 0.02,
+    );
+    if (
+      !Number.isFinite(depositCzk) ||
+      !Number.isFinite(withdrawalCzk) ||
+      Math.abs(depositCzk - withdrawalCzk) > tolerance
+    ) {
+      continue;
+    }
+
+    const accountId = String(row.account_id);
+    const occurredAt = String(row.occurred_at);
+    markConversion.run("fx:" + occurredAt, accountId, occurredAt);
+  }
 }
 
 function backfillAccountCoverage(db: DatabaseSync) {
@@ -164,7 +272,10 @@ function backfillCanonicalAssets(db: DatabaseSync) {
 }
 
 export function repairStoredData(db: DatabaseSync) {
-  repairStoredData(db);
+  backfillLegacyFlowScopes(db);
+  repairTrading212CashSemantics(db);
+  backfillAccountCoverage(db);
+  backfillCanonicalAssets(db);
 }
 
 function initialize(db: DatabaseSync) {
@@ -329,6 +440,14 @@ function initialize(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_asset_prices_asset_date
       ON asset_prices(asset_id, price_date ASC);
 
+    CREATE TABLE IF NOT EXISTS provider_sync_state (
+      provider TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(provider, key)
+    );
+
     CREATE TABLE IF NOT EXISTS provider_sync_locks (
       provider TEXT PRIMARY KEY,
       owner TEXT NOT NULL,
@@ -394,9 +513,7 @@ function initialize(db: DatabaseSync) {
       "ON transactions(account_id, kind, flow_scope, occurred_at ASC);",
   );
 
-  backfillLegacyFlowScopes(db);
-  backfillAccountCoverage(db);
-  backfillCanonicalAssets(db);
+  repairStoredData(db);
 }
 
 export function getDb(): DatabaseSync {

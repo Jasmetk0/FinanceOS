@@ -201,6 +201,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
         substr(t.occurred_at, 1, 10) AS day,
         t.provider,
         t.kind,
+        t.category,
         t.flow_scope,
         t.amount_czk,
         t.transfer_value_czk
@@ -209,13 +210,22 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND (
           (
-            t.kind IN ('deposit', 'withdrawal')
-            AND t.amount_czk IS NOT NULL
+            t.amount_czk IS NOT NULL
             AND (
-              t.flow_scope = 'external'
+              (
+                t.kind IN ('deposit', 'withdrawal')
+                AND (
+                  t.flow_scope = 'external'
+                  OR (
+                    t.flow_scope = 'legacy'
+                    AND t.provider IN ('kraken', 'investown', 'mintos')
+                  )
+                )
+              )
               OR (
-                t.flow_scope = 'legacy'
-                AND t.provider IN ('kraken', 'investown', 'mintos')
+                t.kind = 'income'
+                AND t.category = 'card_cashback'
+                AND t.flow_scope = 'external'
               )
             )
           )
@@ -257,13 +267,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
   const flows = flowRows.map((row) => {
     const kind = String(row.kind);
-    const isExternal = kind === "deposit" || kind === "withdrawal";
+    const category = String(row.category || "");
+    const isReward = kind === "income" && category === "card_cashback";
+    const isExternal =
+      kind === "deposit" || kind === "withdrawal" || isReward;
     const externalDelta =
       kind === "deposit"
         ? Math.abs(num(row.amount_czk))
         : kind === "withdrawal"
           ? -Math.abs(num(row.amount_czk))
-          : 0;
+          : isReward
+            ? num(row.amount_czk)
+            : 0;
     const providerDelta =
       isExternal
         ? externalDelta
@@ -719,6 +734,7 @@ export interface CashFlowMonth {
   giftsCzk: number;
   expensesCzk: number;
   interestCzk: number;
+  cashbackCzk: number;
   netCzk: number;
   savingsRate: number | null;
 }
@@ -727,11 +743,23 @@ export function getCashFlowData(months = 18) {
   const db = getDb();
   const rows = db
     .prepare(`
-      SELECT kind, occurred_at, amount_czk, category, source_label
+      SELECT provider, kind, occurred_at, amount_czk, category, source_label
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
-        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      WHERE amount_czk IS NOT NULL
+        AND (
+          (
+            provider = 'manual'
+            AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+          )
+          OR (
+            provider = 'trading212'
+            AND (
+              category LIKE 'card_spend:%'
+              OR category LIKE 'card_refund:%'
+              OR category IN ('card_cashback', 'card_fee')
+            )
+          )
+        )
       ORDER BY occurred_at ASC
     `)
     .all();
@@ -751,18 +779,35 @@ export function getCashFlowData(months = 18) {
         giftsCzk: 0,
         expensesCzk: 0,
         interestCzk: 0,
+        cashbackCzk: 0,
         netCzk: 0,
         savingsRate: null,
       };
 
+    const provider = String(row.provider);
     const kind = String(row.kind);
+    const category = String(row.category || "");
     const amount = num(row.amount_czk);
 
-    if (kind === "income") item.incomeCzk += Math.max(0, amount);
-    if (kind === "gift") item.giftsCzk += Math.max(0, amount);
-    if (kind === "interest") item.interestCzk += Math.max(0, amount);
-    if (kind === "expense" || kind === "fee") {
-      item.expensesCzk += Math.abs(amount);
+    if (provider === "trading212") {
+      if (category.startsWith("card_spend:")) {
+        item.expensesCzk += Math.abs(amount);
+      } else if (category.startsWith("card_refund:")) {
+        item.expensesCzk -= Math.abs(amount);
+      } else if (category === "card_cashback") {
+        // Refunds can reverse previously awarded cashback. Preserve the sign
+        // so FinanceOS reports net cashback actually retained.
+        item.cashbackCzk += amount;
+      } else if (category === "card_fee") {
+        item.expensesCzk += Math.abs(amount);
+      }
+    } else {
+      if (kind === "income") item.incomeCzk += Math.max(0, amount);
+      if (kind === "gift") item.giftsCzk += Math.max(0, amount);
+      if (kind === "interest") item.interestCzk += Math.max(0, amount);
+      if (kind === "expense" || kind === "fee") {
+        item.expensesCzk += Math.abs(amount);
+      }
     }
 
     byMonth.set(month, item);
@@ -772,7 +817,8 @@ export function getCashFlowData(months = 18) {
     .sort((a, b) => a.month.localeCompare(b.month))
     .slice(-Math.max(1, months))
     .map((item) => {
-      const grossIncome = item.incomeCzk + item.giftsCzk + item.interestCzk;
+      const grossIncome =
+        item.incomeCzk + item.giftsCzk + item.interestCzk + item.cashbackCzk;
       const netCzk = grossIncome - item.expensesCzk;
       return {
         ...item,
@@ -787,6 +833,7 @@ export function getCashFlowData(months = 18) {
       acc.giftsCzk += item.giftsCzk;
       acc.expensesCzk += item.expensesCzk;
       acc.interestCzk += item.interestCzk;
+      acc.cashbackCzk += item.cashbackCzk;
       acc.netCzk += item.netCzk;
       return acc;
     },
@@ -795,6 +842,7 @@ export function getCashFlowData(months = 18) {
       giftsCzk: 0,
       expensesCzk: 0,
       interestCzk: 0,
+      cashbackCzk: 0,
       netCzk: 0,
     },
   );
@@ -806,30 +854,70 @@ export function getCashFlowData(months = 18) {
         kind,
         SUM(ABS(amount_czk)) AS total
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
-        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      WHERE amount_czk IS NOT NULL
+        AND (
+          (
+            provider = 'manual'
+            AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+          )
+          OR (
+            provider = 'trading212'
+            AND (
+              category LIKE 'card_spend:%'
+              OR category LIKE 'card_refund:%'
+              OR category IN ('card_cashback', 'card_fee')
+            )
+          )
+        )
       GROUP BY category, kind
       ORDER BY total DESC
     `)
     .all()
-    .map((row) => ({
-      category: String(row.category),
-      kind: String(row.kind),
-      totalCzk: num(row.total),
-    }));
+    .map((row) => {
+      const category = String(row.category);
+      const prettyCategory = category.startsWith("card_spend:")
+        ? "Card · " +
+          category
+            .slice("card_spend:".length)
+            .replace(/_/g, " ")
+        : category.startsWith("card_refund:")
+          ? "Card refund · " +
+            category
+              .slice("card_refund:".length)
+              .replace(/_/g, " ")
+          : category === "card_cashback"
+            ? "Trading 212 card cashback"
+            : category === "card_fee"
+              ? "Trading 212 card fee"
+              : category;
+      return {
+        category: prettyCategory,
+        kind: String(row.kind),
+        totalCzk: num(row.total),
+      };
+    });
 
   const sourceRows = db
     .prepare(`
       SELECT
-        COALESCE(NULLIF(source_label, ''), 'Unspecified') AS source,
+        CASE
+          WHEN provider = 'trading212' AND category = 'card_cashback'
+            THEN 'Trading 212 cashback'
+          ELSE COALESCE(NULLIF(source_label, ''), 'Unspecified')
+        END AS source,
         SUM(CASE
-          WHEN kind IN ('income', 'gift', 'interest') THEN ABS(amount_czk)
+          WHEN provider = 'trading212' AND category = 'card_cashback'
+            THEN amount_czk
+          WHEN provider = 'manual' AND kind IN ('income', 'gift', 'interest')
+            THEN ABS(amount_czk)
           ELSE 0
         END) AS total
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
+      WHERE amount_czk IS NOT NULL
+        AND (
+          provider = 'manual'
+          OR (provider = 'trading212' AND category = 'card_cashback')
+        )
       GROUP BY source
       HAVING total > 0
       ORDER BY total DESC
@@ -842,7 +930,10 @@ export function getCashFlowData(months = 18) {
     }));
 
   const grossIncome =
-    totals.incomeCzk + totals.giftsCzk + totals.interestCzk;
+    totals.incomeCzk +
+    totals.giftsCzk +
+    totals.interestCzk +
+    totals.cashbackCzk;
 
   return {
     months: allMonths,
@@ -945,16 +1036,25 @@ export function getPerformanceData() {
     const id = String(account.id);
     const cashRows = db
       .prepare(`
-        SELECT kind, occurred_at, amount_czk
+        SELECT kind, category, occurred_at, amount_czk
         FROM transactions
         WHERE account_id = ?
           AND amount_czk IS NOT NULL
-          AND kind IN ('deposit', 'withdrawal')
           AND (
-            flow_scope = 'external'
+            (
+              kind IN ('deposit', 'withdrawal')
+              AND (
+                flow_scope = 'external'
+                OR (
+                  flow_scope = 'legacy'
+                  AND provider IN ('kraken', 'investown', 'mintos')
+                )
+              )
+            )
             OR (
-              flow_scope = 'legacy'
-              AND provider IN ('kraken', 'investown', 'mintos')
+              kind = 'income'
+              AND category = 'card_cashback'
+              AND flow_scope = 'external'
             )
           )
         ORDER BY occurred_at ASC
@@ -999,6 +1099,7 @@ export function getPerformanceData() {
 
     let deposits = 0;
     let withdrawals = 0;
+    let externalRewards = 0;
     let transferIn = 0;
     let transferOut = 0;
     const flows: DatedCashFlow[] = [];
@@ -1011,9 +1112,15 @@ export function getPerformanceData() {
       if (kind === "deposit") {
         deposits += amount;
         flows.push({ date, amount: -amount });
-      } else {
+      } else if (kind === "withdrawal") {
         withdrawals += amount;
         flows.push({ date, amount });
+      } else if (String(row.category || "") === "card_cashback") {
+        const signedReward = num(row.amount_czk);
+        externalRewards += signedReward;
+        // Positive reward is cash entering the portfolio; a cashback reversal
+        // is the opposite external flow.
+        flows.push({ date, amount: -signedReward });
       }
     }
 
@@ -1039,19 +1146,21 @@ export function getPerformanceData() {
     // transfers. Portfolio-level contribution below remains external-only.
     const netContributed =
       deposits - withdrawals + transferIn - transferOut;
+    const performanceExternalCapital =
+      netContributed + externalRewards;
     const unclassifiedFlowCount = num(unresolvedAccountFlowRow?.count);
     const knownUnclassifiedFlowCzk = num(
       unresolvedAccountFlowRow?.known_value_czk,
     );
     const accountPerformanceComplete = unclassifiedFlowCount === 0;
     const estimatedProfit = accountPerformanceComplete
-      ? currentValue - netContributed
+      ? currentValue - performanceExternalCapital
       : null;
     const simpleReturn =
       accountPerformanceComplete &&
       estimatedProfit !== null &&
-      netContributed > 0
-        ? (estimatedProfit / netContributed) * 100
+      performanceExternalCapital > 0
+        ? (estimatedProfit / performanceExternalCapital) * 100
         : null;
     const xirr = accountPerformanceComplete ? solveXirr(flows) : null;
 
@@ -1063,9 +1172,11 @@ export function getPerformanceData() {
       currentValueCzk: currentValue,
       depositsCzk: deposits,
       withdrawalsCzk: withdrawals,
+      externalRewardsCzk: externalRewards,
       transferInCzk: transferIn,
       transferOutCzk: transferOut,
       netContributedCzk: netContributed,
+      performanceExternalCapitalCzk: performanceExternalCapital,
       estimatedProfitCzk: estimatedProfit,
       simpleReturnPct: simpleReturn,
       xirrPct: xirr === null ? null : xirr * 100,
@@ -1091,6 +1202,7 @@ export function getPerformanceData() {
       acc.currentValueCzk += account.currentValueCzk;
       acc.depositsCzk += account.depositsCzk;
       acc.withdrawalsCzk += account.withdrawalsCzk;
+      acc.externalRewardsCzk += account.externalRewardsCzk;
       if (account.realizedPnlCzk === null) {
         acc.realizedPnlUnknown += 1;
       } else {
@@ -1107,6 +1219,7 @@ export function getPerformanceData() {
       currentValueCzk: 0,
       depositsCzk: 0,
       withdrawalsCzk: 0,
+      externalRewardsCzk: 0,
       realizedPnlCzk: 0,
       unrealizedPnlCzk: 0,
       realizedPnlUnknown: 0,
@@ -1160,17 +1273,26 @@ export function getPerformanceData() {
 
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
-      SELECT t.kind, t.occurred_at, t.amount_czk
+      SELECT t.kind, t.category, t.occurred_at, t.amount_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.amount_czk IS NOT NULL
-        AND t.kind IN ('deposit', 'withdrawal')
         AND (
-          t.flow_scope = 'external'
+          (
+            t.kind IN ('deposit', 'withdrawal')
+            AND (
+              t.flow_scope = 'external'
+              OR (
+                t.flow_scope = 'legacy'
+                AND t.provider IN ('kraken', 'investown', 'mintos')
+              )
+            )
+          )
           OR (
-            t.flow_scope = 'legacy'
-            AND t.provider IN ('kraken', 'investown', 'mintos')
+            t.kind = 'income'
+            AND t.category = 'card_cashback'
+            AND t.flow_scope = 'external'
           )
         )
       ORDER BY t.occurred_at ASC
@@ -1181,7 +1303,9 @@ export function getPerformanceData() {
       amount:
         String(row.kind) === "deposit"
           ? -Math.abs(num(row.amount_czk))
-          : Math.abs(num(row.amount_czk)),
+          : String(row.kind) === "withdrawal"
+            ? Math.abs(num(row.amount_czk))
+            : -num(row.amount_czk),
     }));
 
   if (totals.currentValueCzk > 0) {
@@ -1189,8 +1313,10 @@ export function getPerformanceData() {
   }
 
   const netContributedCzk = totals.depositsCzk - totals.withdrawalsCzk;
+  const performanceExternalCapitalCzk =
+    netContributedCzk + totals.externalRewardsCzk;
   const estimatedProfitCzk = portfolioPerformanceComplete
-    ? totals.currentValueCzk - netContributedCzk
+    ? totals.currentValueCzk - performanceExternalCapitalCzk
     : null;
 
   return {
@@ -1199,15 +1325,17 @@ export function getPerformanceData() {
       currentValueCzk: totals.currentValueCzk,
       depositsCzk: totals.depositsCzk,
       withdrawalsCzk: totals.withdrawalsCzk,
+      externalRewardsCzk: totals.externalRewardsCzk,
       realizedPnlCzk,
       unrealizedPnlCzk,
       netContributedCzk,
+      performanceExternalCapitalCzk,
       estimatedProfitCzk,
       simpleReturnPct:
         portfolioPerformanceComplete &&
         estimatedProfitCzk !== null &&
-        netContributedCzk > 0
-          ? (estimatedProfitCzk / netContributedCzk) * 100
+        performanceExternalCapitalCzk > 0
+          ? (estimatedProfitCzk / performanceExternalCapitalCzk) * 100
           : null,
       xirrPct: portfolioPerformanceComplete
         ? (() => {
@@ -1275,7 +1403,11 @@ export function getInsightsData() {
   const lastThreeMonths = cashFlow.months.slice(-3);
   const lastThreeGross = lastThreeMonths.reduce(
     (sum, item) =>
-      sum + item.incomeCzk + item.giftsCzk + item.interestCzk,
+      sum +
+      item.incomeCzk +
+      item.giftsCzk +
+      item.interestCzk +
+      item.cashbackCzk,
     0,
   );
   const lastThreeNet = lastThreeMonths.reduce(
