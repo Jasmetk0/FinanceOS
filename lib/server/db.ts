@@ -124,7 +124,10 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   // not money entering/leaving the portfolio.
   const conversionRows = db
     .prepare(`
-      SELECT DISTINCT a.occurred_at
+      SELECT DISTINCT
+        a.occurred_at,
+        a.amount_czk AS deposit_czk,
+        b.amount_czk AS withdrawal_czk
       FROM transactions a
       JOIN transactions b
         ON b.provider = a.provider
@@ -134,6 +137,8 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
         AND a.kind = 'deposit'
         AND b.kind = 'withdrawal'
         AND UPPER(a.currency) != UPPER(b.currency)
+        AND a.amount_czk IS NOT NULL
+        AND b.amount_czk IS NOT NULL
         AND COALESCE(a.raw_json, '') NOT LIKE '%financeOsCardExport%'
         AND COALESCE(b.raw_json, '') NOT LIKE '%financeOsCardExport%'
     `)
@@ -153,6 +158,20 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   `);
 
   for (const row of conversionRows) {
+    const depositCzk = Math.abs(Number(row.deposit_czk));
+    const withdrawalCzk = Math.abs(Number(row.withdrawal_czk));
+    const tolerance = Math.max(
+      5,
+      Math.max(depositCzk, withdrawalCzk) * 0.02,
+    );
+    if (
+      !Number.isFinite(depositCzk) ||
+      !Number.isFinite(withdrawalCzk) ||
+      Math.abs(depositCzk - withdrawalCzk) > tolerance
+    ) {
+      continue;
+    }
+
     const occurredAt = String(row.occurred_at);
     markConversion.run("fx:" + occurredAt, occurredAt);
   }
