@@ -394,9 +394,9 @@ function findExistingTransaction(
     const exact = db
       .prepare(
         "SELECT * FROM transactions WHERE provider = 'trading212' " +
-          "AND external_id IN (?, ?) LIMIT 1",
+          "AND external_id = ? LIMIT 1",
       )
-      .get("cash:" + id, "card-export:" + id);
+      .get("cash:" + id);
     if (exact) return exact;
   }
 
@@ -531,7 +531,7 @@ async function enrichReportRows(input: {
 
     if (!id || !occurredAt) continue;
 
-    const enrichmentOnly = classification.cardEvidence;
+    const enrichmentOnly = true;
 
     upsertTransaction({
       provider: "trading212",
