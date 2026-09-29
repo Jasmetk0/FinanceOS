@@ -1303,6 +1303,25 @@ export function getInsightsData() {
     }
   }
 
+  for (const account of dashboard.accounts) {
+    if (
+      account.reconciliationStatus === "warning" &&
+      Math.abs(account.reconciliationDifferenceCzk) > 0.01
+    ) {
+      warnings.push({
+        id: "reconciliation-" + account.id,
+        severity: "warning",
+        title: "Nevysvětlená hodnota: " + account.name,
+        detail:
+          "Provider total se liší od známých pozic a hotovosti o " +
+          Math.abs(account.reconciliationDifferenceCzk).toLocaleString("cs-CZ", {
+            maximumFractionDigits: 0,
+          }) +
+          " Kč. FinanceOS rozdíl zachovává jako nezařazenou hodnotu místo hádání jeho původu.",
+      });
+    }
+  }
+
   if (largestHolding && investableTotal > 0) {
     const share = (largestHolding.valueCzk / investableTotal) * 100;
     if (share >= 25) {
