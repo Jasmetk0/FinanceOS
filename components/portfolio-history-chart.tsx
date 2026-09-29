@@ -22,11 +22,23 @@ export interface PortfolioChartPoint {
   date: string;
   total: PortfolioChartMetricData;
   providers: Record<string, PortfolioChartMetricData>;
+  coverage: {
+    complete: boolean;
+    knownProviders: string[];
+    missingProviders: string[];
+  };
 }
 
 export interface PortfolioChartData {
   providers: string[];
   points: PortfolioChartPoint[];
+  coverage: {
+    completePointCount: number;
+    totalPointCount: number;
+    firstCompleteDate: string | null;
+    latestCompleteDate: string | null;
+    status: "complete" | "partial" | "insufficient";
+  };
 }
 
 const VIEW_W = 1000;
@@ -500,6 +512,22 @@ export function PortfolioHistoryChart({
         </div>
       ) : null}
 
+      {data.coverage.status !== "complete" ? (
+        <div className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] px-3 py-2 text-xs leading-5 text-[var(--muted)]">
+          <span className="font-medium text-[var(--warning)]">
+            Historická hodnota portfolia je {data.coverage.status === "partial" ? "částečná" : "nedostatečná"}.
+          </span>{" "}
+          FinanceOS nevydává součet jen části platforem za celkovou hodnotu.
+          Celková křivka proto začíná až tam, kde máme hodnotu všech účtů,
+          které už v daný den existovaly.
+          {data.coverage.firstCompleteDate
+            ? " První kompletní bod: " +
+              dateLabel(data.coverage.firstCompleteDate) +
+              "."
+            : ""}
+        </div>
+      ) : null}
+
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-white/8 bg-white/[0.02] px-2.5 py-1.5 text-xs">
           <input
@@ -627,6 +655,17 @@ export function PortfolioHistoryChart({
               Vklady: {formatCurrency(hoverPoint.total.contributedCzk)}
               <br />
               P/L: {formatValue(hoverPoint.total.profitCzk, "profit")}
+              {!hoverPoint.coverage.complete ? (
+                <>
+                  <br />
+                  <span className="text-[var(--warning)]">
+                    Chybí hodnota:{" "}
+                    {hoverPoint.coverage.missingProviders
+                      .map(providerLabel)
+                      .join(", ")}
+                  </span>
+                </>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -805,7 +844,7 @@ export function PortfolioHistoryChart({
           {filtered.at(-1) ? dateLabel(filtered.at(-1)!.date) : "—"}
         </span>
         <span>
-          Najetím na graf zobrazíš přesné datum, hodnotu, vklady a P/L.
+          Najetím na graf zobrazíš přesné datum, hodnotu, vklady, P/L a pokrytí dat.
         </span>
       </div>
     </div>
