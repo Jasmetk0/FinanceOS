@@ -50,7 +50,7 @@ test("export exposes remaining legacy-flow debt", () => {
 });
 
 
-test("Trading 212 card enrichment uses official CSV export state instead of guessing cashback", () => {
+test("Trading 212 card enrichment keeps official CSV as the merchant-detail authority", () => {
   const card = source("lib/server/trading212-card.ts");
   assert.ok(card.includes("/equity/history/exports"));
   assert.ok(card.includes('"card debit"'));
@@ -177,4 +177,91 @@ test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent
   assert.ok(card.includes('.get("cash:" + id)'));
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
+});
+
+
+test("Trading 212 deposit fallback requires repeated provider cashback signature", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(db.includes("matchedDates.length < 3"));
+  assert.ok(db.includes("previousWithdrawals * 0.015"));
+  assert.ok(db.includes("category = 'card_cashback'"));
+  assert.ok(db.includes("category = 'external_deposit'"));
+  assert.ok(
+    db.includes("Trading 212 card cashback · inferred"),
+  );
+});
+
+test("confirmed Trading 212 card evidence reconciles residual cash as Spending Pot", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(
+    db.includes(
+      'confidence: "confirmed_by_card_cashback_signature"',
+    ),
+  );
+  assert.ok(db.includes("unclassified_value_czk = 0"));
+  assert.ok(db.includes("reconciliation_status = 'reconciled'"));
+});
+
+test("Trading 212 rich export backs off 429 rate limits for a full day", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(
+    card.includes(
+      "const RATE_LIMIT_BACKOFF_MS = 24 * 60 * 60 * 1000",
+    ),
+  );
+  assert.ok(card.includes('message.includes("(429)")'));
+  assert.ok(card.includes('message.includes("TooManyRequests")'));
+  assert.ok(card.includes("retryDelayMs(message)"));
+});
+
+test("Phantom is a watch-only live provider using public Solana address only", () => {
+  const domain = source("lib/domain.ts");
+  const connections = source("app/api/connections/route.ts");
+  const manager = source("components/connections-manager.tsx");
+  const sync = source("lib/server/sync.ts");
+  const phantom = source("lib/server/integrations/phantom.ts");
+
+  assert.ok(domain.includes('| "phantom"'));
+  assert.ok(connections.includes("validatePhantom"));
+  assert.ok(connections.includes('"solana-mainnet"'));
+  assert.ok(manager.includes("Veřejná Solana adresa"));
+  assert.ok(manager.includes("seed phrase"));
+  assert.ok(sync.includes('case "phantom"'));
+  assert.ok(phantom.includes('"getBalance"'));
+  assert.ok(phantom.includes('"getTokenAccountsByOwner"'));
+  assert.ok(phantom.includes("TOKEN_2022_PROGRAM"));
+});
+
+test("Phantom and Kraken wallet transfers are linked in both directions", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(phantom.includes('"wallet_transfer_out_unclassified"'));
+  assert.ok(phantom.includes('"wallet_transfer_in_unclassified"'));
+  assert.ok(phantom.includes('"to_phantom" | "from_phantom"'));
+  assert.ok(phantom.includes("candidate.quantity > 0"));
+  assert.ok(phantom.includes("candidate.quantity < 0"));
+  assert.ok(phantom.includes('"Phantom → Kraken"'));
+  assert.ok(phantom.includes('"Kraken → Phantom"'));
+});
+
+test("Kraken ledger asset upserts preserve canonical identity", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const ledgerStart = kraken.indexOf("for (const [ledgerId, ledger] of ledgers)");
+  const ledgerEnd = kraken.indexOf("reclassifyLegacyKrakenWalletFlows", ledgerStart);
+  const ledgerBlock = kraken.slice(ledgerStart, ledgerEnd);
+  assert.ok(ledgerStart >= 0);
+  assert.ok(ledgerEnd > ledgerStart);
+  assert.ok(ledgerBlock.includes("canonicalCryptoIdentity(currency, rawAsset)"));
+  assert.ok(ledgerBlock.includes("canonicalKey:"));
+  assert.ok(ledgerBlock.includes("listingSymbol: identity.listingSymbol"));
+});
+
+test("exports include Phantom identity and coverage without exposing wallet address", () => {
+  const exportSource = source("lib/server/export.ts");
+  const aiContext = source("lib/server/ai-context.ts");
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(exportSource.includes('"phantom"'));
+  assert.ok(aiContext.includes("getPhantomStatus"));
+  assert.ok(aiContext.includes("phantom,"));
+  assert.ok(phantom.includes("unpricedTokenCount"));
+  assert.equal(phantom.includes("return {\n    address,"), false);
 });
