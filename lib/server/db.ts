@@ -39,6 +39,8 @@ function initialize(db: DatabaseSync) {
       total_value REAL NOT NULL DEFAULT 0,
       realized_pnl REAL NOT NULL DEFAULT 0,
       unrealized_pnl REAL NOT NULL DEFAULT 0,
+      realized_pnl_status TEXT NOT NULL DEFAULT 'unknown',
+      unrealized_pnl_status TEXT NOT NULL DEFAULT 'unknown',
       cash_value_czk REAL NOT NULL DEFAULT 0,
       invested_value_czk REAL NOT NULL DEFAULT 0,
       total_value_czk REAL NOT NULL DEFAULT 0,
@@ -57,6 +59,9 @@ function initialize(db: DatabaseSync) {
       name TEXT NOT NULL,
       asset_class TEXT NOT NULL,
       currency TEXT NOT NULL,
+      canonical_key TEXT,
+      isin TEXT,
+      listing_symbol TEXT,
       raw_json TEXT,
       UNIQUE(provider, external_id)
     );
@@ -163,6 +168,25 @@ function initialize(db: DatabaseSync) {
       updated_at TEXT NOT NULL
     );
   `);
+
+  if (!hasColumn(db, "accounts", "realized_pnl_status")) {
+    db.exec("ALTER TABLE accounts ADD COLUMN realized_pnl_status TEXT NOT NULL DEFAULT 'unknown';");
+  }
+  if (!hasColumn(db, "accounts", "unrealized_pnl_status")) {
+    db.exec("ALTER TABLE accounts ADD COLUMN unrealized_pnl_status TEXT NOT NULL DEFAULT 'unknown';");
+  }
+  if (!hasColumn(db, "assets", "canonical_key")) {
+    db.exec("ALTER TABLE assets ADD COLUMN canonical_key TEXT;");
+  }
+  if (!hasColumn(db, "assets", "isin")) {
+    db.exec("ALTER TABLE assets ADD COLUMN isin TEXT;");
+  }
+  if (!hasColumn(db, "assets", "listing_symbol")) {
+    db.exec("ALTER TABLE assets ADD COLUMN listing_symbol TEXT;");
+  }
+
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assets_canonical_key ON assets(canonical_key);");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assets_isin ON assets(isin);");
 
   if (!hasColumn(db, "accounts", "unclassified_value")) {
     db.exec("ALTER TABLE accounts ADD COLUMN unclassified_value REAL NOT NULL DEFAULT 0;");
