@@ -252,6 +252,20 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
     WHERE id = ?
   `);
 
+  const markCardSpend = db.prepare(`
+    UPDATE transactions
+    SET
+      category = 'card_spend:inferred',
+      source_label = 'Trading 212 card · inferred'
+    WHERE provider = 'trading212'
+      AND account_id = ?
+      AND kind = 'withdrawal'
+      AND flow_scope = 'external'
+      AND substr(occurred_at, 1, 10) = ?
+      AND COALESCE(category, '') NOT LIKE 'card_spend:%'
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'
+  `);
+
   for (const accountId of accountIds) {
     const accountDeposits = unresolvedDeposits.filter(
       (row) => String(row.account_id) === accountId,
@@ -310,6 +324,14 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
     if (matchedDates.length < 3) continue;
     matchedDates.sort();
     const firstCardDate = matchedDates[0];
+
+    // An exact 1.5% next-day cashback match proves that the preceding day's
+    // aggregate external outflow was card-eligible spend. Mark only those
+    // proven days as personal card expense; unmatched withdrawals remain
+    // ordinary external outflows until the rich merchant export resolves them.
+    for (const cashbackDate of matchedDates) {
+      markCardSpend.run(accountId, previousUtcDate(cashbackDate));
+    }
 
     const cashbackIds = new Set<string>();
     for (const [date, rows] of candidatesByDate) {
