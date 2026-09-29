@@ -185,7 +185,7 @@ export default function CashFlowPage() {
                 ["Card spend", card.spendCzk],
                 ["Refunds", card.refundsCzk],
                 ["Cashback", card.cashbackCzk],
-                ["Effective cashback", card.effectiveCashbackPct],
+                ["Cashback / card spend", card.effectiveCashbackPct],
               ].map(([label, raw]) => {
                 const value = raw === null ? null : Number(raw);
                 return (
@@ -197,7 +197,7 @@ export default function CashFlowPage() {
                     <p className="mt-2 font-mono text-lg font-semibold">
                       {value === null
                         ? "—"
-                        : label === "Effective cashback"
+                        : label === "Cashback / card spend"
                           ? value.toLocaleString("cs-CZ", {
                               maximumFractionDigits: 2,
                             }) + " %"
@@ -211,8 +211,13 @@ export default function CashFlowPage() {
             </div>
             <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
               FinanceOS nepředpokládá, že každý malý příchozí pohyb je cashback.
-              Přesnou klasifikaci přebírá z Trading 212 history exportu, kde je
-              rozlišeno Card debit, Card credit, Deposit a Spending cashback.
+              Přesnou klasifikaci přebírá z Trading 212 history exportu. Zobrazené
+              procento je skutečný cashback dělený všemi rozpoznanými kartovými
+              výdaji, takže nemusí být přesně 1,5 % kvůli neeligible platbám,
+              vratkám nebo měsíčnímu limitu. Aktuální 212 program při splnění
+              podmínek používá Invest cashback a odměnu následně investuje do
+              zvoleného Pie; FinanceOS proto cashback nepočítá jako nový vklad
+              uživatele.
             </p>
           </SectionCard>
         </div>
