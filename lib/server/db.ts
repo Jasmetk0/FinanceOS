@@ -164,6 +164,21 @@ function initialize(db: DatabaseSync) {
     );
   `);
 
+  if (!hasColumn(db, "accounts", "unclassified_value")) {
+    db.exec("ALTER TABLE accounts ADD COLUMN unclassified_value REAL NOT NULL DEFAULT 0;");
+  }
+  if (!hasColumn(db, "accounts", "unclassified_value_czk")) {
+    db.exec("ALTER TABLE accounts ADD COLUMN unclassified_value_czk REAL NOT NULL DEFAULT 0;");
+  }
+  if (!hasColumn(db, "accounts", "reconciliation_difference")) {
+    db.exec("ALTER TABLE accounts ADD COLUMN reconciliation_difference REAL NOT NULL DEFAULT 0;");
+  }
+  if (!hasColumn(db, "accounts", "reconciliation_status")) {
+    db.exec(
+      "ALTER TABLE accounts ADD COLUMN reconciliation_status TEXT NOT NULL DEFAULT 'unknown';",
+    );
+  }
+
   if (!hasColumn(db, "transactions", "category")) {
     db.exec("ALTER TABLE transactions ADD COLUMN category TEXT;");
   }
