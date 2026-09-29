@@ -36,7 +36,7 @@ export default function ConnectionsPage() {
       <div className="mt-4">
         <SectionCard
           title="Trading 212 Card & Spending Pot"
-          subtitle="Automatická klasifikace karty přes Trading 212 history export"
+          subtitle="Automatická klasifikace z provider historie + bohatšího Trading 212 exportu"
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
@@ -59,6 +59,15 @@ export default function ConnectionsPage() {
               <p className="text-xs text-[var(--muted)]">Card rows</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.spendCount.toLocaleString("cs-CZ")}
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--muted)]">
+                {trading212Card.classificationSource === "rich_export"
+                  ? "Merchant export"
+                  : trading212Card.classificationSource === "validated_public_history"
+                    ? "Ověřený fallback z cash historie"
+                    : trading212Card.classificationSource === "mixed"
+                      ? "Merchant export + ověřený fallback"
+                      : "Bez card evidence"}
               </p>
             </div>
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
@@ -88,9 +97,12 @@ export default function ConnectionsPage() {
           </div>
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
             Veřejný endpoint /history/transactions vrací jen základní pohyb
-            WITHDRAW/DEPOSIT bez obchodníka. FinanceOS proto automaticky používá
-            oficiální CSV export API jako enrichment vrstvu. Z něj získá Card
-            debit, Spending cashback, Merchant name a Merchant category.
+            WITHDRAW/DEPOSIT bez obchodníka. Když bohatší export funguje,
+            FinanceOS z něj doplní Card debit, cashback, Merchant name a Merchant
+            category. Pokud je export rate-limitovaný, účetní klasifikaci
+            nezablokuje: cashback a card spend označí jen tam, kde se v provider
+            historii opakovaně potvrdí přesný cashbackový vzorec. Merchant názvy
+            se v fallback režimu nevymýšlí.
             {trading212Card.lastError
               ? " Poslední chyba: " +
                 trading212Card.lastError +
