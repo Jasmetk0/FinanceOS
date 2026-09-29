@@ -50,6 +50,161 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
   return series;
 }
 
+export interface PortfolioHistoryMetric {
+  valueCzk: number | null;
+  contributedCzk: number;
+  profitCzk: number | null;
+  returnPct: number | null;
+}
+
+export interface PortfolioHistoryPoint {
+  date: string;
+  total: PortfolioHistoryMetric;
+  providers: Record<string, PortfolioHistoryMetric>;
+}
+
+function historyMetric(
+  valueCzk: number | null,
+  contributedCzk: number,
+): PortfolioHistoryMetric {
+  const profitCzk =
+    valueCzk === null ? null : valueCzk - contributedCzk;
+
+  return {
+    valueCzk,
+    contributedCzk,
+    profitCzk,
+    returnPct:
+      profitCzk === null || contributedCzk <= 0
+        ? null
+        : (profitCzk / contributedCzk) * 100,
+  };
+}
+
+function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
+  const snapshotRows = db
+    .prepare(`
+      SELECT
+        s.recorded_at,
+        s.account_id,
+        s.total_value_czk,
+        a.provider,
+        a.type
+      FROM snapshots s
+      JOIN accounts a ON a.id = s.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+      ORDER BY s.recorded_at ASC, s.account_id ASC
+    `)
+    .all();
+
+  const flowRows = db
+    .prepare(`
+      SELECT
+        substr(t.occurred_at, 1, 10) AS day,
+        t.provider,
+        t.kind,
+        ABS(t.amount_czk) AS amount
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.amount_czk IS NOT NULL
+        AND t.kind IN ('deposit', 'withdrawal')
+      ORDER BY day ASC, t.occurred_at ASC
+    `)
+    .all();
+
+  const providers = new Set<string>();
+  const latestByAccount = new Map<
+    string,
+    { provider: string; valueCzk: number }
+  >();
+  const snapshotsByDate = new Map<
+    string,
+    Array<{ accountId: string; provider: string; valueCzk: number }>
+  >();
+
+  for (const row of snapshotRows) {
+    const date = String(row.recorded_at).slice(0, 10);
+    const provider = String(row.provider);
+    providers.add(provider);
+    const list = snapshotsByDate.get(date) ?? [];
+    list.push({
+      accountId: String(row.account_id),
+      provider,
+      valueCzk: num(row.total_value_czk),
+    });
+    snapshotsByDate.set(date, list);
+  }
+
+  for (const row of flowRows) {
+    providers.add(String(row.provider));
+  }
+
+  const flows = flowRows.map((row) => ({
+    date: String(row.day),
+    provider: String(row.provider),
+    delta:
+      String(row.kind) === "deposit"
+        ? Math.abs(num(row.amount))
+        : -Math.abs(num(row.amount)),
+  }));
+
+  const contributionByProvider = new Map<string, number>();
+  const points: PortfolioHistoryPoint[] = [];
+  let flowIndex = 0;
+
+  for (const date of [...snapshotsByDate.keys()].sort()) {
+    while (flowIndex < flows.length && flows[flowIndex].date <= date) {
+      const flow = flows[flowIndex];
+      contributionByProvider.set(
+        flow.provider,
+        (contributionByProvider.get(flow.provider) ?? 0) + flow.delta,
+      );
+      flowIndex += 1;
+    }
+
+    for (const item of snapshotsByDate.get(date) ?? []) {
+      latestByAccount.set(item.accountId, {
+        provider: item.provider,
+        valueCzk: item.valueCzk,
+      });
+    }
+
+    const providerValues = new Map<string, number>();
+    for (const account of latestByAccount.values()) {
+      providerValues.set(
+        account.provider,
+        (providerValues.get(account.provider) ?? 0) + account.valueCzk,
+      );
+    }
+
+    const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
+    let totalValue = 0;
+    let totalContribution = 0;
+
+    for (const provider of [...providers].sort()) {
+      const hasValue = providerValues.has(provider);
+      const value = hasValue ? providerValues.get(provider) ?? 0 : null;
+      const contributed = contributionByProvider.get(provider) ?? 0;
+      providerMetrics[provider] = historyMetric(value, contributed);
+      if (value !== null) totalValue += value;
+      totalContribution += contributed;
+    }
+
+    points.push({
+      date,
+      total: historyMetric(totalValue, totalContribution),
+      providers: providerMetrics,
+    });
+  }
+
+  return {
+    providers: [...providers].sort(),
+    points,
+  };
+}
+
+
 export function getDashboardData() {
   const db = getDb();
 
@@ -1136,9 +1291,12 @@ export function getHistoryData() {
     0,
   );
 
+  const interactiveChart = getPortfolioHistoryChartData(db);
+
   return {
     snapshots: snapshotRows,
     contributions: contributionSeries,
+    chart: interactiveChart,
     coverage,
     summary: {
       oldestKnownTransaction,
