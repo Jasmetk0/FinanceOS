@@ -116,7 +116,9 @@ export default function ConnectionsPage() {
         <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--muted)]">
           U Trading 212 nepovoluj oprávnění k obchodování. U Kraken stačí query
           oprávnění pro funds, closed orders/trades a ledger. Nikdy nepovoluj
-          withdrawals. FinanceOS secrets z API neposílá zpět do prohlížeče.
+          withdrawals. Phantom je připojen pouze watch-only přes veřejnou Solana
+          adresu — seed phrase ani private key do FinanceOS nikdy nezadávej.
+          FinanceOS secrets z API neposílá zpět do prohlížeče.
         </p>
       </div>
     </main>
