@@ -13,20 +13,43 @@ if ([string]::IsNullOrWhiteSpace($desktop) -or -not (Test-Path $desktop)) {
 }
 
 $powerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-$startScript = Join-Path $repoRoot "scripts\start-financeos.ps1"
-$stopScript = Join-Path $repoRoot "scripts\stop-financeos.ps1"
+$bootstrapSource = Join-Path $repoRoot "scripts\desktop-bootstrap.ps1"
+$stopSource = Join-Path $repoRoot "scripts\stop-financeos.ps1"
 
-if (-not (Test-Path $startScript) -or -not (Test-Path $stopScript)) {
+if (-not (Test-Path $bootstrapSource) -or -not (Test-Path $stopSource)) {
     throw "FinanceOS launcher scripts are missing. Update the repository and run this installer again."
 }
 
+$dataDir = if ($env:LOCALAPPDATA) {
+    Join-Path $env:LOCALAPPDATA "FinanceOS"
+} else {
+    Join-Path $env:USERPROFILE ".financeos\FinanceOS"
+}
+$launcherDir = Join-Path $dataDir "launcher"
+New-Item -ItemType Directory -Force -Path $launcherDir | Out-Null
+
+$localBootstrap = Join-Path $launcherDir "desktop-bootstrap.ps1"
+$localStop = Join-Path $launcherDir "stop-financeos.ps1"
+Copy-Item $bootstrapSource $localBootstrap -Force
+Copy-Item $stopSource $localStop -Force
+
 $shell = New-Object -ComObject WScript.Shell
 
-function New-FinanceShortcut([string]$Path, [string]$Script, [string]$Description, [string]$Icon) {
+function New-FinanceShortcut(
+    [string]$Path,
+    [string]$Script,
+    [string]$ExtraArguments,
+    [string]$Description,
+    [string]$Icon
+) {
     $shortcut = $shell.CreateShortcut($Path)
     $shortcut.TargetPath = $powerShell
-    $shortcut.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $Script + '"'
-    $shortcut.WorkingDirectory = $repoRoot
+    $shortcut.Arguments =
+        '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' +
+        $Script +
+        '"' +
+        $ExtraArguments
+    $shortcut.WorkingDirectory = $launcherDir
     $shortcut.Description = $Description
     $shortcut.IconLocation = $Icon
     $shortcut.WindowStyle = 7
@@ -36,8 +59,8 @@ function New-FinanceShortcut([string]$Path, [string]$Script, [string]$Descriptio
 $startShortcut = Join-Path $desktop "FinanceOS.lnk"
 $stopShortcut = Join-Path $desktop "FinanceOS Stop.lnk"
 
-New-FinanceShortcut $startShortcut $startScript "Update and open FinanceOS" "$env:SystemRoot\System32\shell32.dll,167"
-New-FinanceShortcut $stopShortcut $stopScript "Stop the local FinanceOS server" "$env:SystemRoot\System32\shell32.dll,131"
+New-FinanceShortcut `$startShortcut `$localBootstrap (' -RepoRoot "' + `$repoRoot + '"') "Download latest launcher, update and open FinanceOS" "`$env:SystemRoot\System32\shell32.dll,167"
+New-FinanceShortcut `$stopShortcut `$localStop "" "Stop the local FinanceOS server" "`$env:SystemRoot\System32\shell32.dll,131"
 
 $legacyLauncher = Join-Path $desktop "FinanceOS.cmd"
 if (Test-Path $legacyLauncher) {
@@ -49,4 +72,5 @@ Write-Host "Created desktop shortcuts:"
 Write-Host ("  " + $startShortcut)
 Write-Host ("  " + $stopShortcut)
 Write-Host ""
-Write-Host "FinanceOS now runs without a permanent terminal window."
+Write-Host ("Launcher bootstrap: " + $localBootstrap)
+Write-Host "The desktop shortcut now downloads the current launcher from origin/buuk before starting FinanceOS."
