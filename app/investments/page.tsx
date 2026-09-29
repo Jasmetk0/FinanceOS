@@ -31,7 +31,11 @@ export default function InvestmentsPage() {
           label="Nerealizovaný P/L"
           value={dashboard.summary.unrealizedPnlCzk}
           format="currency"
-          positive={dashboard.summary.unrealizedPnlCzk >= 0}
+          positive={
+            dashboard.summary.unrealizedPnlCzk === null
+              ? undefined
+              : dashboard.summary.unrealizedPnlCzk >= 0
+          }
         />
         <StatCard label="Pozic" value={holdings.length} />
         <StatCard label="Účtů" value={dashboard.accounts.length} />
