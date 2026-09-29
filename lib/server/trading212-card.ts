@@ -314,7 +314,10 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
   if (action.includes("cashback")) {
     return {
       kind: "income",
-      flowScope: "not_applicable",
+      // Cashback comes from outside the investment portfolio. Treat it as an
+      // external reward flow for return attribution, while Cash Flow still
+      // presents it as reward income rather than a user deposit.
+      flowScope: "external",
       category: "card_cashback",
       direction: 1,
       cardEvidence: true,
