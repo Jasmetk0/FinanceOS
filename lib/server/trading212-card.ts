@@ -37,7 +37,7 @@ const LAST_REFRESH_KEY = "card_export_last_refresh";
 const LAST_ERROR_KEY = "card_export_last_error";
 const CARD_DETECTED_KEY = "card_detected";
 const REPORT_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
-const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_MS = 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 
 function baseUrl(environment: string) {
