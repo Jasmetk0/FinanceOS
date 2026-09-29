@@ -37,6 +37,12 @@ test("performance is blocked by any unresolved investment flow", () => {
   assert.ok(analytics.includes("accountPerformanceComplete"));
 });
 
+test("restore immediately reapplies stored-data repairs", () => {
+  const restore = source("lib/server/restore.ts");
+  assert.ok(restore.includes("repairStoredData"));
+  assert.ok(restore.includes("repairStoredData(db);"));
+});
+
 test("export exposes remaining legacy-flow debt", () => {
   const exportSource = source("lib/server/export.ts");
   assert.ok(exportSource.includes("legacyFlows"));
