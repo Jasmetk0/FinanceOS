@@ -517,6 +517,254 @@ function reclassifyLegacyKrakenWalletFlows() {
   }
 }
 
+
+function repairLegacyKrakenLedgerQuantities() {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT id, raw_json FROM transactions " +
+        "WHERE provider = 'kraken' AND external_id LIKE 'ledger:%'",
+    )
+    .all();
+  const update = db.prepare(
+    "UPDATE transactions SET quantity = ? WHERE id = ?",
+  );
+
+  for (const row of rows) {
+    try {
+      const raw = asObject(JSON.parse(String(row.raw_json || "{}")));
+      const amount = numberValue(raw.amount, 0);
+      const fee = Math.abs(numberValue(raw.fee, 0));
+      update.run(amount - fee, String(row.id));
+    } catch {
+      // Keep the stored quantity if the provider audit payload is unavailable.
+    }
+  }
+}
+
+type KrakenLot = {
+  quantity: number;
+  costCzk: number | null;
+};
+
+function consumeLots(
+  lots: KrakenLot[],
+  requestedQuantity: number,
+) {
+  let remaining = Math.max(0, requestedQuantity);
+  let knownCost = 0;
+  let complete = true;
+
+  while (remaining > 1e-12 && lots.length) {
+    const lot = lots[0];
+    const take = Math.min(remaining, lot.quantity);
+    if (lot.costCzk === null) {
+      complete = false;
+    } else if (lot.quantity > 0) {
+      knownCost += lot.costCzk * (take / lot.quantity);
+    }
+
+    if (lot.costCzk !== null && lot.quantity > 0) {
+      lot.costCzk -= lot.costCzk * (take / lot.quantity);
+    }
+    lot.quantity -= take;
+    remaining -= take;
+
+    if (lot.quantity <= 1e-12) lots.shift();
+  }
+
+  if (remaining > 1e-10) complete = false;
+  return { complete, costCzk: complete ? knownCost : null };
+}
+
+function rebuildKrakenTransferBookValuesAndCostBasis() {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT t.id, t.kind, t.occurred_at, t.amount_czk, t.quantity, " +
+        "t.category, t.flow_scope, a.symbol " +
+        "FROM transactions t LEFT JOIN assets a ON a.id = t.asset_id " +
+        "WHERE t.provider = 'kraken' AND t.asset_id IS NOT NULL " +
+        "ORDER BY t.occurred_at ASC, t.id ASC",
+    )
+    .all();
+
+  const lotsBySymbol = new Map<string, KrakenLot[]>();
+  const transferUpdate = db.prepare(
+    "UPDATE transactions SET transfer_value_czk = ? WHERE id = ?",
+  );
+  const realizedBySymbol = new Map<string, number>();
+  const incompleteSymbols = new Set<string>();
+
+  const lotsFor = (symbol: string) => {
+    const existing = lotsBySymbol.get(symbol);
+    if (existing) return existing;
+    const created: KrakenLot[] = [];
+    lotsBySymbol.set(symbol, created);
+    return created;
+  };
+
+  for (const row of rows) {
+    const symbol = String(row.symbol || "").toUpperCase();
+    if (!symbol || isFiat(symbol)) continue;
+
+    const kind = String(row.kind);
+    const category = String(row.category || "");
+    const scope = String(row.flow_scope || "legacy");
+    const quantity = numberValue(row.quantity, 0);
+    const amountCzk =
+      row.amount_czk === null || row.amount_czk === undefined
+        ? null
+        : numberValue(row.amount_czk, 0);
+    const lots = lotsFor(symbol);
+
+    if (kind === "buy" && quantity > 0 && amountCzk !== null) {
+      lots.push({
+        quantity: Math.abs(quantity),
+        costCzk: Math.abs(amountCzk),
+      });
+      continue;
+    }
+
+    if (kind === "sell" && quantity > 0) {
+      const consumed = consumeLots(lots, Math.abs(quantity));
+      if (consumed.costCzk === null || amountCzk === null) {
+        incompleteSymbols.add(symbol);
+      } else {
+        realizedBySymbol.set(
+          symbol,
+          (realizedBySymbol.get(symbol) ?? 0) +
+            Math.abs(amountCzk) -
+            consumed.costCzk,
+        );
+      }
+      continue;
+    }
+
+    if (
+      kind === "transfer" &&
+      scope === "unclassified" &&
+      quantity < 0
+    ) {
+      const consumed = consumeLots(lots, Math.abs(quantity));
+      transferUpdate.run(
+        consumed.costCzk === null ? null : -consumed.costCzk,
+        String(row.id),
+      );
+      if (consumed.costCzk === null) incompleteSymbols.add(symbol);
+      continue;
+    }
+
+    if (
+      kind === "transfer" &&
+      scope === "unclassified" &&
+      quantity > 0
+    ) {
+      // Until an owned source wallet is linked, the carried cost basis of an
+      // incoming on-chain transfer is unknown.
+      lots.push({ quantity, costCzk: null });
+      incompleteSymbols.add(symbol);
+      continue;
+    }
+
+    if (
+      (kind === "interest" || kind === "adjustment") &&
+      quantity > 0
+    ) {
+      lots.push({ quantity, costCzk: null });
+      incompleteSymbols.add(symbol);
+      continue;
+    }
+
+    // Kraken-internal allocation/staking bucket moves do not cross the
+    // economic asset boundary and therefore must not create or consume lots.
+    if (kind === "transfer" && category.startsWith("kraken_internal_")) {
+      continue;
+    }
+  }
+
+  const holdings = db
+    .prepare(
+      "SELECT h.id, h.quantity, h.market_value_czk, a.symbol " +
+        "FROM holdings h JOIN assets a ON a.id = h.asset_id " +
+        "JOIN accounts ac ON ac.id = h.account_id " +
+        "WHERE ac.provider = 'kraken' AND a.asset_class = 'crypto'",
+    )
+    .all();
+
+  const holdingUpdate = db.prepare(
+    "UPDATE holdings SET average_price = ?, unrealized_pnl_czk = ?, raw_json = ? " +
+      "WHERE id = ?",
+  );
+
+  for (const holding of holdings) {
+    const symbol = String(holding.symbol).toUpperCase();
+    const lots = lotsBySymbol.get(symbol) ?? [];
+    const remainingQuantity = lots.reduce(
+      (sum, lot) => sum + Math.max(0, lot.quantity),
+      0,
+    );
+    const complete =
+      !incompleteSymbols.has(symbol) &&
+      lots.every((lot) => lot.costCzk !== null);
+    const totalCost = complete
+      ? lots.reduce((sum, lot) => sum + (lot.costCzk ?? 0), 0)
+      : null;
+    const averagePrice =
+      complete && remainingQuantity > 1e-12 && totalCost !== null
+        ? totalCost / remainingQuantity
+        : null;
+    const holdingQuantity = Math.max(0, numberValue(holding.quantity, 0));
+    const allocatedCost =
+      averagePrice === null ? null : averagePrice * holdingQuantity;
+    const unrealized =
+      allocatedCost === null
+        ? null
+        : numberValue(holding.market_value_czk, 0) - allocatedCost;
+
+    holdingUpdate.run(
+      averagePrice,
+      unrealized,
+      JSON.stringify({
+        costBasisStatus: complete ? "complete" : "incomplete",
+        canonicalSymbol: symbol,
+        reconstructedFromLedger: true,
+      }),
+      String(holding.id),
+    );
+  }
+
+  const realizedComplete = incompleteSymbols.size === 0;
+  const realizedTotal = [...realizedBySymbol.values()].reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+
+  const account = db
+    .prepare("SELECT id, raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1")
+    .get();
+  if (account) {
+    let raw: JsonObject = {};
+    try {
+      raw = account.raw_json ? asObject(JSON.parse(String(account.raw_json))) : {};
+    } catch {
+      raw = {};
+    }
+    db.prepare(
+      "UPDATE accounts SET raw_json = ?, realized_pnl_czk = ? WHERE id = ?",
+    ).run(
+      JSON.stringify({
+        ...raw,
+        costBasisStatus: realizedComplete ? "complete" : "partial",
+        incompleteCostBasisSymbols: [...incompleteSymbols].sort(),
+        reconstructedRealizedPnlCzk: realizedComplete ? realizedTotal : null,
+      }),
+      realizedComplete ? realizedTotal : 0,
+      String(account.id),
+    );
+  }
+}
+
 export async function syncKraken() {
   return withProviderSyncLock("kraken", async () => {
     const connection = getConnectionSecret<KrakenCredentials>("kraken");
@@ -673,6 +921,8 @@ export async function syncKraken() {
     const rawAsset = stringValue(ledger.asset, "UNKNOWN");
     const currency = normalizeAssetCode(rawAsset);
     const amount = numberValue(ledger.amount, 0);
+    const ledgerFee = Math.abs(numberValue(ledger.fee, 0));
+    const balanceDelta = amount - ledgerFee;
     const occurredAt = new Date(numberValue(ledger.time) * 1000).toISOString();
 
     let amountCzk: number | null = null;
@@ -704,8 +954,8 @@ export async function syncKraken() {
       amount,
       amountCzk,
       assetId: assetIdValue,
-      quantity: amount,
-      fee: numberValue(ledger.fee, 0),
+      quantity: balanceDelta,
+      fee: ledgerFee,
       note: [type, stringValue(ledger.subtype)].filter(Boolean).join(" · "),
       category: ledgerCategory(type, currency, stringValue(ledger.subtype)),
       flowScope: ledgerFlowScope(type, currency),
@@ -714,7 +964,9 @@ export async function syncKraken() {
   }
 
     reclassifyLegacyKrakenWalletFlows();
+    repairLegacyKrakenLedgerQuantities();
     enrichKrakenWalletTransfers(withdrawalStatuses);
+    rebuildKrakenTransferBookValuesAndCostBasis();
     recordSnapshot(accountIdValue);
 
     return {
