@@ -54,7 +54,7 @@ test("Trading 212 card enrichment uses official CSV export state instead of gues
   const card = source("lib/server/trading212-card.ts");
   assert.ok(card.includes("/equity/history/exports"));
   assert.ok(card.includes('"card debit"'));
-  assert.ok(card.includes('"spending cashback"'));
+  assert.ok(card.includes('action.includes("cashback")'));
   assert.ok(card.includes('"card credit"'));
   assert.ok(card.includes('"Merchant name"'));
   assert.ok(card.includes('"Merchant category"'));
