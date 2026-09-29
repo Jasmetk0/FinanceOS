@@ -14,6 +14,9 @@ export default async function AssetDetailPage({
   const { symbol: rawSymbol } = await params;
   const detail = getAssetDetail(decodeURIComponent(rawSymbol));
   if (!detail) notFound();
+  const isPrincipalAsset =
+    detail.assetClass === "p2p" || detail.assetClass === "bond";
+  const isMintosAsset = detail.providers.includes("mintos");
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -39,40 +42,72 @@ export default async function AssetDetailPage({
         </div>
       </div>
 
-      {detail.assetClass === "p2p" && detail.metadata ? (
+      {isPrincipalAsset && detail.metadata ? (
         <section className="mt-5 rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <div>
-              <p className="text-xs text-[var(--muted)]">Úvěr</p>
-              <p className="mt-1 text-sm font-medium">
-                {detail.metadata.loanName || "—"}
-              </p>
+          {isMintosAsset ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-xs text-[var(--muted)]">ISIN</p>
+                <p className="mt-1 font-mono text-sm font-medium">
+                  {detail.metadata.isin || detail.symbol}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Loan records</p>
+                <p className="mt-1 font-mono text-sm font-medium">
+                  {(detail.metadata.loanCount ?? 0).toLocaleString("cs-CZ")}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Current principal</p>
+                <p className="mt-1 font-mono text-sm">
+                  {(detail.metadata.currentPrincipal ?? 0).toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  EUR
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Instrument</p>
+                <p className="mt-1 text-sm font-medium">
+                  {detail.metadata.bond ? "Bond" : "Mintos Notes"}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-[var(--muted)]">Typ projektu</p>
-              <p className="mt-1 text-sm font-medium">
-                {detail.metadata.projectType || "—"}
-              </p>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <p className="text-xs text-[var(--muted)]">Úvěr</p>
+                <p className="mt-1 text-sm font-medium">
+                  {detail.metadata.loanName || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Typ projektu</p>
+                <p className="mt-1 text-sm font-medium">
+                  {detail.metadata.projectType || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Celkem vložená jistina</p>
+                <p className="mt-1 font-mono text-sm">
+                  {(detail.metadata.investedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  Kč
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)]">Vrácená jistina</p>
+                <p className="mt-1 font-mono text-sm">
+                  {(detail.metadata.returnedPrincipal ?? 0).toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 2,
+                  })}{" "}
+                  Kč
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-[var(--muted)]">Celkem vložená jistina</p>
-              <p className="mt-1 font-mono text-sm">
-                {(detail.metadata.investedPrincipal ?? 0).toLocaleString("cs-CZ", {
-                  maximumFractionDigits: 2,
-                })}{" "}
-                Kč
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--muted)]">Vrácená jistina</p>
-              <p className="mt-1 font-mono text-sm">
-                {(detail.metadata.returnedPrincipal ?? 0).toLocaleString("cs-CZ", {
-                  maximumFractionDigits: 2,
-                })}{" "}
-                Kč
-              </p>
-            </div>
-          </div>
+          )}
 
           {detail.metadata.projectUrl ? (
             <a
@@ -93,7 +128,7 @@ export default async function AssetDetailPage({
           value={detail.currentValueCzk}
           format="currency"
         />
-        {detail.assetClass === "p2p" ? (
+        {isPrincipalAsset ? (
           <>
             <StatCard
               label="Received yield"
@@ -165,7 +200,7 @@ export default async function AssetDetailPage({
                     </p>
                   </div>
 
-                  {detail.assetClass === "p2p" ? (
+                  {isPrincipalAsset ? (
                     <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <dt className="text-xs text-[var(--muted)]">
@@ -257,10 +292,10 @@ export default async function AssetDetailPage({
         </SectionCard>
 
         <SectionCard
-          title={detail.assetClass === "p2p" ? "Project history" : "Trade history"}
+          title={isPrincipalAsset ? "Principal history" : "Trade history"}
           subtitle={
-            detail.assetClass === "p2p"
-              ? "Investice, výnosy a splacení jistiny"
+            isPrincipalAsset
+              ? "Investice, výnosy a pohyby jistiny"
               : "Nákupy, prodeje a dividendy"
           }
         >
