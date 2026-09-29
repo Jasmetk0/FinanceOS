@@ -719,6 +719,7 @@ export interface CashFlowMonth {
   giftsCzk: number;
   expensesCzk: number;
   interestCzk: number;
+  cashbackCzk: number;
   netCzk: number;
   savingsRate: number | null;
 }
@@ -727,11 +728,23 @@ export function getCashFlowData(months = 18) {
   const db = getDb();
   const rows = db
     .prepare(`
-      SELECT kind, occurred_at, amount_czk, category, source_label
+      SELECT provider, kind, occurred_at, amount_czk, category, source_label
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
-        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      WHERE amount_czk IS NOT NULL
+        AND (
+          (
+            provider = 'manual'
+            AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+          )
+          OR (
+            provider = 'trading212'
+            AND (
+              category LIKE 'card_spend:%'
+              OR category LIKE 'card_refund:%'
+              OR category IN ('card_cashback', 'card_fee')
+            )
+          )
+        )
       ORDER BY occurred_at ASC
     `)
     .all();
@@ -751,18 +764,33 @@ export function getCashFlowData(months = 18) {
         giftsCzk: 0,
         expensesCzk: 0,
         interestCzk: 0,
+        cashbackCzk: 0,
         netCzk: 0,
         savingsRate: null,
       };
 
+    const provider = String(row.provider);
     const kind = String(row.kind);
+    const category = String(row.category || "");
     const amount = num(row.amount_czk);
 
-    if (kind === "income") item.incomeCzk += Math.max(0, amount);
-    if (kind === "gift") item.giftsCzk += Math.max(0, amount);
-    if (kind === "interest") item.interestCzk += Math.max(0, amount);
-    if (kind === "expense" || kind === "fee") {
-      item.expensesCzk += Math.abs(amount);
+    if (provider === "trading212") {
+      if (category.startsWith("card_spend:")) {
+        item.expensesCzk += Math.abs(amount);
+      } else if (category.startsWith("card_refund:")) {
+        item.expensesCzk -= Math.abs(amount);
+      } else if (category === "card_cashback") {
+        item.cashbackCzk += Math.max(0, amount);
+      } else if (category === "card_fee") {
+        item.expensesCzk += Math.abs(amount);
+      }
+    } else {
+      if (kind === "income") item.incomeCzk += Math.max(0, amount);
+      if (kind === "gift") item.giftsCzk += Math.max(0, amount);
+      if (kind === "interest") item.interestCzk += Math.max(0, amount);
+      if (kind === "expense" || kind === "fee") {
+        item.expensesCzk += Math.abs(amount);
+      }
     }
 
     byMonth.set(month, item);
@@ -772,7 +800,8 @@ export function getCashFlowData(months = 18) {
     .sort((a, b) => a.month.localeCompare(b.month))
     .slice(-Math.max(1, months))
     .map((item) => {
-      const grossIncome = item.incomeCzk + item.giftsCzk + item.interestCzk;
+      const grossIncome =
+        item.incomeCzk + item.giftsCzk + item.interestCzk + item.cashbackCzk;
       const netCzk = grossIncome - item.expensesCzk;
       return {
         ...item,
@@ -787,6 +816,7 @@ export function getCashFlowData(months = 18) {
       acc.giftsCzk += item.giftsCzk;
       acc.expensesCzk += item.expensesCzk;
       acc.interestCzk += item.interestCzk;
+      acc.cashbackCzk += item.cashbackCzk;
       acc.netCzk += item.netCzk;
       return acc;
     },
@@ -795,6 +825,7 @@ export function getCashFlowData(months = 18) {
       giftsCzk: 0,
       expensesCzk: 0,
       interestCzk: 0,
+      cashbackCzk: 0,
       netCzk: 0,
     },
   );
@@ -806,30 +837,70 @@ export function getCashFlowData(months = 18) {
         kind,
         SUM(ABS(amount_czk)) AS total
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
-        AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+      WHERE amount_czk IS NOT NULL
+        AND (
+          (
+            provider = 'manual'
+            AND kind IN ('income', 'gift', 'expense', 'interest', 'fee')
+          )
+          OR (
+            provider = 'trading212'
+            AND (
+              category LIKE 'card_spend:%'
+              OR category LIKE 'card_refund:%'
+              OR category IN ('card_cashback', 'card_fee')
+            )
+          )
+        )
       GROUP BY category, kind
       ORDER BY total DESC
     `)
     .all()
-    .map((row) => ({
-      category: String(row.category),
-      kind: String(row.kind),
-      totalCzk: num(row.total),
-    }));
+    .map((row) => {
+      const category = String(row.category);
+      const prettyCategory = category.startsWith("card_spend:")
+        ? "Card · " +
+          category
+            .slice("card_spend:".length)
+            .replace(/_/g, " ")
+        : category.startsWith("card_refund:")
+          ? "Card refund · " +
+            category
+              .slice("card_refund:".length)
+              .replace(/_/g, " ")
+          : category === "card_cashback"
+            ? "Trading 212 card cashback"
+            : category === "card_fee"
+              ? "Trading 212 card fee"
+              : category;
+      return {
+        category: prettyCategory,
+        kind: String(row.kind),
+        totalCzk: num(row.total),
+      };
+    });
 
   const sourceRows = db
     .prepare(`
       SELECT
-        COALESCE(NULLIF(source_label, ''), 'Unspecified') AS source,
+        CASE
+          WHEN provider = 'trading212' AND category = 'card_cashback'
+            THEN 'Trading 212 cashback'
+          ELSE COALESCE(NULLIF(source_label, ''), 'Unspecified')
+        END AS source,
         SUM(CASE
-          WHEN kind IN ('income', 'gift', 'interest') THEN ABS(amount_czk)
+          WHEN provider = 'trading212' AND category = 'card_cashback'
+            THEN ABS(amount_czk)
+          WHEN provider = 'manual' AND kind IN ('income', 'gift', 'interest')
+            THEN ABS(amount_czk)
           ELSE 0
         END) AS total
       FROM transactions
-      WHERE provider = 'manual'
-        AND amount_czk IS NOT NULL
+      WHERE amount_czk IS NOT NULL
+        AND (
+          provider = 'manual'
+          OR (provider = 'trading212' AND category = 'card_cashback')
+        )
       GROUP BY source
       HAVING total > 0
       ORDER BY total DESC
@@ -842,7 +913,10 @@ export function getCashFlowData(months = 18) {
     }));
 
   const grossIncome =
-    totals.incomeCzk + totals.giftsCzk + totals.interestCzk;
+    totals.incomeCzk +
+    totals.giftsCzk +
+    totals.interestCzk +
+    totals.cashbackCzk;
 
   return {
     months: allMonths,
