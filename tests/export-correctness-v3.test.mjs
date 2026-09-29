@@ -282,3 +282,26 @@ test("Phantom sync never overwrites canonical identity or pretends PnL is availa
   assert.ok(linkBlock.includes("canonicalCryptoIdentity(symbol, symbol)"));
   assert.ok(linkBlock.includes("canonicalKey: identity.canonicalKey"));
 });
+
+
+test("T212 fallback marks only cashback-proven withdrawal days as card spend", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(db.includes("category = 'card_spend:inferred'"));
+  assert.ok(db.includes("for (const cashbackDate of matchedDates)"));
+  assert.ok(
+    db.includes("markCardSpend.run(accountId, previousUtcDate(cashbackDate))"),
+  );
+  assert.ok(
+    db.includes("COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'"),
+  );
+});
+
+test("T212 UI distinguishes validated fallback from merchant-rich export", () => {
+  const card = source("lib/server/trading212-card.ts");
+  const cashFlow = source("app/cash-flow/page.tsx");
+  const connections = source("app/connections/page.tsx");
+  assert.ok(card.includes('"validated_public_history"'));
+  assert.ok(card.includes("inferredCashbackCount"));
+  assert.ok(cashFlow.includes("provider-history fallbacku"));
+  assert.ok(connections.includes("Ověřený fallback z cash historie"));
+});
