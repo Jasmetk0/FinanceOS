@@ -599,8 +599,8 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
   const db = getDb();
   const rows = db
     .prepare(
-      "SELECT t.id, t.kind, t.occurred_at, t.amount_czk, t.quantity, " +
-        "t.category, t.flow_scope, a.symbol " +
+      "SELECT t.id, t.kind, t.occurred_at, t.amount, t.amount_czk, " +
+        "t.quantity, t.fee, t.category, t.flow_scope, a.symbol " +
         "FROM transactions t LEFT JOIN assets a ON a.id = t.asset_id " +
         "WHERE t.provider = 'kraken' AND t.asset_id IS NOT NULL " +
         "ORDER BY t.occurred_at ASC, t.id ASC",
@@ -634,12 +634,20 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       row.amount_czk === null || row.amount_czk === undefined
         ? null
         : numberValue(row.amount_czk, 0);
+    const amountNative = Math.abs(numberValue(row.amount, 0));
+    const feeNative = Math.abs(numberValue(row.fee, 0));
+    const historicalFx =
+      amountCzk !== null && amountNative > 0
+        ? Math.abs(amountCzk) / amountNative
+        : null;
+    const feeCzk =
+      historicalFx === null ? 0 : feeNative * historicalFx;
     const lots = lotsFor(symbol);
 
     if (kind === "buy" && quantity > 0 && amountCzk !== null) {
       lots.push({
         quantity: Math.abs(quantity),
-        costCzk: Math.abs(amountCzk),
+        costCzk: Math.abs(amountCzk) + feeCzk,
       });
       continue;
     }
@@ -652,7 +660,7 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
         realizedBySymbol.set(
           symbol,
           (realizedBySymbol.get(symbol) ?? 0) +
-            Math.abs(amountCzk) -
+            Math.max(0, Math.abs(amountCzk) - feeCzk) -
             consumed.costCzk,
         );
       }
