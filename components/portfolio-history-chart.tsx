@@ -1,6 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
 export type PortfolioChartMetric = "value" | "profit" | "return" | "contributions";
 
@@ -215,32 +220,6 @@ export function PortfolioHistoryChart({
   );
   const [hoverDate, setHoverDate] = useState<string | null>(null);
 
-  useEffect(() => {
-    try {
-      const stored = window.localStorage.getItem("financeos-provider-colors");
-      if (!stored) return;
-      const parsed = JSON.parse(stored) as Record<string, string>;
-      setColors((current) => ({ ...current, ...parsed }));
-    } catch {
-      // Keep defaults if local settings are malformed.
-    }
-  }, []);
-
-  useEffect(() => {
-    setSelectedProviders((current) => {
-      const valid = current.filter((provider) => data.providers.includes(provider));
-      const additions = data.providers.filter((provider) => !valid.includes(provider));
-      return [...valid, ...additions];
-    });
-    setColors((current) => {
-      const next = { ...current };
-      data.providers.forEach((provider, index) => {
-        if (!next[provider]) next[provider] = fallbackColor(provider, index);
-      });
-      return next;
-    });
-  }, [data.providers]);
-
   const earliest = data.points[0]?.date ?? "";
   const latest = data.points.at(-1)?.date ?? "";
 
@@ -388,7 +367,7 @@ export function PortfolioHistoryChart({
     }
   }
 
-  function handlePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+  function handlePointerMove(event: ReactPointerEvent<SVGSVGElement>) {
     if (!chart || !filtered.length || !svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
     const relative = (event.clientX - rect.left) / Math.max(1, rect.width);
@@ -993,7 +972,7 @@ export function InteractiveTimeSeriesChart({
     return value.toLocaleString("cs-CZ", { maximumFractionDigits: 1 });
   }
 
-  function handleMove(event: React.PointerEvent<SVGSVGElement>) {
+  function handleMove(event: ReactPointerEvent<SVGSVGElement>) {
     if (!chart || !svgRef.current || !filtered.length) return;
     const rect = svgRef.current.getBoundingClientRect();
     const viewX =
