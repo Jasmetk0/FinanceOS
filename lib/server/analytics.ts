@@ -1319,8 +1319,30 @@ export function getInsightsData() {
     }
   }
 
+  if (performance.totals.performanceStatus === "partial") {
+    warnings.push({
+      id: "portfolio-performance-partial",
+      severity: "warning",
+      title: "Performance obsahuje neklasifikované cash flow",
+      detail:
+        "FinanceOS eviduje " +
+        performance.totals.unclassifiedFlowCount +
+        " investiční cash-flow záznamů, u kterých není bezpečně známé, zda jsou externí nebo interní. Celkový zisk a XIRR proto zůstávají prázdné.",
+    });
+  }
+
   for (const account of performance.accounts) {
-    if (account.currentValueCzk > 0 && account.externalFlowCount === 0) {
+    if (account.performanceStatus === "partial") {
+      warnings.push({
+        id: "flows-" + account.id,
+        severity: "warning",
+        title: "Neúplná performance historie: " + account.name,
+        detail:
+          "Účet má " +
+          account.unclassifiedFlowCount +
+          " nevyřešených cash-flow záznamů. FinanceOS proto nevydává odhad zisku ani XIRR za přesný.",
+      });
+    } else if (account.currentValueCzk > 0 && account.externalFlowCount === 0) {
       warnings.push({
         id: "flows-" + account.id,
         severity: "info",
