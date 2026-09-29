@@ -100,7 +100,135 @@ function Invoke-RepoGit([string[]]$Arguments) {
     return Invoke-GitProcess (@("-C", $repoRoot) + $Arguments)
 }
 
+
+function Invoke-NpmProcess(
+    [string[]]$Arguments,
+    [string]$LogPath = ""
+) {
+    $npmCommand = Get-Command npm -ErrorAction SilentlyContinue
+    if (-not $npmCommand) {
+        throw "npm was not found in PATH."
+    }
+
+    $tempLog = if ([string]::IsNullOrWhiteSpace($LogPath)) {
+        Join-Path $dataDir ("npm-" + [Guid]::NewGuid().ToString("N") + ".log")
+    } else {
+        $LogPath
+    }
+
+    Remove-Item $tempLog -Force -ErrorAction SilentlyContinue
+
+    # Windows PowerShell 5.1 turns native stderr into PowerShell error records.
+    # npm routinely writes non-fatal WARN messages to stderr, so temporarily
+    # keep them non-terminating and decide success strictly from $LASTEXITCODE.
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        & $npmCommand.Source @Arguments *> $tempLog
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    $output = if (Test-Path $tempLog) {
+        (Get-Content $tempLog -Raw -ErrorAction SilentlyContinue)
+    } else {
+        ""
+    }
+
+    if ([string]::IsNullOrWhiteSpace($LogPath)) {
+        Remove-Item $tempLog -Force -ErrorAction SilentlyContinue
+    }
+
+    return [PSCustomObject]@{
+        ExitCode = $exitCode
+        Output = $output
+    }
+}
+
+function Stop-ManagedProcesses {
+    Write-LauncherLog "Stopping managed FinanceOS processes before dependency/build work."
+
+    foreach ($managedPidFile in @($syncPidFile, $pidFile)) {
+        if (-not (Test-Path $managedPidFile)) {
+            continue
+        }
+
+        try {
+            $managedPid = [int](Get-Content $managedPidFile -Raw)
+            if (
+                $managedPid -gt 0 -and
+                (Get-Process -Id $managedPid -ErrorAction SilentlyContinue)
+            ) {
+                $previousErrorActionPreference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = "Continue"
+                    & taskkill.exe /PID $managedPid /T /F *> $null
+                } finally {
+                    $ErrorActionPreference = $previousErrorActionPreference
+                }
+                Start-Sleep -Milliseconds 500
+            }
+        } catch {
+            Write-LauncherLog (
+                "Could not stop stale managed process: " +
+                $_.Exception.Message
+            )
+        }
+
+        Remove-Item $managedPidFile -Force -ErrorAction SilentlyContinue
+    }
+
+    # A previous launcher crash may have lost the PID file while leaving the
+    # FinanceOS Next.js process alive. Only terminate port 3000 when the process
+    # command line clearly belongs to FinanceOS/Next.
+    $connections = @(
+        Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
+    )
+    foreach ($connection in $connections) {
+        try {
+            $process = Get-CimInstance Win32_Process -Filter (
+                "ProcessId = " + $connection.OwningProcess
+            )
+            if (
+                $process -and
+                $process.CommandLine -match "next|financeos"
+            ) {
+                $previousErrorActionPreference = $ErrorActionPreference
+                try {
+                    $ErrorActionPreference = "Continue"
+                    & taskkill.exe /PID $connection.OwningProcess /T /F *> $null
+                } finally {
+                    $ErrorActionPreference = $previousErrorActionPreference
+                }
+                Start-Sleep -Milliseconds 500
+            }
+        } catch {
+            Write-LauncherLog (
+                "Could not stop stale FinanceOS listener: " +
+                $_.Exception.Message
+            )
+        }
+    }
+}
+
+$launcherMutex = New-Object System.Threading.Mutex -ArgumentList @(
+    $false,
+    "Local\FinanceOS-Launcher-SingleInstance"
+)
+$hasLauncherMutex = $false
 try {
+    try {
+        $hasLauncherMutex = $launcherMutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $hasLauncherMutex = $true
+    }
+
+    if (-not $hasLauncherMutex) {
+        Write-LauncherLog "Another FinanceOS launcher instance is already running; exiting duplicate launch."
+        exit 0
+    }
+
     Write-LauncherLog "Launcher started."
 
     if (-not (Test-Path (Join-Path $repoRoot ".git"))) {
@@ -194,6 +322,11 @@ try {
             throw "Could not resolve current Git commit."
         }
 
+        # Stop the currently running app before npm ci can replace node_modules.
+        # Windows keeps modules locked while Node/Next is using them and npm ci
+        # otherwise fails with EPERM/ENOENT.
+        Stop-ManagedProcesses
+
         $builtSha = if (Test-Path $buildShaFile) {
             (Get-Content $buildShaFile -Raw).Trim()
         } else {
@@ -219,9 +352,19 @@ try {
 
         if ($dependenciesNeedInstall) {
             Write-LauncherLog "Installing exact npm dependencies from package-lock.json."
-            & npm ci --no-audit --no-fund *> $null
-            if ($LASTEXITCODE -ne 0) {
-                throw "npm ci failed. package.json and package-lock.json may be out of sync."
+            $npmCiResult = Invoke-NpmProcess @(
+                "ci", "--no-audit", "--no-fund"
+            )
+            if ($npmCiResult.ExitCode -ne 0) {
+                $npmDetail = ($npmCiResult.Output | Out-String).Trim()
+                throw (
+                    "npm ci failed with exit code " +
+                    $npmCiResult.ExitCode +
+                    $(if ($npmDetail) { ": " + $npmDetail } else { "." })
+                )
+            }
+            if (-not [string]::IsNullOrWhiteSpace($npmCiResult.Output)) {
+                Write-LauncherLog "npm ci completed with output/warnings; see launcher log if troubleshooting."
             }
 
             # npm ci is expected to be reproducible and must not modify tracked
@@ -247,8 +390,8 @@ try {
         $nextBuild = Join-Path $repoRoot ".next"
         if ($builtSha -ne $repoSha -or -not (Test-Path $nextBuild)) {
             Write-LauncherLog "Building FinanceOS production bundle."
-            & npm run build *> $buildLog
-            if ($LASTEXITCODE -ne 0) {
+            $buildResult = Invoke-NpmProcess @("run", "build") $buildLog
+            if ($buildResult.ExitCode -ne 0) {
                 throw "FinanceOS production build failed. See $buildLog."
             }
             Set-Content -Path $buildShaFile -Value $repoSha -Encoding ASCII
@@ -257,23 +400,6 @@ try {
         }
     } finally {
         Pop-Location
-    }
-
-    # Always restart FinanceOS after updating so the running process matches the
-    # freshly pulled code and dependencies.
-    foreach ($managedPidFile in @($syncPidFile, $pidFile)) {
-        if (Test-Path $managedPidFile) {
-            try {
-                $managedPid = [int](Get-Content $managedPidFile -Raw)
-                if ($managedPid -gt 0 -and (Get-Process -Id $managedPid -ErrorAction SilentlyContinue)) {
-                    & taskkill.exe /PID $managedPid /T /F *> $null
-                    Start-Sleep -Milliseconds 300
-                }
-            } catch {
-                Write-LauncherLog ("Could not stop stale managed process: " + $_.Exception.Message)
-            }
-            Remove-Item $managedPidFile -Force -ErrorAction SilentlyContinue
-        }
     }
 
     $portInUse = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue
@@ -320,4 +446,14 @@ try {
     $details = $message + [Environment]::NewLine + [Environment]::NewLine + "Details: " + $launcherLog
     Show-ErrorMessage $details
     exit 1
+} finally {
+    if ($hasLauncherMutex) {
+        try {
+            $launcherMutex.ReleaseMutex()
+        } catch {
+        }
+    }
+    if ($launcherMutex) {
+        $launcherMutex.Dispose()
+    }
 }
