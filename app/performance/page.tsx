@@ -39,13 +39,19 @@ export default function PerformancePage() {
           hint="Broker + crypto + P2P"
         />
         <StatCard
-          label="Čisté vklady"
+          label={
+            data.totals.performanceStatus === "partial"
+              ? "Známé čisté vklady"
+              : "Čisté vklady"
+          }
           value={data.totals.netContributedCzk}
           format="currency"
           hint={
-            data.totals.externalFlowCount
-              ? String(data.totals.externalFlowCount) + " cash-flow záznamů"
-              : "Zatím bez historie vkladů"
+            data.totals.performanceStatus === "partial"
+              ? "Pouze bezpečně klasifikované externí cash flow"
+              : data.totals.externalFlowCount
+                ? String(data.totals.externalFlowCount) + " cash-flow záznamů"
+                : "Zatím bez historie vkladů"
           }
         />
         <StatCard
@@ -82,16 +88,21 @@ export default function PerformancePage() {
             Celkový výkon je dočasně neúplný
           </p>
           <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
-            FinanceOS vidí {data.totals.unlinkedWalletTransferCount} on-chain
-            převod{data.totals.unlinkedWalletTransferCount === 1 ? "" : "ů"},
-            ale cílová vlastní peněženka zatím není napojená. Tyto převody
-            nemění externí vklady, ale dokud FinanceOS nevidí i cílová aktiva,
-            nevydává chybějící hodnotu za investiční ztrátu. Známá přenesená
-            účetní hodnota je přibližně{" "}
-            {data.totals.unlinkedWalletBookValueOutCzk.toLocaleString("cs-CZ", {
+            FinanceOS má {data.totals.unclassifiedFlowCount} investiční
+            cash-flow záznam{data.totals.unclassifiedFlowCount === 1 ? "" : "ů"},
+            u kterých zatím nelze bezpečně určit, zda jde o externí vklad/výběr
+            nebo přesun uvnitř tvého majetku. Proto nezobrazuje celkový odhad
+            zisku ani XIRR jako přesné číslo. Známá hodnota těchto toků je
+            přibližně{" "}
+            {data.totals.knownUnclassifiedFlowCzk.toLocaleString("cs-CZ", {
               maximumFractionDigits: 0,
             })}{" "}
             Kč.
+            {data.totals.unlinkedWalletTransferCount
+              ? " Z toho " +
+                data.totals.unlinkedWalletTransferCount +
+                " záznamů jsou nepropojené on-chain převody."
+              : ""}
           </p>
         </div>
       ) : null}
@@ -137,10 +148,10 @@ export default function PerformancePage() {
                         <p className="font-medium">{account.name}</p>
                         <p className="mt-1 text-xs text-[var(--muted)]">
                           {account.provider} · {account.externalFlowCount} external flows
-                          {account.unclassifiedTransferCount
+                          {account.unclassifiedFlowCount
                             ? " · " +
-                              account.unclassifiedTransferCount +
-                              " wallet transfer(s) without known book value"
+                              account.unclassifiedFlowCount +
+                              " unresolved flow(s)"
                             : ""}
                         </p>
                       </td>
@@ -183,18 +194,21 @@ export default function PerformancePage() {
                       <td
                         className={[
                           "py-4 text-right font-mono text-sm",
-                          account.estimatedProfitCzk > 0
-                            ? "text-[var(--accent)]"
-                            : account.estimatedProfitCzk < 0
-                              ? "text-[var(--danger)]"
-                              : "",
+                          account.estimatedProfitCzk === null
+                            ? "text-[var(--muted)]"
+                            : account.estimatedProfitCzk > 0
+                              ? "text-[var(--accent)]"
+                              : account.estimatedProfitCzk < 0
+                                ? "text-[var(--danger)]"
+                                : "",
                         ].join(" ")}
                       >
-                        {account.estimatedProfitCzk > 0 ? "+" : ""}
-                        {account.estimatedProfitCzk.toLocaleString("cs-CZ", {
-                          maximumFractionDigits: 0,
-                        })}{" "}
-                        Kč
+                        {account.estimatedProfitCzk === null
+                          ? "—"
+                          : `${account.estimatedProfitCzk > 0 ? "+" : ""}${account.estimatedProfitCzk.toLocaleString(
+                              "cs-CZ",
+                              { maximumFractionDigits: 0 },
+                            )} Kč`}
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {pct(account.simpleReturnPct)}
