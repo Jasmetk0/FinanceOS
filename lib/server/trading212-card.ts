@@ -36,8 +36,7 @@ const CURSOR_KEY = "card_export_cursor";
 const LAST_REFRESH_KEY = "card_export_last_refresh";
 const LAST_ERROR_KEY = "card_export_last_error";
 const CARD_DETECTED_KEY = "card_detected";
-const REPORT_WINDOW_MS = 365 * 24 * 60 * 60 * 1000;
-const REFRESH_MS = 24 * 60 * 60 * 1000;
+const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 
 function baseUrl(environment: string) {
@@ -705,14 +704,14 @@ async function syncTrading212CardHistoryInternal(input: {
     && cursorDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000;
 
   if (historical) {
-    const timeTo = new Date(
-      Math.min(cursorDate.getTime() + REPORT_WINDOW_MS, now.getTime()),
-    ).toISOString();
+    // Transactions-only exports are small enough to backfill the complete
+    // account history in one report. This is preferable to yearly chunks
+    // because Trading 212 can notify the user whenever an export is generated.
     const requested = await requestExport({
       environment: input.environment,
       credentials: input.credentials,
       timeFrom: cursorDate.toISOString(),
-      timeTo,
+      timeTo: nowIso,
       historical: true,
     });
     return {
