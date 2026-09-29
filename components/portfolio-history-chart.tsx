@@ -880,3 +880,274 @@ function TooltipRow({
     </div>
   );
 }
+
+
+export function InteractiveTimeSeriesChart({
+  data,
+  label,
+  valueFormat = "currency",
+  color = "#69e3aa",
+  emptyText = "Pro graf zatím nejsou data.",
+}: {
+  data: Array<{ date: string; value: number }>;
+  label: string;
+  valueFormat?: "currency" | "percent" | "number";
+  color?: string;
+  emptyText?: string;
+}) {
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [period, setPeriod] = useState("ALL");
+  const [hoverDate, setHoverDate] = useState<string | null>(null);
+
+  const points = useMemo(
+    () =>
+      data
+        .filter(
+          (item) =>
+            item.date &&
+            Number.isFinite(item.value) &&
+            !Number.isNaN(parseDate(item.date)),
+        )
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    [data],
+  );
+
+  const latest = points.at(-1)?.date ?? "";
+  const filtered = useMemo(() => {
+    if (!latest) return [];
+    const start = getPeriodStart(period, latest);
+    return points.filter((point) => !start || point.date >= start);
+  }, [points, latest, period]);
+
+  const chart = useMemo(() => {
+    if (!filtered.length) return null;
+    const times = filtered.map((point) => parseDate(point.date));
+    const minX = Math.min(...times);
+    const maxX = Math.max(...times);
+    const values = filtered.map((point) => point.value);
+
+    let minY = Math.min(...values);
+    let maxY = Math.max(...values);
+    if (valueFormat === "currency" || valueFormat === "number") {
+      minY = Math.min(0, minY);
+    }
+    const span = Math.max(1, maxY - minY);
+    minY -= span * 0.08;
+    maxY += span * 0.08;
+    if (maxY === minY) maxY = minY + 1;
+
+    const xScale = (date: string) =>
+      LEFT +
+      (maxX === minX
+        ? PLOT_W / 2
+        : ((parseDate(date) - minX) / (maxX - minX)) * PLOT_W);
+    const yScale = (value: number) =>
+      TOP + ((maxY - value) / (maxY - minY)) * PLOT_H;
+
+    return {
+      minX,
+      maxX,
+      minY,
+      maxY,
+      xScale,
+      yScale,
+      yTicks: Array.from({ length: 5 }, (_, index) => {
+        const ratio = index / 4;
+        return {
+          value: maxY - ratio * (maxY - minY),
+          y: TOP + ratio * PLOT_H,
+        };
+      }),
+      xTicks: Array.from(
+        { length: Math.min(5, filtered.length) },
+        (_, index) => {
+          const count = Math.min(5, filtered.length);
+          const ratio = count === 1 ? 0 : index / (count - 1);
+          const timestamp = minX + ratio * (maxX - minX);
+          return {
+            timestamp,
+            x: LEFT + ratio * PLOT_W,
+            date: new Date(timestamp).toISOString().slice(0, 10),
+          };
+        },
+      ),
+    };
+  }, [filtered, valueFormat]);
+
+  const hoverPoint =
+    filtered.find((point) => point.date === hoverDate) ?? null;
+
+  function labelValue(value: number) {
+    if (valueFormat === "currency") return formatCurrency(value);
+    if (valueFormat === "percent") {
+      return value.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) + " %";
+    }
+    return value.toLocaleString("cs-CZ", { maximumFractionDigits: 2 });
+  }
+
+  function compactValue(value: number) {
+    if (valueFormat === "percent") {
+      return value.toLocaleString("cs-CZ", { maximumFractionDigits: 1 }) + " %";
+    }
+    if (valueFormat === "currency") return formatCompact(value, "value");
+    return value.toLocaleString("cs-CZ", { maximumFractionDigits: 1 });
+  }
+
+  function handleMove(event: React.PointerEvent<SVGSVGElement>) {
+    if (!chart || !svgRef.current || !filtered.length) return;
+    const rect = svgRef.current.getBoundingClientRect();
+    const viewX =
+      ((event.clientX - rect.left) / Math.max(1, rect.width)) * VIEW_W;
+    const ratio =
+      (Math.max(LEFT, Math.min(LEFT + PLOT_W, viewX)) - LEFT) / PLOT_W;
+    const target = chart.minX + ratio * (chart.maxX - chart.minX);
+
+    let nearest = filtered[0];
+    let distance = Math.abs(parseDate(nearest.date) - target);
+    for (const point of filtered.slice(1)) {
+      const next = Math.abs(parseDate(point.date) - target);
+      if (next < distance) {
+        nearest = point;
+        distance = next;
+      }
+    }
+    setHoverDate(nearest.date);
+  }
+
+  if (!points.length) {
+    return (
+      <div className="grid h-64 place-items-center rounded-2xl border border-dashed border-white/10 px-6 text-center text-sm text-[var(--muted)]">
+        {emptyText}
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex flex-wrap justify-end gap-1.5">
+        {["1M", "3M", "6M", "YTD", "1Y", "ALL"].map((value) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setPeriod(value)}
+            className={[
+              "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
+              period === value
+                ? "border-white/18 bg-white/8 text-white"
+                : "border-white/7 text-[var(--muted)] hover:text-white",
+            ].join(" ")}
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mt-3 overflow-hidden rounded-2xl border border-white/7 bg-black/10">
+        {hoverPoint ? (
+          <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-xl border border-white/10 bg-[#0a1410]/95 p-3 shadow-xl">
+            <p className="text-xs font-semibold">{dateLabel(hoverPoint.date)}</p>
+            <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
+              {label}
+            </p>
+            <p className="mt-2 font-mono text-sm">
+              {labelValue(hoverPoint.value)}
+            </p>
+          </div>
+        ) : null}
+
+        {chart ? (
+          <svg
+            ref={svgRef}
+            viewBox={"0 0 " + VIEW_W + " " + VIEW_H}
+            preserveAspectRatio="none"
+            className="h-[320px] w-full"
+            onPointerMove={handleMove}
+            onPointerLeave={() => setHoverDate(null)}
+            role="img"
+            aria-label={label}
+          >
+            {chart.yTicks.map((tick) => (
+              <g key={tick.y}>
+                <line
+                  x1={LEFT}
+                  x2={LEFT + PLOT_W}
+                  y1={tick.y}
+                  y2={tick.y}
+                  stroke="rgba(255,255,255,0.065)"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <text
+                  x={LEFT - 12}
+                  y={tick.y + 4}
+                  textAnchor="end"
+                  fill="rgba(237,247,242,0.52)"
+                  fontSize="12"
+                >
+                  {compactValue(tick.value)}
+                </text>
+              </g>
+            ))}
+
+            {chart.xTicks.map((tick, index) => (
+              <text
+                key={tick.timestamp}
+                x={tick.x}
+                y={TOP + PLOT_H + 28}
+                textAnchor={
+                  index === 0
+                    ? "start"
+                    : index === chart.xTicks.length - 1
+                      ? "end"
+                      : "middle"
+                }
+                fill="rgba(237,247,242,0.52)"
+                fontSize="12"
+              >
+                {dateLabel(tick.date)}
+              </text>
+            ))}
+
+            <path
+              d={(() => {
+                let path = "";
+                filtered.forEach((point, index) => {
+                  path +=
+                    (index ? "L" : "M") +
+                    chart.xScale(point.date).toFixed(2) +
+                    "," +
+                    chart.yScale(point.value).toFixed(2) +
+                    " ";
+                });
+                return path.trim();
+              })()}
+              fill="none"
+              stroke={color}
+              strokeWidth="2.4"
+              vectorEffect="non-scaling-stroke"
+            />
+
+            {hoverPoint ? (
+              <>
+                <line
+                  x1={chart.xScale(hoverPoint.date)}
+                  x2={chart.xScale(hoverPoint.date)}
+                  y1={TOP}
+                  y2={TOP + PLOT_H}
+                  stroke="rgba(255,255,255,0.42)"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <circle
+                  cx={chart.xScale(hoverPoint.date)}
+                  cy={chart.yScale(hoverPoint.value)}
+                  r="4"
+                  fill={color}
+                />
+              </>
+            ) : null}
+          </svg>
+        ) : null}
+      </div>
+    </div>
+  );
+}
