@@ -110,3 +110,23 @@ test("provider sync state survives full backup and restore", () => {
   assert.ok(restore.includes("rows(backup.providerSyncState)"));
   assert.ok(restore.includes("INSERT INTO provider_sync_state"));
 });
+
+
+test("stored-data repair is non-recursive and repairs T212 FX conversions", () => {
+  const db = source("lib/server/db.ts");
+  assert.equal(
+    db.includes("export function repairStoredData(db: DatabaseSync) {\n  repairStoredData(db);\n}"),
+    false,
+  );
+  assert.ok(db.includes("repairTrading212CashSemantics(db)"));
+  assert.ok(db.includes("category = 'currency_conversion'"));
+  assert.ok(db.includes("UPPER(a.currency) != UPPER(b.currency)"));
+});
+
+test("Trading 212 provider applies cash semantic repair before card enrichment", () => {
+  const t212 = source("lib/server/integrations/trading212.ts");
+  const repairIndex = t212.indexOf("repairTrading212CashSemantics(getDb())");
+  const cardIndex = t212.indexOf("syncTrading212CardHistory({");
+  assert.ok(repairIndex >= 0);
+  assert.ok(cardIndex > repairIndex);
+});
