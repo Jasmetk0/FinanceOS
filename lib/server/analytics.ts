@@ -251,13 +251,17 @@ export function getDashboardData() {
         COALESCE(SUM(total_value_czk), 0) AS net_worth,
         COALESCE(SUM(invested_value_czk), 0) AS invested,
         COALESCE(SUM(unrealized_pnl_czk), 0) AS unrealized_pnl,
-        COALESCE(SUM(cash_value_czk), 0) AS cash
+        COALESCE(SUM(cash_value_czk), 0) AS cash,
+        COALESCE(SUM(unclassified_value_czk), 0) AS unclassified
       FROM accounts
     `).get() ?? {};
 
   const accounts = db
     .prepare(`
-      SELECT id, provider, name, type, currency, total_value_czk, updated_at
+      SELECT
+        id, provider, name, type, currency, total_value_czk,
+        unclassified_value_czk, reconciliation_difference,
+        reconciliation_status, updated_at
       FROM accounts
       WHERE total_value_czk != 0 OR provider != 'manual'
       ORDER BY total_value_czk DESC
@@ -270,6 +274,9 @@ export function getDashboardData() {
       type: String(row.type),
       currency: String(row.currency),
       valueCzk: num(row.total_value_czk),
+      unclassifiedValueCzk: num(row.unclassified_value_czk),
+      reconciliationDifferenceCzk: num(row.reconciliation_difference),
+      reconciliationStatus: String(row.reconciliation_status || "unknown"),
       updatedAt: String(row.updated_at),
     }));
 
@@ -396,6 +403,19 @@ export function getDashboardData() {
     );
   }
 
+  const unclassifiedRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(unclassified_value_czk), 0) AS total FROM accounts",
+    )
+    .get();
+  const unclassifiedValue = num(unclassifiedRow?.total);
+  if (Math.abs(unclassifiedValue) > 0.01) {
+    allocationMap.set(
+      "unclassified",
+      (allocationMap.get("unclassified") ?? 0) + unclassifiedValue,
+    );
+  }
+
   const standaloneCashRow = db
     .prepare(
       "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts " +
@@ -434,6 +454,7 @@ export function getDashboardData() {
       investedCzk: num(totals.invested),
       unrealizedPnlCzk: num(totals.unrealized_pnl),
       cashCzk: num(totals.cash),
+      unclassifiedCzk: num(totals.unclassified),
     },
     accounts,
     holdings,
