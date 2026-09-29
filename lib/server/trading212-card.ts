@@ -42,6 +42,13 @@ const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 60 * 1000;
+const RATE_LIMIT_BACKOFF_MS = 24 * 60 * 60 * 1000;
+
+function retryDelayMs(message: string) {
+  return message.includes("(429)") || message.includes("TooManyRequests")
+    ? RATE_LIMIT_BACKOFF_MS
+    : ERROR_BACKOFF_MS;
+}
 
 function baseUrl(environment: string) {
   return environment === "demo"
@@ -860,7 +867,7 @@ export async function syncTrading212CardHistory(input: {
     setState(LAST_ERROR_KEY, message);
     setState(
       RETRY_AFTER_KEY,
-      new Date(Date.now() + ERROR_BACKOFF_MS).toISOString(),
+      new Date(Date.now() + retryDelayMs(message)).toISOString(),
     );
     return {
       status: "error" as const,
