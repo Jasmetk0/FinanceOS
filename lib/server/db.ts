@@ -125,6 +125,7 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   const conversionRows = db
     .prepare(`
       SELECT DISTINCT
+        a.account_id,
         a.occurred_at,
         a.amount_czk AS deposit_czk,
         b.amount_czk AS withdrawal_czk
@@ -152,6 +153,7 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
       category = 'currency_conversion',
       counterparty_ref = ?
     WHERE provider = 'trading212'
+      AND account_id = ?
       AND occurred_at = ?
       AND kind IN ('deposit', 'withdrawal')
       AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'
@@ -172,8 +174,9 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
       continue;
     }
 
+    const accountId = String(row.account_id);
     const occurredAt = String(row.occurred_at);
-    markConversion.run("fx:" + occurredAt, occurredAt);
+    markConversion.run("fx:" + occurredAt, accountId, occurredAt);
   }
 }
 
