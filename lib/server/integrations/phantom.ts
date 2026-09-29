@@ -10,6 +10,7 @@ import { getConnectionSecret } from "@/lib/server/repository";
 import { getDb } from "@/lib/server/db";
 import { toCzk } from "@/lib/server/fx";
 import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
+import { canonicalCryptoIdentity } from "@/lib/shared/finance-normalization.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -19,6 +20,7 @@ export interface PhantomCredentials {
 
 const SOLANA_RPC = "https://api.mainnet-beta.solana.com";
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb";
 const USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
 const TOKEN_META: Record<
@@ -161,7 +163,7 @@ interface TokenBalance {
 }
 
 async function readWallet(address: string) {
-  const [balanceResult, tokenResult] = await Promise.all([
+  const [balanceResult, legacyTokens, token2022] = await Promise.all([
     rpc<{ context: unknown; value: number }>("getBalance", [
       address,
       { commitment: "confirmed" },
@@ -171,10 +173,19 @@ async function readWallet(address: string) {
       { programId: TOKEN_PROGRAM },
       { encoding: "jsonParsed", commitment: "confirmed" },
     ]),
+    rpc<{ context: unknown; value: unknown[] }>("getTokenAccountsByOwner", [
+      address,
+      { programId: TOKEN_2022_PROGRAM },
+      { encoding: "jsonParsed", commitment: "confirmed" },
+    ]).catch(() => ({ context: null, value: [] as unknown[] })),
   ]);
 
-  const tokens: TokenBalance[] = [];
-  for (const rawEntry of Array.isArray(tokenResult.value) ? tokenResult.value : []) {
+  const tokensByMint = new Map<string, number>();
+  const tokenRows = [
+    ...(Array.isArray(legacyTokens.value) ? legacyTokens.value : []),
+    ...(Array.isArray(token2022.value) ? token2022.value : []),
+  ];
+  for (const rawEntry of tokenRows) {
     const entry = asObject(rawEntry);
     const account = asObject(entry.account);
     const data = asObject(account.data);
@@ -187,12 +198,15 @@ async function readWallet(address: string) {
       0,
     );
     if (!mint || quantity <= 0) continue;
-    tokens.push({ mint, quantity });
+    tokensByMint.set(mint, (tokensByMint.get(mint) ?? 0) + quantity);
   }
 
   return {
     sol: num(balanceResult.value) / 1_000_000_000,
-    tokens,
+    tokens: [...tokensByMint.entries()].map(([mint, quantity]) => ({
+      mint,
+      quantity,
+    })),
   };
 }
 
@@ -651,6 +665,8 @@ export async function syncPhantom() {
       totalValue: solMarketCzk,
       realizedPnl: 0,
       unrealizedPnl: 0,
+      realizedPnlStatus: "unavailable",
+      unrealizedPnlStatus: "unavailable",
       cashValueCzk: 0,
       investedValueCzk: solMarketCzk,
       totalValueCzk: solMarketCzk,
@@ -666,13 +682,16 @@ export async function syncPhantom() {
     });
 
     const holdings: HoldingInput[] = [];
+    const solIdentity = canonicalCryptoIdentity("SOL", "SOL");
     const solAssetId = upsertAsset({
       provider: "phantom",
       externalId: "native:SOL",
-      symbol: "SOL",
+      symbol: solIdentity.canonicalSymbol,
       name: "Solana",
       assetClass: "crypto",
       currency: "USD",
+      canonicalKey: solIdentity.canonicalKey,
+      listingSymbol: solIdentity.listingSymbol,
       raw: { chain: "solana", native: true },
     });
     if (wallet.sol > 0) {
@@ -708,13 +727,18 @@ export async function syncPhantom() {
       knownValueUsd += marketUsd;
       knownValueCzk += marketCzk;
 
+      const identity = meta
+        ? canonicalCryptoIdentity(symbol, symbol)
+        : null;
       const assetId = upsertAsset({
         provider: "phantom",
         externalId: token.mint,
-        symbol,
+        symbol: identity?.canonicalSymbol || symbol,
         name: meta?.name || "Solana token " + token.mint.slice(0, 8),
         assetClass: "crypto",
         currency: "USD",
+        canonicalKey: identity?.canonicalKey || "solana:" + token.mint,
+        listingSymbol: identity?.listingSymbol || token.mint,
         raw: {
           chain: "solana",
           mint: token.mint,
