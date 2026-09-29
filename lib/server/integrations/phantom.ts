@@ -215,6 +215,316 @@ function matchesAddress(candidate: string, address: string) {
   );
 }
 
+type KrakenWalletTransfer = {
+  id: string;
+  occurredAt: string;
+  currency: string;
+  amount: number;
+  counterpartyRef: string;
+  rawJson: string;
+};
+
+type SolanaIncomingTransfer = {
+  signature: string;
+  occurredAt: string;
+  symbol: string;
+  quantity: number;
+};
+
+function unlinkedKrakenTransfers(): KrakenWalletTransfer[] {
+  return getDb()
+    .prepare(
+      "SELECT id, occurred_at, currency, amount, counterparty_ref, raw_json " +
+        "FROM transactions WHERE provider = 'kraken' " +
+        "AND kind = 'transfer' " +
+        "AND category = 'wallet_transfer_out_unclassified' " +
+        "ORDER BY occurred_at ASC",
+    )
+    .all()
+    .map((row) => ({
+      id: String(row.id),
+      occurredAt: String(row.occurred_at),
+      currency: String(row.currency || "").toUpperCase(),
+      amount: Math.abs(num(row.amount)),
+      counterpartyRef: text(row.counterparty_ref),
+      rawJson: String(row.raw_json || "{}"),
+    }));
+}
+
+function accountKeysFromTransaction(transaction: JsonObject) {
+  const message = asObject(asObject(transaction.transaction).message);
+  const rawKeys = Array.isArray(message.accountKeys)
+    ? message.accountKeys
+    : [];
+
+  return rawKeys.map((raw) => {
+    if (typeof raw === "string") return raw;
+    return text(asObject(raw).pubkey);
+  });
+}
+
+function tokenBalanceQuantity(raw: unknown) {
+  const balance = asObject(raw);
+  const ui = asObject(balance.uiTokenAmount);
+  return num(ui.uiAmountString ?? ui.uiAmount, 0);
+}
+
+function incomingTransfersFromTransaction(
+  signature: string,
+  blockTime: number,
+  transaction: JsonObject,
+  address: string,
+): SolanaIncomingTransfer[] {
+  const transfers: SolanaIncomingTransfer[] = [];
+  const meta = asObject(transaction.meta);
+  const keys = accountKeysFromTransaction(transaction);
+  const addressIndex = keys.findIndex((key) => key === address);
+
+  const preBalances = Array.isArray(meta.preBalances) ? meta.preBalances : [];
+  const postBalances = Array.isArray(meta.postBalances) ? meta.postBalances : [];
+  if (addressIndex >= 0) {
+    const deltaLamports =
+      num(postBalances[addressIndex]) - num(preBalances[addressIndex]);
+    if (deltaLamports > 0) {
+      transfers.push({
+        signature,
+        occurredAt: new Date(blockTime * 1000).toISOString(),
+        symbol: "SOL",
+        quantity: deltaLamports / 1_000_000_000,
+      });
+    }
+  }
+
+  const preByMint = new Map<string, number>();
+  const postByMint = new Map<string, number>();
+
+  for (const raw of Array.isArray(meta.preTokenBalances)
+    ? meta.preTokenBalances
+    : []) {
+    const balance = asObject(raw);
+    if (text(balance.owner) !== address) continue;
+    const mint = text(balance.mint);
+    if (!mint) continue;
+    preByMint.set(
+      mint,
+      (preByMint.get(mint) ?? 0) + tokenBalanceQuantity(balance),
+    );
+  }
+
+  for (const raw of Array.isArray(meta.postTokenBalances)
+    ? meta.postTokenBalances
+    : []) {
+    const balance = asObject(raw);
+    if (text(balance.owner) !== address) continue;
+    const mint = text(balance.mint);
+    if (!mint) continue;
+    postByMint.set(
+      mint,
+      (postByMint.get(mint) ?? 0) + tokenBalanceQuantity(balance),
+    );
+  }
+
+  for (const mint of new Set([...preByMint.keys(), ...postByMint.keys()])) {
+    const delta = (postByMint.get(mint) ?? 0) - (preByMint.get(mint) ?? 0);
+    if (delta <= 0) continue;
+    const symbol = TOKEN_META[mint]?.symbol || mint;
+    transfers.push({
+      signature,
+      occurredAt: new Date(blockTime * 1000).toISOString(),
+      symbol,
+      quantity: delta,
+    });
+  }
+
+  return transfers;
+}
+
+async function scanSolanaIncomingTransfers(
+  address: string,
+  krakenTransfers: KrakenWalletTransfer[],
+) {
+  if (!krakenTransfers.length) {
+    return {
+      candidates: [] as SolanaIncomingTransfer[],
+      signaturesScanned: 0,
+      historyCompleteToOldestTransfer: true,
+    };
+  }
+
+  const oldest =
+    Math.min(
+      ...krakenTransfers.map((item) => new Date(item.occurredAt).getTime()),
+    ) - 24 * 60 * 60 * 1000;
+  const newest =
+    Math.max(
+      ...krakenTransfers.map((item) => new Date(item.occurredAt).getTime()),
+    ) + 24 * 60 * 60 * 1000;
+
+  const signatures: Array<{ signature: string; blockTime: number }> = [];
+  let before: string | undefined;
+  let reachedOldest = false;
+
+  for (let page = 0; page < 5; page += 1) {
+    const options: Record<string, unknown> = { limit: 1000 };
+    if (before) options.before = before;
+
+    const result = await rpc<unknown[]>("getSignaturesForAddress", [
+      address,
+      options,
+    ]);
+    const rows = Array.isArray(result) ? result : [];
+    if (!rows.length) {
+      reachedOldest = true;
+      break;
+    }
+
+    for (const raw of rows) {
+      const item = asObject(raw);
+      const signature = text(item.signature);
+      const blockTime = num(item.blockTime, 0);
+      if (!signature || !blockTime) continue;
+      const timeMs = blockTime * 1000;
+      if (timeMs >= oldest && timeMs <= newest) {
+        signatures.push({ signature, blockTime });
+      }
+      if (timeMs < oldest) reachedOldest = true;
+    }
+
+    const last = asObject(rows.at(-1));
+    before = text(last.signature) || undefined;
+    if (reachedOldest || !before) break;
+  }
+
+  const windows = krakenTransfers.map((item) => ({
+    time: new Date(item.occurredAt).getTime(),
+    symbol: item.currency,
+  }));
+  const candidateSignatures = signatures.filter((item) =>
+    windows.some(
+      (window) =>
+        Math.abs(item.blockTime * 1000 - window.time) <=
+        24 * 60 * 60 * 1000,
+    ),
+  );
+
+  const candidates: SolanaIncomingTransfer[] = [];
+  for (const item of candidateSignatures) {
+    try {
+      const transaction = await rpc<JsonObject | null>("getTransaction", [
+        item.signature,
+        {
+          encoding: "jsonParsed",
+          commitment: "confirmed",
+          maxSupportedTransactionVersion: 0,
+        },
+      ]);
+      if (!transaction) continue;
+      candidates.push(
+        ...incomingTransfersFromTransaction(
+          item.signature,
+          item.blockTime,
+          transaction,
+          address,
+        ),
+      );
+    } catch {
+      // Best-effort historical enrichment. Current wallet valuation must still
+      // succeed if an archival transaction is unavailable from public RPC.
+    }
+  }
+
+  return {
+    candidates,
+    signaturesScanned: signatures.length,
+    historyCompleteToOldestTransfer: reachedOldest,
+  };
+}
+
+function quantityMatches(expected: number, actual: number) {
+  const tolerance = Math.max(1e-8, Math.abs(expected) * 1e-6);
+  return Math.abs(expected - actual) <= tolerance;
+}
+
+async function matchKrakenWithdrawalsFromChain(address: string) {
+  const krakenTransfers = unlinkedKrakenTransfers();
+  if (!krakenTransfers.length) {
+    return {
+      matched: 0,
+      candidates: 0,
+      signaturesScanned: 0,
+      historyCompleteToOldestTransfer: true,
+    };
+  }
+
+  const scan = await scanSolanaIncomingTransfers(address, krakenTransfers);
+  const used = new Set<string>();
+  const db = getDb();
+  const update = db.prepare(
+    "UPDATE transactions SET counterparty_ref = ?, source_label = ?, raw_json = ? WHERE id = ?",
+  );
+
+  let matched = 0;
+
+  for (const source of krakenTransfers) {
+    if (matchesAddress(source.counterpartyRef, address)) continue;
+
+    const sourceTime = new Date(source.occurredAt).getTime();
+    const possible = scan.candidates
+      .filter(
+        (candidate) =>
+          !used.has(candidate.signature + ":" + candidate.symbol) &&
+          candidate.symbol === source.currency &&
+          quantityMatches(source.amount, candidate.quantity) &&
+          Math.abs(
+            new Date(candidate.occurredAt).getTime() - sourceTime,
+          ) <=
+            24 * 60 * 60 * 1000,
+      )
+      .sort(
+        (a, b) =>
+          Math.abs(new Date(a.occurredAt).getTime() - sourceTime) -
+          Math.abs(new Date(b.occurredAt).getTime() - sourceTime),
+      );
+
+    if (possible.length !== 1) continue;
+    const match = possible[0];
+    used.add(match.signature + ":" + match.symbol);
+
+    let raw: JsonObject = {};
+    try {
+      raw = asObject(JSON.parse(source.rawJson));
+    } catch {
+      raw = {};
+    }
+
+    update.run(
+      address,
+      "Solana chain match · Phantom",
+      JSON.stringify({
+        ...raw,
+        financeOsPhantomMatch: {
+          address,
+          signature: match.signature,
+          occurredAt: match.occurredAt,
+          symbol: match.symbol,
+          quantity: match.quantity,
+          method: "solana-public-ledger",
+        },
+      }),
+      source.id,
+    );
+    matched += 1;
+  }
+
+  return {
+    matched,
+    candidates: scan.candidates.length,
+    signaturesScanned: scan.signaturesScanned,
+    historyCompleteToOldestTransfer:
+      scan.historyCompleteToOldestTransfer,
+  };
+}
+
 function phantomAssetExternalId(symbol: string) {
   if (symbol === "SOL") return "native:SOL";
   if (symbol === "USDC") return USDC_MINT;
@@ -433,6 +743,23 @@ export async function syncPhantom() {
 
     replaceHoldings(accountId, holdings);
 
+    let chainMatch = {
+      matched: 0,
+      candidates: 0,
+      signaturesScanned: 0,
+      historyCompleteToOldestTransfer: false,
+      error: null as string | null,
+    };
+    try {
+      chainMatch = {
+        ...(await matchKrakenWithdrawalsFromChain(address)),
+        error: null,
+      };
+    } catch (error) {
+      chainMatch.error =
+        error instanceof Error ? error.message : String(error);
+    }
+
     const links = linkKrakenTransfers(accountId, address);
     const valuationStatus = unpricedMints.length ? "partial" : "complete";
 
@@ -464,6 +791,7 @@ export async function syncPhantom() {
         unpricedMints,
         matchedKrakenTransfers: links.matched,
         matchedKrakenTransfersWithBookValue: links.matchedWithBookValue,
+        chainHistoryMatch: chainMatch,
       },
     });
 
@@ -477,6 +805,7 @@ export async function syncPhantom() {
       unpricedTokens: unpricedMints.length,
       matchedKrakenTransfers: links.matched,
       matchedKrakenTransfersWithBookValue: links.matchedWithBookValue,
+      chainHistoryMatch: chainMatch,
     };
   });
 }
