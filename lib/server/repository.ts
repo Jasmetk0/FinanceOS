@@ -19,6 +19,8 @@ export interface ConnectionSafe {
   lastError: string | null;
 }
 
+export type PnlStatus = "available" | "partial" | "unavailable" | "not_applicable";
+
 export interface AccountInput {
   provider: ProviderId;
   externalId: string;
@@ -30,6 +32,8 @@ export interface AccountInput {
   totalValue: number;
   realizedPnl: number;
   unrealizedPnl: number;
+  realizedPnlStatus?: PnlStatus;
+  unrealizedPnlStatus?: PnlStatus;
   cashValueCzk: number;
   investedValueCzk: number;
   totalValueCzk: number;
@@ -49,6 +53,9 @@ export interface AssetInput {
   name: string;
   assetClass: string;
   currency: string;
+  canonicalKey?: string | null;
+  isin?: string | null;
+  listingSymbol?: string | null;
   raw?: unknown;
 }
 
@@ -208,13 +215,14 @@ export function upsertAccount(input: AccountInput): string {
       INSERT INTO accounts(
         id, provider, external_id, name, type, currency,
         cash_value, invested_value, total_value, realized_pnl, unrealized_pnl,
+        realized_pnl_status, unrealized_pnl_status,
         cash_value_czk, invested_value_czk, total_value_czk,
         realized_pnl_czk, unrealized_pnl_czk,
         unclassified_value, unclassified_value_czk,
         reconciliation_difference, reconciliation_status,
         updated_at, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -224,6 +232,8 @@ export function upsertAccount(input: AccountInput): string {
         total_value = excluded.total_value,
         realized_pnl = excluded.realized_pnl,
         unrealized_pnl = excluded.unrealized_pnl,
+        realized_pnl_status = excluded.realized_pnl_status,
+        unrealized_pnl_status = excluded.unrealized_pnl_status,
         cash_value_czk = excluded.cash_value_czk,
         invested_value_czk = excluded.invested_value_czk,
         total_value_czk = excluded.total_value_czk,
@@ -248,6 +258,8 @@ export function upsertAccount(input: AccountInput): string {
       input.totalValue,
       input.realizedPnl,
       input.unrealizedPnl,
+      input.realizedPnlStatus ?? "available",
+      input.unrealizedPnlStatus ?? "available",
       input.cashValueCzk,
       input.investedValueCzk,
       input.totalValueCzk,
@@ -268,13 +280,19 @@ export function upsertAsset(input: AssetInput): string {
   const id = assetId(input.provider, input.externalId);
   getDb()
     .prepare(`
-      INSERT INTO assets(id, provider, external_id, symbol, name, asset_class, currency, raw_json)
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO assets(
+        id, provider, external_id, symbol, name, asset_class, currency,
+        canonical_key, isin, listing_symbol, raw_json
+      )
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         symbol = excluded.symbol,
         name = excluded.name,
         asset_class = excluded.asset_class,
         currency = excluded.currency,
+        canonical_key = excluded.canonical_key,
+        isin = excluded.isin,
+        listing_symbol = excluded.listing_symbol,
         raw_json = excluded.raw_json
     `)
     .run(
@@ -285,6 +303,9 @@ export function upsertAsset(input: AssetInput): string {
       input.name,
       input.assetClass,
       input.currency,
+      input.canonicalKey ?? null,
+      input.isin ?? null,
+      input.listingSymbol ?? input.symbol,
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
   return id;
