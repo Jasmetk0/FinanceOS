@@ -664,21 +664,20 @@ function mapCashKind(type: string): TransactionKind {
 function mapCashFlowScope(
   type: string,
 ): "external" | "internal" | "unclassified" | "not_applicable" {
-  if (type.includes("deposit")) return "external";
-  if (type.includes("withdraw")) {
-    // Trading 212's generic WITHDRAW history record is not enough to prove
-    // whether the movement was a bank withdrawal, Spending Pot transfer or
-    // card-related cash movement. Keep it out of performance contributions
-    // until a richer source classifies it.
-    return "unclassified";
-  }
+  // The public transactions endpoint is intentionally superficial. WITHDRAW
+  // represents money leaving the Invest account, including 212 Card spending,
+  // which is an external outflow for performance. DEPOSIT is ambiguous because
+  // card cashback is also surfaced as a generic deposit; the richer CSV export
+  // resolves deposits into Deposit vs Spending cashback.
+  if (type.includes("deposit")) return "unclassified";
+  if (type.includes("withdraw")) return "external";
   if (type.includes("transfer")) return "internal";
   return "not_applicable";
 }
 
 function mapCashCategory(type: string) {
-  if (type.includes("withdraw")) return "cash_out_unclassified";
-  if (type.includes("deposit")) return "external_deposit";
+  if (type.includes("withdraw")) return "cash_out_external";
+  if (type.includes("deposit")) return "cash_in_unclassified";
   if (type.includes("transfer")) return "internal_transfer";
   return type || null;
 }
