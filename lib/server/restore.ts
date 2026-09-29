@@ -31,6 +31,7 @@ export function restoreExport(input: unknown) {
   const transactions = rows(backup.transactions);
   const snapshots = rows(backup.snapshots);
   const assetPrices = rows(backup.assetPrices);
+  const providerSyncState = rows(backup.providerSyncState);
   const planTargets = rows(backup.planTargets);
   const planSettings = rows(backup.planSettings);
   const investmentJournal = rows(backup.investmentJournal);
@@ -42,6 +43,7 @@ export function restoreExport(input: unknown) {
     transactions.length > 500_000 ||
     snapshots.length > 500_000 ||
     assetPrices.length > 2_000_000 ||
+    providerSyncState.length > 1000 ||
     planTargets.length > 100 ||
     planSettings.length > 100 ||
     investmentJournal.length > 10_000
@@ -306,6 +308,24 @@ export function restoreExport(input: unknown) {
       );
     }
 
+    const providerSyncStateStatement = db.prepare(`
+      INSERT INTO provider_sync_state(provider, key, value, updated_at)
+      VALUES(?, ?, ?, ?)
+      ON CONFLICT(provider, key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `);
+
+    for (const row of providerSyncState) {
+      if (!value(row, "provider") || !value(row, "key")) continue;
+      providerSyncStateStatement.run(
+        value(row, "provider"),
+        value(row, "key"),
+        value(row, "value") ?? "",
+        value(row, "updated_at") ?? new Date().toISOString(),
+      );
+    }
+
     const planTargetStatement = db.prepare(`
       INSERT INTO plan_targets(asset_class, target_pct, updated_at)
       VALUES(?, ?, ?)
@@ -381,6 +401,7 @@ export function restoreExport(input: unknown) {
     transactions: transactions.length,
     snapshots: snapshots.length,
     assetPrices: assetPrices.length,
+    providerSyncState: providerSyncState.length,
     planTargets: planTargets.length,
     planSettings: planSettings.length,
     investmentJournal: investmentJournal.length,
