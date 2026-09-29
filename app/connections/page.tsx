@@ -38,7 +38,7 @@ export default function ConnectionsPage() {
           title="Trading 212 Card & Spending Pot"
           subtitle="Automatická klasifikace karty přes Trading 212 history export"
         >
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
               <p className="text-xs text-[var(--muted)]">Card detected</p>
               <p className="mt-2 text-sm font-semibold">
@@ -59,6 +59,18 @@ export default function ConnectionsPage() {
               <p className="text-xs text-[var(--muted)]">Card rows</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.spendCount.toLocaleString("cs-CZ")}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <p className="text-xs text-[var(--muted)]">Unresolved cash-ins</p>
+              <p className="mt-2 font-mono text-sm font-semibold">
+                {trading212Card.unresolvedCashInCount.toLocaleString("cs-CZ")}
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--muted)]">
+                {trading212Card.unresolvedCashInCzk.toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 0,
+                })}{" "}
+                Kč čeká na přesnou klasifikaci
               </p>
             </div>
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
