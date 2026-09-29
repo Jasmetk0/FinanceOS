@@ -522,6 +522,26 @@ export async function importMintos(input: MintosImportInput) {
   }
 
   const nativeRows = prepared.map((item) => item.row);
+  if (native) {
+    const nativeCurrencies = [
+      ...new Set(prepared.map((item) => item.currency)),
+    ];
+    if (nativeCurrencies.length !== 1) {
+      throw new Error(
+        "A native Mintos statement set must contain exactly one account currency. Import separate currency accounts independently.",
+      );
+    }
+    if (nativeCurrencies[0] !== accountCurrency) {
+      throw new Error(
+        "Mintos statement currency is " +
+          nativeCurrencies[0] +
+          ", but Account currency is " +
+          accountCurrency +
+          ".",
+      );
+    }
+  }
+
   const continuity = native ? statementContinuity(nativeRows) : null;
   if (native && (!continuity?.checked || !continuity.ok)) {
     throw new Error(
