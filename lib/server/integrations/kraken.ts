@@ -358,11 +358,14 @@ function ledgerKind(type: string, currency: string): TransactionKind {
     case "withdrawal":
       return isFiat(currency) ? "withdrawal" : "transfer";
     case "transfer":
+    case "hybridearndeposit":
+    case "hybridearnwithdrawal":
       return "transfer";
     case "dividend":
       return "dividend";
     case "staking":
     case "credit":
+    case "reward":
       return "interest";
     default:
       return "adjustment";
@@ -379,7 +382,13 @@ function ledgerFlowScope(
   if ((type === "deposit" || type === "withdrawal") && !isFiat(currency)) {
     return "unclassified";
   }
-  if (type === "transfer") return "internal";
+  if (
+    type === "transfer" ||
+    type === "hybridearndeposit" ||
+    type === "hybridearnwithdrawal"
+  ) {
+    return "internal";
+  }
   return "not_applicable";
 }
 
@@ -390,8 +399,17 @@ function ledgerCategory(type: string, currency: string, subtype: string) {
   if (type === "deposit" && !isFiat(currency)) {
     return "wallet_transfer_in_unclassified";
   }
-  if (type === "transfer") {
-    return subtype ? "kraken_internal_" + subtype : "kraken_internal_transfer";
+  if (
+    type === "transfer" ||
+    type === "hybridearndeposit" ||
+    type === "hybridearnwithdrawal"
+  ) {
+    return subtype
+      ? "kraken_internal_" + subtype
+      : "kraken_internal_" + type;
+  }
+  if (type === "reward") {
+    return subtype ? "kraken_reward_" + subtype : "kraken_reward";
   }
   return subtype || null;
 }
@@ -491,7 +509,7 @@ function reclassifyLegacyKrakenWalletFlows() {
   const rows = db
     .prepare(
       "SELECT id, kind, currency, note, raw_json FROM transactions " +
-        "WHERE provider = 'kraken' AND kind IN ('deposit', 'withdrawal', 'transfer')",
+        "WHERE provider = 'kraken' AND external_id LIKE 'ledger:%'",
     )
     .all();
   const update = db.prepare(
