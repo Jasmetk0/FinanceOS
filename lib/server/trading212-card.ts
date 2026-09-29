@@ -239,6 +239,11 @@ function monetaryValue(
   } else if (key.toLowerCase() === "gross total") {
     currency =
       lookup(row, ["Currency (Gross Total)", "Currency"]) || accountCurrency;
+  } else if (key.toLowerCase() === "total") {
+    currency =
+      lookup(row, ["Currency (Total)", "Currency"]) || accountCurrency;
+  } else if (key.toLowerCase() === "amount") {
+    currency = lookup(row, ["Currency"]) || accountCurrency;
   }
 
   return { amount, currency: currency.toUpperCase() };
