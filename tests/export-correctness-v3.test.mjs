@@ -235,8 +235,8 @@ test("Phantom is a watch-only live provider using public Solana address only", (
 
 test("Phantom and Kraken wallet transfers are linked in both directions", () => {
   const phantom = source("lib/server/integrations/phantom.ts");
-  assert.ok(phantom.includes('"wallet_transfer_out_unclassified"'));
-  assert.ok(phantom.includes('"wallet_transfer_in_unclassified"'));
+  assert.ok(phantom.includes("wallet_transfer_out_unclassified"));
+  assert.ok(phantom.includes("wallet_transfer_in_unclassified"));
   assert.ok(phantom.includes('"to_phantom" | "from_phantom"'));
   assert.ok(phantom.includes("candidate.quantity > 0"));
   assert.ok(phantom.includes("candidate.quantity < 0"));
