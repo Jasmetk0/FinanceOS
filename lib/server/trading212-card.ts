@@ -581,7 +581,7 @@ async function requestExport(input: {
   return pending;
 }
 
-export async function syncTrading212CardHistory(input: {
+async function syncTrading212CardHistoryInternal(input: {
   environment: string;
   credentials: Trading212CardCredentials;
   accountId: string;
@@ -711,6 +711,24 @@ export async function syncTrading212CardHistory(input: {
     timeFrom: requested.timeFrom,
     timeTo: requested.timeTo,
   };
+}
+
+export async function syncTrading212CardHistory(input: {
+  environment: string;
+  credentials: Trading212CardCredentials;
+  accountId: string;
+  accountCurrency: string;
+}) {
+  try {
+    return await syncTrading212CardHistoryInternal(input);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    setState(LAST_ERROR_KEY, message);
+    return {
+      status: "error" as const,
+      error: message,
+    };
+  }
 }
 
 export function hasTrading212CardEvidence() {
