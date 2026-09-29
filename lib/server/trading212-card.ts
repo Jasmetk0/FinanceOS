@@ -36,6 +36,7 @@ const CURSOR_KEY = "card_export_cursor";
 const LAST_REFRESH_KEY = "card_export_last_refresh";
 const LAST_ERROR_KEY = "card_export_last_error";
 const CARD_DETECTED_KEY = "card_detected";
+const ACCOUNT_KEY = "card_account_id";
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -622,6 +623,20 @@ async function syncTrading212CardHistoryInternal(input: {
   accountId: string;
   accountCurrency: string;
 }) {
+  const previousAccountId = getState(ACCOUNT_KEY);
+  if (previousAccountId && previousAccountId !== input.accountId) {
+    for (const key of [
+      PENDING_KEY,
+      CURSOR_KEY,
+      LAST_REFRESH_KEY,
+      LAST_ERROR_KEY,
+      CARD_DETECTED_KEY,
+    ]) {
+      deleteState(key);
+    }
+  }
+  setState(ACCOUNT_KEY, input.accountId);
+
   const pending = parsePending(getState(PENDING_KEY));
 
   if (pending) {
@@ -767,8 +782,15 @@ export async function syncTrading212CardHistory(input: {
 }
 
 export function hasTrading212CardEvidence() {
+  const db = getDb();
+  const account = db
+    .prepare(
+      "SELECT 1 FROM accounts WHERE provider = 'trading212' AND type = 'brokerage' LIMIT 1",
+    )
+    .get();
+  if (!account) return false;
   if (getState(CARD_DETECTED_KEY) === "true") return true;
-  const row = getDb()
+  const row = db
     .prepare(`
       SELECT 1
       FROM transactions
