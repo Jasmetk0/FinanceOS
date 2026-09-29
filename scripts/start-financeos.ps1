@@ -89,10 +89,6 @@ try {
             throw "git pull --ff-only failed. FinanceOS did not overwrite local Git history."
         }
 
-        Write-LauncherLog "Updating npm dependencies."
-        & npm install --no-audit --no-fund *> $null
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
-
         $repoSha = (git rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoSha)) {
             throw "Could not resolve current Git commit."
@@ -102,6 +98,31 @@ try {
             (Get-Content $buildShaFile -Raw).Trim()
         } else {
             ""
+        }
+
+        $nodeModules = Join-Path $repoRoot "node_modules"
+        $dependenciesNeedInstall =
+            $builtSha -ne $repoSha -or -not (Test-Path $nodeModules)
+
+        if ($dependenciesNeedInstall) {
+            Write-LauncherLog "Installing exact npm dependencies from package-lock.json."
+            & npm ci --no-audit --no-fund *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "npm ci failed. package.json and package-lock.json may be out of sync."
+            }
+
+            # npm ci is expected to be reproducible and must not modify tracked
+            # repository files. Fail loudly if a future npm version violates
+            # that assumption instead of leaving FinanceOS dirty.
+            $postInstallDirty = git status --porcelain
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not verify Git status after npm ci."
+            }
+            if ($postInstallDirty) {
+                throw "Dependency installation unexpectedly changed tracked FinanceOS files. Automatic startup stopped to protect the repository."
+            }
+        } else {
+            Write-LauncherLog "npm dependencies are already current."
         }
 
         $nextBuild = Join-Path $repoRoot ".next"
