@@ -388,11 +388,24 @@ try {
         }
 
         $nextBuild = Join-Path $repoRoot ".next"
-        if ($builtSha -ne $repoSha -or -not (Test-Path $nextBuild)) {
-            Write-LauncherLog "Building FinanceOS production bundle."
+        $productionBuildId = Join-Path $nextBuild "BUILD_ID"
+        $productionBuildCurrent =
+            $builtSha -eq $repoSha -and
+            (Test-Path $productionBuildId)
+
+        if (-not $productionBuildCurrent) {
+            if (Test-Path $nextBuild) {
+                Write-LauncherLog "Removing stale Next.js generated build state."
+                Remove-Item $nextBuild -Recurse -Force -ErrorAction Stop
+            }
+
+            Write-LauncherLog "Building FinanceOS production bundle from a clean .next directory."
             $buildResult = Invoke-NpmProcess @("run", "build") $buildLog
             if ($buildResult.ExitCode -ne 0) {
                 throw "FinanceOS production build failed. See $buildLog."
+            }
+            if (-not (Test-Path $productionBuildId)) {
+                throw "FinanceOS build finished without a production BUILD_ID. See $buildLog."
             }
             Set-Content -Path $buildShaFile -Value $repoSha -Encoding ASCII
         } else {
