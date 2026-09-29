@@ -35,15 +35,15 @@ function backfillLegacyFlowScopes(db: DatabaseSync) {
     UPDATE transactions
     SET
       flow_scope = CASE
-        WHEN kind = 'deposit' THEN 'external'
-        WHEN kind = 'withdrawal' THEN 'unclassified'
+        WHEN kind = 'deposit' THEN 'unclassified'
+        WHEN kind = 'withdrawal' THEN 'external'
         WHEN kind = 'transfer' THEN 'internal'
         ELSE 'not_applicable'
       END,
       category = CASE
         WHEN category IS NOT NULL AND category != '' THEN category
-        WHEN kind = 'deposit' THEN 'external_deposit'
-        WHEN kind = 'withdrawal' THEN 'cash_out_unclassified'
+        WHEN kind = 'deposit' THEN 'cash_in_unclassified'
+        WHEN kind = 'withdrawal' THEN 'cash_out_external'
         WHEN kind = 'transfer' THEN 'internal_transfer'
         ELSE category
       END
@@ -328,6 +328,14 @@ function initialize(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_asset_prices_asset_date
       ON asset_prices(asset_id, price_date ASC);
+
+    CREATE TABLE IF NOT EXISTS provider_sync_state (
+      provider TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(provider, key)
+    );
 
     CREATE TABLE IF NOT EXISTS provider_sync_locks (
       provider TEXT PRIMARY KEY,
