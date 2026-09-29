@@ -231,6 +231,7 @@ function nativeRow(file: ParsedFile, row: string[], sourceIndex: number) {
   return {
     externalId: String(row[index("ID transakce:")] || ""),
     occurredAt: parseDate(String(row[index("Date")] || "")),
+    sourceDate: String(row[index("Date")] || ""),
     amount: parseAmount(String(row[index("Obrat")] || "")),
     balance: parseAmount(String(row[index("Balance")] || "")),
     currency: String(row[index("Měna")] || "EUR").toUpperCase(),
@@ -475,6 +476,7 @@ export function MintosImporter({
       .map((row, sourceIndex) => ({
         externalId: idIndex >= 0 ? row[idIndex] : undefined,
         occurredAt: parseDate(String(row[dateIndex] || "")),
+        sourceDate: String(row[dateIndex] || ""),
         amount: parseAmount(String(row[amountIndex] || "")),
         currency:
           currencyIndex >= 0
