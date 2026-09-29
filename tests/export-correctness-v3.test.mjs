@@ -169,3 +169,12 @@ test("Trading 212 cashback is external reward capital, not investment return", (
   );
   assert.ok(performancePage.includes('label="Externí odměny"'));
 });
+
+
+test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(card.includes('const enrichmentOnly = true'));
+  assert.ok(card.includes('.get("cash:" + id)'));
+  assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
+  assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
+});
