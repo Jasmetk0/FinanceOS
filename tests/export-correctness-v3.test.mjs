@@ -74,16 +74,14 @@ test("Trading 212 Spending Pot is reconciled inside provider total without doubl
 test("Trading 212 cashback reversals preserve their sign and do not double-count performance", () => {
   const card = source("lib/server/trading212-card.ts");
   const analytics = source("lib/server/analytics.ts");
-  assert.ok(
-    card.includes(
-      'classification.category === "card_cashback"\n        ? money.amount',
-    ),
+  assert.match(
+    card,
+    /classification\.category === "card_cashback"[\s\S]{0,80}\? money\.amount/,
   );
-  assert.ok(card.includes('enrichmentOnly'));
-  assert.ok(
-    card.includes(
-      'flowScope: enrichmentOnly\n        ? "not_applicable"\n        : classification.flowScope',
-    ),
+  assert.ok(card.includes("enrichmentOnly"));
+  assert.match(
+    card,
+    /flowScope:\s*enrichmentOnly[\s\S]{0,80}\? "not_applicable"[\s\S]{0,80}: classification\.flowScope/,
   );
   assert.ok(analytics.includes("item.cashbackCzk += amount"));
   assert.equal(
