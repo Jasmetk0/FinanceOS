@@ -94,14 +94,6 @@ const PRINCIPAL_MOVEMENT_TYPES = new Set([
   "Převod z investic do dluhopisů",
 ]);
 
-const INTEREST_TYPES = new Set([
-  "Obdržený úrok",
-  "Úrok obdržený při odkupu úvěru",
-  "Zpožděné výnos z úroku při odkoupení zpět",
-  "Obdržené poplatky z prodlení",
-  "Úrok obdržený z plateb ve zpracování",
-]);
-
 function normalized(value: string | undefined) {
   return (value || "").trim();
 }
@@ -537,10 +529,11 @@ export async function importMintos(input: MintosImportInput) {
     );
   }
 
+  const openingCash = continuity?.openingCash ?? null;
   const lifetimeComplete =
     native &&
-    continuity?.openingCash !== null &&
-    Math.abs(continuity.openingCash) <= 1e-8;
+    openingCash !== null &&
+    Math.abs(openingCash) <= 1e-8;
 
   const project = new Map<
     string,
