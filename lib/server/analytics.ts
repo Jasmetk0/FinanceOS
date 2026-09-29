@@ -482,7 +482,7 @@ export function getDashboardData() {
 
   // P2P accounts can expose project-level holdings (Investown) or only
   // an account total (Mintos). Add only the account value that is not already
-  // represented by P2P holdings, otherwise allocation would double count it.
+  // represented by holdings of any asset class, otherwise allocation would double count it.
   const p2pAccounts = db
     .prepare(
       "SELECT id, total_value_czk FROM accounts WHERE type = 'p2p'",
@@ -494,8 +494,7 @@ export function getDashboardData() {
     const represented = db
       .prepare(
         "SELECT COALESCE(SUM(h.market_value_czk), 0) AS total " +
-          "FROM holdings h JOIN assets a ON a.id = h.asset_id " +
-          "WHERE h.account_id = ? AND a.asset_class = 'p2p'",
+          "FROM holdings h WHERE h.account_id = ?",
       )
       .get(String(account.id));
 
@@ -1366,6 +1365,13 @@ export function getAssetDetail(symbolInput: string) {
     returnedPrincipal: number | null;
     receivedInterestCzk: number | null;
     reservedOfferCzk: number | null;
+    isin: string | null;
+    loanCount: number | null;
+    totalInvested: number | null;
+    totalReturned: number | null;
+    receivedInterest: number | null;
+    currentPrincipal: number | null;
+    bond: boolean | null;
   } | null = null;
 
   const firstRaw = assets[0].raw_json ? String(assets[0].raw_json) : "";
@@ -1405,6 +1411,32 @@ export function getAssetDetail(symbolInput: string) {
           parsed.reservedOfferCzk === undefined
             ? null
             : num(parsed.reservedOfferCzk),
+        isin:
+          typeof parsed.isin === "string" && parsed.isin
+            ? parsed.isin
+            : null,
+        loanCount:
+          parsed.loanCount === null || parsed.loanCount === undefined
+            ? null
+            : num(parsed.loanCount),
+        totalInvested:
+          parsed.totalInvested === null || parsed.totalInvested === undefined
+            ? null
+            : num(parsed.totalInvested),
+        totalReturned:
+          parsed.totalReturned === null || parsed.totalReturned === undefined
+            ? null
+            : num(parsed.totalReturned),
+        receivedInterest:
+          parsed.receivedInterest === null || parsed.receivedInterest === undefined
+            ? null
+            : num(parsed.receivedInterest),
+        currentPrincipal:
+          parsed.currentPrincipal === null || parsed.currentPrincipal === undefined
+            ? null
+            : num(parsed.currentPrincipal),
+        bond:
+          typeof parsed.bond === "boolean" ? parsed.bond : null,
       };
     } catch {
       metadata = null;

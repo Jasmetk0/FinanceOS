@@ -126,3 +126,6 @@ cash and any asset without price coverage.
 Settings → Export all data creates a JSON export containing accounts, assets,
 holdings, transactions and snapshots. The export intentionally excludes API
 credentials and the encryption key.
+
+
+Mintos statement semantics: `docs/MINTOS_IMPORT.md`.

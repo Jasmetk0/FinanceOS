@@ -6,6 +6,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
+function optionalNumber(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export async function POST(request: Request) {
   const blocked = localOnly(request);
   if (blocked) return blocked;
@@ -16,17 +22,26 @@ export async function POST(request: Request) {
       currentValue?: unknown;
       cashValue?: unknown;
       rows?: unknown;
+      replaceExisting?: unknown;
+      sourceFormat?: unknown;
     };
 
     const rows = Array.isArray(body.rows)
       ? (body.rows as MintosImportRow[])
       : [];
 
+    const sourceFormat =
+      body.sourceFormat === "mintos-native-cs"
+        ? "mintos-native-cs"
+        : "mapped";
+
     const result = await importMintos({
       accountCurrency: String(body.accountCurrency || "EUR"),
-      currentValue: Number(body.currentValue),
-      cashValue: Number(body.cashValue || 0),
+      currentValue: optionalNumber(body.currentValue),
+      cashValue: optionalNumber(body.cashValue),
       rows,
+      replaceExisting: body.replaceExisting !== false,
+      sourceFormat,
     });
 
     return NextResponse.json({ ok: true, result });

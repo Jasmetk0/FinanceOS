@@ -15,6 +15,7 @@ export interface AnnualProviderReport {
   salesCzk: number;
   purchasesCzk: number;
   feesCzk: number;
+  withholdingTaxCzk: number;
   depositsCzk: number;
   withdrawalsCzk: number;
   principalInvestedCzk: number;
@@ -55,6 +56,7 @@ export function getAnnualReports() {
         salesCzk: 0,
         purchasesCzk: 0,
         feesCzk: 0,
+        withholdingTaxCzk: 0,
         depositsCzk: 0,
         withdrawalsCzk: 0,
         principalInvestedCzk: 0,
@@ -82,7 +84,11 @@ export function getAnnualReports() {
     if (kind === "gift") report.giftsCzk += Math.max(0, amount);
     if (kind === "sell") report.salesCzk += Math.abs(amount);
     if (kind === "buy") report.purchasesCzk += Math.abs(amount);
-    if (kind === "fee") report.feesCzk += Math.abs(amount);
+    if (kind === "fee" && String(row.category || "") === "withholding_tax") {
+      report.withholdingTaxCzk += Math.abs(amount);
+    } else if (kind === "fee") {
+      report.feesCzk += Math.abs(amount);
+    }
     if (kind === "deposit") report.depositsCzk += Math.abs(amount);
     if (kind === "withdrawal") report.withdrawalsCzk += Math.abs(amount);
 
@@ -127,6 +133,7 @@ export function getAnnualReports() {
         acc.salesCzk += item.salesCzk;
         acc.purchasesCzk += item.purchasesCzk;
         acc.feesCzk += item.feesCzk;
+        acc.withholdingTaxCzk += item.withholdingTaxCzk;
         acc.depositsCzk += item.depositsCzk;
         acc.withdrawalsCzk += item.withdrawalsCzk;
         acc.principalInvestedCzk += item.principalInvestedCzk;
@@ -146,6 +153,7 @@ export function getAnnualReports() {
         salesCzk: 0,
         purchasesCzk: 0,
         feesCzk: 0,
+        withholdingTaxCzk: 0,
         depositsCzk: 0,
         withdrawalsCzk: 0,
         principalInvestedCzk: 0,

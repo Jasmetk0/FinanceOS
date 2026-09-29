@@ -61,7 +61,7 @@ function currentAllocation(): Record<PlanAssetClass, number> {
   result.cash += num(brokerageCash?.total);
 
   // P2P project holdings (Investown) are already counted above. Add only
-  // the residual account value that is not represented by P2P holdings; this
+  // the residual account value that is not represented by any holdings; this
   // also keeps balance-only providers such as Mintos fully represented.
   const p2pAccounts = db
     .prepare(`
@@ -76,9 +76,7 @@ function currentAllocation(): Record<PlanAssetClass, number> {
       .prepare(`
         SELECT COALESCE(SUM(h.market_value_czk), 0) AS total
         FROM holdings h
-        JOIN assets a ON a.id = h.asset_id
         WHERE h.account_id = ?
-          AND a.asset_class = 'p2p'
       `)
       .get(String(account.id));
 
