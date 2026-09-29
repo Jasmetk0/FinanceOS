@@ -6,6 +6,23 @@ FinanceOS is designed to combine brokerage, crypto and manually entered cash-flo
 into one private local ledger, with a CZK reporting layer and a historical portfolio
 timeline.
 
+## Phantom / Solana watch-only
+
+FinanceOS umí připojit Phantom přes **veřejnou Solana adresu**. Nikdy
+nezadávej seed phrase, recovery phrase ani private key.
+
+Aktuální první verze:
+
+- synchronizuje native SOL a klasické SPL token účty přes veřejné Solana RPC,
+- aktuálně oceňuje SOL a známý Solana USDC; neznámé tokeny zachová, ale
+  označí jako neoceněné místo toho, aby jim vymyslela cenu,
+- umí svázat Kraken → Phantom withdrawal s vlastní peněženkou, pokud Kraken
+  poskytne cílovou adresu, takže přesun není externí výběr z portfolia,
+- přenáší do cílové peněženky pouze cost basis skutečně poslaného aktiva,
+  nikoliv withdrawal/network fee,
+- historické období před první známou wallet valuací zůstává explicitně
+  neúplné; FinanceOS nevyrábí falešné historické snapshoty.
+
 ## Current V1
 
 - Trading 212 read-only Invest connection
