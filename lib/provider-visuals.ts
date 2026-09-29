@@ -3,6 +3,7 @@ export const PROVIDER_COLORS: Record<string, string> = {
   kraken: "#a970ff",
   investown: "#f4ad45",
   mintos: "#2fcf91",
+  phantom: "#ab9ff2",
   manual: "#94a3b8",
 };
 
@@ -11,6 +12,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   kraken: "Kraken",
   investown: "Investown",
   mintos: "Mintos",
+  phantom: "Phantom",
   manual: "Manual",
   "unlinked-wallet": "Nenapojená vlastní peněženka",
 };
