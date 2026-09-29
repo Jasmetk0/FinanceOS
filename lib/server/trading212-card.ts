@@ -267,7 +267,9 @@ function slug(value: string) {
 }
 
 function normalizeOccurredAt(value: string): string | null {
-  const raw = value.trim();
+  const raw = value
+    .trim()
+    .replace(/\uFFFD(?=:\d{2}$)/, "+00");
   if (!raw) return null;
   const direct = new Date(raw);
   if (!Number.isNaN(direct.getTime())) return direct.toISOString();
@@ -461,7 +463,9 @@ async function enrichReportRows(input: {
 
     const money = monetaryValue(row, input.accountCurrency);
     if (!money) continue;
-    const occurredAt = normalizeOccurredAt(lookup(row, ["Time", "Date", "DateTime"]));
+    const occurredAt = normalizeOccurredAt(
+      lookup(row, ["Time (UTC)", "Time", "Date", "DateTime"]),
+    );
     const id = lookup(row, ["ID", "Id", "Reference", "Transaction ID"]);
     const signedAmount =
       classification.category === "card_cashback"
