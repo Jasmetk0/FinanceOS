@@ -57,13 +57,14 @@ export function restoreExport(input: unknown) {
       INSERT INTO accounts(
         id, provider, external_id, name, type, currency,
         cash_value, invested_value, total_value, realized_pnl, unrealized_pnl,
+        realized_pnl_status, unrealized_pnl_status,
         cash_value_czk, invested_value_czk, total_value_czk,
         realized_pnl_czk, unrealized_pnl_czk,
         unclassified_value, unclassified_value_czk,
         reconciliation_difference, reconciliation_status,
         updated_at, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         external_id = excluded.external_id,
@@ -75,6 +76,8 @@ export function restoreExport(input: unknown) {
         total_value = excluded.total_value,
         realized_pnl = excluded.realized_pnl,
         unrealized_pnl = excluded.unrealized_pnl,
+        realized_pnl_status = excluded.realized_pnl_status,
+        unrealized_pnl_status = excluded.unrealized_pnl_status,
         cash_value_czk = excluded.cash_value_czk,
         invested_value_czk = excluded.invested_value_czk,
         total_value_czk = excluded.total_value_czk,
@@ -102,6 +105,8 @@ export function restoreExport(input: unknown) {
         value(row, "total_value"),
         value(row, "realized_pnl"),
         value(row, "unrealized_pnl"),
+        value(row, "realized_pnl_status") ?? "unknown",
+        value(row, "unrealized_pnl_status") ?? "unknown",
         value(row, "cash_value_czk"),
         value(row, "invested_value_czk"),
         value(row, "total_value_czk"),
@@ -118,9 +123,10 @@ export function restoreExport(input: unknown) {
 
     const assetStatement = db.prepare(`
       INSERT INTO assets(
-        id, provider, external_id, symbol, name, asset_class, currency, raw_json
+        id, provider, external_id, symbol, name, asset_class, currency,
+        canonical_key, isin, listing_symbol, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         external_id = excluded.external_id,
@@ -128,6 +134,9 @@ export function restoreExport(input: unknown) {
         name = excluded.name,
         asset_class = excluded.asset_class,
         currency = excluded.currency,
+        canonical_key = excluded.canonical_key,
+        isin = excluded.isin,
+        listing_symbol = excluded.listing_symbol,
         raw_json = excluded.raw_json
     `);
 
@@ -141,6 +150,9 @@ export function restoreExport(input: unknown) {
         value(row, "name"),
         value(row, "asset_class"),
         value(row, "currency"),
+        value(row, "canonical_key"),
+        value(row, "isin"),
+        value(row, "listing_symbol") ?? value(row, "symbol"),
         value(row, "raw_json"),
       );
     }
