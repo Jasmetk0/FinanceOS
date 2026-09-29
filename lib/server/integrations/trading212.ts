@@ -10,7 +10,10 @@ import {
   upsertAsset,
   upsertTransaction,
 } from "@/lib/server/repository";
-import { getDb } from "@/lib/server/db";
+import {
+  getDb,
+  repairTrading212CashSemantics,
+} from "@/lib/server/db";
 import {
   hasTrading212CardEvidence,
   syncTrading212CardHistory,
@@ -643,6 +646,8 @@ export async function syncTrading212() {
       raw: transaction,
     });
   }
+
+  repairTrading212CashSemantics(getDb());
 
   const cardSync = await syncTrading212CardHistory({
     environment,
