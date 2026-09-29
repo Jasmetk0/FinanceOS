@@ -115,11 +115,20 @@ function initialize(db: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_transactions_occurred
       ON transactions(occurred_at DESC);
 
+    CREATE INDEX IF NOT EXISTS idx_transactions_account_occurred
+      ON transactions(account_id, occurred_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_transactions_account_kind_scope
+      ON transactions(account_id, kind, flow_scope, occurred_at ASC);
+
     CREATE INDEX IF NOT EXISTS idx_holdings_account
       ON holdings(account_id);
 
     CREATE INDEX IF NOT EXISTS idx_snapshots_recorded
       ON snapshots(recorded_at ASC);
+
+    CREATE INDEX IF NOT EXISTS idx_snapshots_account_recorded
+      ON snapshots(account_id, recorded_at ASC);
 
     CREATE TABLE IF NOT EXISTS plan_targets (
       asset_class TEXT PRIMARY KEY,
