@@ -333,9 +333,10 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
     return {
       kind: "transfer",
       flowScope: "internal",
-      category: "pot_transfer",
+      category: "internal_transfer",
       direction: action === "transfer in" ? 1 : -1,
-      cardEvidence: true,
+      // Transfer labels are not card-specific enough to prove 212 Card usage.
+      cardEvidence: false,
     } as const;
   }
   if (action === "interest on cash" || action === "lending interest") {
