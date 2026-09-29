@@ -866,3 +866,69 @@ export async function syncPhantom() {
     };
   });
 }
+
+
+export function getPhantomStatus() {
+  const db = getDb();
+  const connection = db
+    .prepare(
+      "SELECT status, last_synced_at, last_error FROM connections WHERE provider = 'phantom' LIMIT 1",
+    )
+    .get();
+  const account = db
+    .prepare(
+      "SELECT total_value_czk, reconciliation_status, raw_json FROM accounts WHERE provider = 'phantom' LIMIT 1",
+    )
+    .get();
+
+  let raw: JsonObject = {};
+  try {
+    raw = account?.raw_json
+      ? asObject(JSON.parse(String(account.raw_json)))
+      : {};
+  } catch {
+    raw = {};
+  }
+
+  const chainHistory = asObject(raw.chainHistoryMatch);
+  const unpricedMints = Array.isArray(raw.unpricedMints)
+    ? raw.unpricedMints
+    : [];
+
+  return {
+    connected: Boolean(connection),
+    status: connection?.status ? String(connection.status) : "not_connected",
+    lastSyncedAt: connection?.last_synced_at
+      ? String(connection.last_synced_at)
+      : null,
+    lastError: connection?.last_error ? String(connection.last_error) : null,
+    valueCzk:
+      account?.total_value_czk === null ||
+      account?.total_value_czk === undefined
+        ? null
+        : num(account.total_value_czk),
+    reconciliationStatus: account?.reconciliation_status
+      ? String(account.reconciliation_status)
+      : null,
+    valuationStatus:
+      typeof raw.valuationStatus === "string"
+        ? raw.valuationStatus
+        : null,
+    unpricedTokenCount: unpricedMints.length,
+    matchedKrakenTransfers: num(raw.matchedKrakenTransfers),
+    matchedKrakenTransfersWithBookValue: num(
+      raw.matchedKrakenTransfersWithBookValue,
+    ),
+    chainHistoryMatch: {
+      matched: num(chainHistory.matched),
+      candidates: num(chainHistory.candidates),
+      signaturesScanned: num(chainHistory.signaturesScanned),
+      historyCompleteToOldestTransfer:
+        chainHistory.historyCompleteToOldestTransfer === true,
+      error:
+        typeof chainHistory.error === "string"
+          ? chainHistory.error
+          : null,
+    },
+  };
+}
