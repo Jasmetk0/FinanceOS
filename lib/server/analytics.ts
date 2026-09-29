@@ -816,8 +816,15 @@ export function getPerformanceData() {
 
     for (const row of transferRows) {
       const value = num(row.transfer_value_czk);
-      if (value > 0) transferIn += value;
-      if (value < 0) transferOut += Math.abs(value);
+      const date = new Date(String(row.occurred_at));
+      if (value > 0) {
+        transferIn += value;
+        flows.push({ date, amount: -value });
+      }
+      if (value < 0) {
+        transferOut += Math.abs(value);
+        flows.push({ date, amount: Math.abs(value) });
+      }
     }
 
     const currentValue = num(account.total_value_czk);
