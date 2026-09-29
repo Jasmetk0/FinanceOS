@@ -57,10 +57,17 @@ export interface PortfolioHistoryMetric {
   returnPct: number | null;
 }
 
+export interface PortfolioHistoryCoverage {
+  complete: boolean;
+  knownProviders: string[];
+  missingProviders: string[];
+}
+
 export interface PortfolioHistoryPoint {
   date: string;
   total: PortfolioHistoryMetric;
   providers: Record<string, PortfolioHistoryMetric>;
+  coverage: PortfolioHistoryCoverage;
 }
 
 function historyMetric(
@@ -96,6 +103,42 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       ORDER BY s.recorded_at ASC, s.account_id ASC
     `)
     .all();
+
+  const accountActivityRows = db
+    .prepare(`
+      SELECT
+        a.id AS account_id,
+        a.provider,
+        MIN(t.occurred_at) AS first_transaction,
+        MIN(s.recorded_at) AS first_snapshot
+      FROM accounts a
+      LEFT JOIN transactions t ON t.account_id = a.id
+      LEFT JOIN snapshots s ON s.account_id = a.id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+      GROUP BY a.id, a.provider
+    `)
+    .all();
+
+  const accountActivity = accountActivityRows.map((row) => {
+    const transactionDate = row.first_transaction
+      ? String(row.first_transaction).slice(0, 10)
+      : null;
+    const snapshotDate = row.first_snapshot
+      ? String(row.first_snapshot).slice(0, 10)
+      : null;
+    const startDate =
+      transactionDate && snapshotDate
+        ? transactionDate < snapshotDate
+          ? transactionDate
+          : snapshotDate
+        : transactionDate || snapshotDate;
+
+    return {
+      accountId: String(row.account_id),
+      provider: String(row.provider),
+      startDate,
+    };
+  });
 
   const flowRows = db
     .prepare(`
@@ -213,31 +256,75 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
     const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
     let totalValue = 0;
+    const knownProviders: string[] = [];
+    const missingProviders: string[] = [];
 
     for (const provider of [...providers].sort()) {
-      const hasValue = providerValues.has(provider);
-      const value = hasValue ? providerValues.get(provider) ?? 0 : null;
+      const activeAccounts = accountActivity.filter(
+        (item) =>
+          item.provider === provider &&
+          item.startDate !== null &&
+          item.startDate <= date,
+      );
+      const providerShouldExist = activeAccounts.length > 0;
+      const providerComplete =
+        providerShouldExist &&
+        activeAccounts.every((item) => latestByAccount.has(item.accountId));
+      const value =
+        providerComplete && providerValues.has(provider)
+          ? providerValues.get(provider) ?? 0
+          : providerShouldExist
+            ? null
+            : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
       providerMetrics[provider] = historyMetric(value, contributed);
-      if (value !== null) {
+
+      if (!providerShouldExist) continue;
+      if (value === null) {
+        missingProviders.push(provider);
+      } else {
+        knownProviders.push(provider);
         totalValue += value;
       }
     }
 
+    const complete = missingProviders.length === 0 && knownProviders.length > 0;
+
     points.push({
       date,
-      // Portfolio-level contributions are only true external boundary flows.
-      // Provider-level contributions additionally include carried book value
-      // moved between providers/wallets, so Kraken -> Phantom can move capital
-      // attribution without changing the user's total contributed capital.
-      total: historyMetric(totalValue, totalExternalContribution),
+      // Never present a partial sum of providers as the user's historical
+      // total portfolio value. Until every provider known to be active on the
+      // date has a valuation source, total value / P&L / return stay unknown.
+      total: historyMetric(
+        complete ? totalValue : null,
+        totalExternalContribution,
+      ),
       providers: providerMetrics,
+      coverage: {
+        complete,
+        knownProviders,
+        missingProviders,
+      },
     });
   }
+
+  const completePoints = points.filter((point) => point.coverage.complete);
 
   return {
     providers: [...providers].sort(),
     points,
+    coverage: {
+      completePointCount: completePoints.length,
+      totalPointCount: points.length,
+      firstCompleteDate: completePoints[0]?.date ?? null,
+      latestCompleteDate: completePoints.at(-1)?.date ?? null,
+      status:
+        completePoints.length === points.length && points.length > 0
+          ? "complete"
+          : completePoints.length > 0
+            ? "partial"
+            : "insufficient",
+    },
   };
 }
 
