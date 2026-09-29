@@ -3,6 +3,7 @@ import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { SyncButton } from "@/components/sync-button";
 import { getDashboardData, getHistoryData } from "@/lib/server/analytics";
 import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
+import { providerColor, providerLabel } from "@/lib/provider-visuals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -101,7 +102,7 @@ export default function Home() {
                       <div>
                         <p className="font-medium">{account.name}</p>
                         <p className="mt-1 text-xs text-[var(--muted)]">
-                          {account.type} · {account.provider}
+                          {account.type} · {providerLabel(account.provider)}
                         </p>
                       </div>
                       <p className="font-mono text-sm">
@@ -113,8 +114,11 @@ export default function Home() {
                     </div>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/6">
                       <div
-                        className="h-full rounded-full bg-[var(--accent)]"
-                        style={{ width: `${share}%` }}
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${share}%`,
+                          backgroundColor: providerColor(account.provider),
+                        }}
                       />
                     </div>
                   </div>
