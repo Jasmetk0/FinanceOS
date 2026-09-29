@@ -11,6 +11,7 @@ import {
 } from "@/lib/server/repository";
 import type { TransactionKind } from "@/lib/domain";
 import { getDb } from "@/lib/server/db";
+import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 
 type JsonObject = Record<string, unknown>;
 
@@ -20,6 +21,7 @@ export interface KrakenCredentials {
 }
 
 let nonceCounter = 0;
+const privateQueues = new Map<string, Promise<void>>();
 let assetPairsCache:
   | { fetchedAt: number; pairs: Record<string, JsonObject> }
   | null = null;
@@ -68,40 +70,60 @@ async function privateRequest<T>(
   credentials: KrakenCredentials,
   params: Record<string, string | number | boolean | undefined> = {},
 ): Promise<T> {
-  const body = new URLSearchParams();
-  body.set("nonce", nextNonce());
-
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) body.set(key, String(value));
-  }
-
-  const response = await fetch(`https://api.kraken.com${path}`, {
-    method: "POST",
-    headers: {
-      "API-Key": credentials.apiKey,
-      "API-Sign": sign(path, body, credentials.apiSecret),
-      "Content-Type": "application/x-www-form-urlencoded",
-      Accept: "application/json",
-    },
-    body,
-    cache: "no-store",
+  const queueKey = credentials.apiKey;
+  const previous = privateQueues.get(queueKey) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
   });
+  const queued = previous.catch(() => undefined).then(() => gate);
+  privateQueues.set(queueKey, queued);
 
-  const json = (await response.json()) as {
-    error?: unknown[];
-    result?: T;
-  };
+  await previous.catch(() => undefined);
 
-  if (!response.ok) {
-    throw new Error(`Kraken request failed with HTTP ${response.status}.`);
+  try {
+    const body = new URLSearchParams();
+    body.set("nonce", nextNonce());
+
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) body.set(key, String(value));
+    }
+
+    const response = await fetch(`https://api.kraken.com${path}`, {
+      method: "POST",
+      headers: {
+        "API-Key": credentials.apiKey,
+        "API-Sign": sign(path, body, credentials.apiSecret),
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body,
+      cache: "no-store",
+    });
+
+    const json = (await response.json()) as {
+      error?: unknown[];
+      result?: T;
+    };
+
+    if (!response.ok) {
+      throw new Error(`Kraken request failed with HTTP ${response.status}.`);
+    }
+
+    const errors = Array.isArray(json.error)
+      ? json.error.map(String).filter(Boolean)
+      : [];
+    if (errors.length) {
+      throw new Error(`Kraken: ${errors.join("; ")}`);
+    }
+
+    return json.result as T;
+  } finally {
+    release();
+    if (privateQueues.get(queueKey) === queued) {
+      privateQueues.delete(queueKey);
+    }
   }
-
-  const errors = Array.isArray(json.error) ? json.error.map(String).filter(Boolean) : [];
-  if (errors.length) {
-    throw new Error(`Kraken: ${errors.join("; ")}`);
-  }
-
-  return json.result as T;
 }
 
 async function publicRequest<T>(path: string): Promise<T> {
@@ -221,43 +243,47 @@ async function priceAssetInCzk(
 }
 
 export async function validateKraken(credentials: KrakenCredentials) {
-  if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
-    throw new Error("Kraken API key and private key are required.");
-  }
+  return withProviderSyncLock("kraken", async () => {
+    if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
+      throw new Error("Kraken API key and private key are required.");
+    }
 
-  const keyInfo = await privateRequest<JsonObject>(
-    "/0/private/GetApiKeyInfo",
-    credentials,
-  );
-  const permissions = Array.isArray(keyInfo.permissions)
-    ? keyInfo.permissions.map(String)
-    : [];
-
-  const required = ["query-funds", "query-closed-trades", "query-ledger"];
-  const missing = required.filter((permission) => !permissions.includes(permission));
-  if (missing.length) {
-    throw new Error(
-      `Kraken API key is missing required read-only permissions: ${missing.join(", ")}.`,
+    const keyInfo = await privateRequest<JsonObject>(
+      "/0/private/GetApiKeyInfo",
+      credentials,
     );
-  }
+    const permissions = Array.isArray(keyInfo.permissions)
+      ? keyInfo.permissions.map(String)
+      : [];
 
-  const allowed = new Set([
-    "query-funds",
-    "query-open-trades",
-    "query-closed-trades",
-    "query-ledger",
-    "export-data",
-  ]);
-  const unsafe = permissions.filter((permission) => !allowed.has(permission));
-  if (unsafe.length) {
-    throw new Error(
-      `Kraken API key has permissions FinanceOS does not accept: ${unsafe.join(", ")}. Create a dedicated read-only key.`,
+    const required = ["query-funds", "query-closed-trades", "query-ledger"];
+    const missing = required.filter(
+      (permission) => !permissions.includes(permission),
     );
-  }
+    if (missing.length) {
+      throw new Error(
+        `Kraken API key is missing required read-only permissions: ${missing.join(", ")}.`,
+      );
+    }
 
-  await privateRequest("/0/private/Balance", credentials);
-  await privateRequest("/0/private/TradesHistory", credentials, { ofs: 0 });
-  await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
+    const allowed = new Set([
+      "query-funds",
+      "query-open-trades",
+      "query-closed-trades",
+      "query-ledger",
+      "export-data",
+    ]);
+    const unsafe = permissions.filter((permission) => !allowed.has(permission));
+    if (unsafe.length) {
+      throw new Error(
+        `Kraken API key has permissions FinanceOS does not accept: ${unsafe.join(", ")}. Create a dedicated read-only key.`,
+      );
+    }
+
+    await privateRequest("/0/private/Balance", credentials);
+    await privateRequest("/0/private/TradesHistory", credentials, { ofs: 0 });
+    await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
+  });
 }
 
 function pageAlreadyImported(
@@ -325,12 +351,12 @@ async function fetchAllLedgers(credentials: KrakenCredentials) {
   return all;
 }
 
-function ledgerKind(type: string): TransactionKind {
+function ledgerKind(type: string, currency: string): TransactionKind {
   switch (type) {
     case "deposit":
-      return "deposit";
+      return isFiat(currency) ? "deposit" : "transfer";
     case "withdrawal":
-      return "withdrawal";
+      return isFiat(currency) ? "withdrawal" : "transfer";
     case "transfer":
       return "transfer";
     case "dividend":
@@ -343,17 +369,172 @@ function ledgerKind(type: string): TransactionKind {
   }
 }
 
-export async function syncKraken() {
-  const connection = getConnectionSecret<KrakenCredentials>("kraken");
-  if (!connection) throw new Error("Kraken is not connected.");
+function ledgerFlowScope(
+  type: string,
+  currency: string,
+): "external" | "internal" | "unclassified" | "not_applicable" {
+  if ((type === "deposit" || type === "withdrawal") && isFiat(currency)) {
+    return "external";
+  }
+  if ((type === "deposit" || type === "withdrawal") && !isFiat(currency)) {
+    return "unclassified";
+  }
+  if (type === "transfer") return "internal";
+  return "not_applicable";
+}
 
-  const { credentials } = connection;
-  const [balances, pairs, trades, ledgers] = await Promise.all([
-    privateRequest<Record<string, string>>("/0/private/Balance", credentials),
-    getAssetPairs(),
-    fetchAllTrades(credentials),
-    fetchAllLedgers(credentials),
-  ]);
+function ledgerCategory(type: string, currency: string, subtype: string) {
+  if (type === "withdrawal" && !isFiat(currency)) {
+    return "wallet_transfer_out_unclassified";
+  }
+  if (type === "deposit" && !isFiat(currency)) {
+    return "wallet_transfer_in_unclassified";
+  }
+  if (type === "transfer") {
+    return subtype ? "kraken_internal_" + subtype : "kraken_internal_transfer";
+  }
+  return subtype || null;
+}
+
+interface KrakenWithdrawalStatus {
+  asset?: string;
+  refid?: string;
+  txid?: string | null;
+  info?: string;
+  amount?: string;
+  fee?: string;
+  time?: number;
+  status?: string;
+  method?: string;
+  network?: string;
+}
+
+async function fetchRecentWithdrawalStatuses(
+  credentials: KrakenCredentials,
+): Promise<KrakenWithdrawalStatus[]> {
+  try {
+    const result = await privateRequest<unknown>(
+      "/0/private/WithdrawStatus",
+      credentials,
+      { cursor: true },
+    );
+    if (Array.isArray(result)) {
+      return result.map((item) => asObject(item) as KrakenWithdrawalStatus);
+    }
+    const object = asObject(result);
+    const withdrawals = object.withdrawals;
+    return Array.isArray(withdrawals)
+      ? withdrawals.map((item) => asObject(item) as KrakenWithdrawalStatus)
+      : [];
+  } catch {
+    // Ledger sync still remains useful if Kraken does not expose funding status
+    // for this account/key. The transfer stays explicitly unclassified.
+    return [];
+  }
+}
+
+function enrichKrakenWalletTransfers(
+  statuses: KrakenWithdrawalStatus[],
+) {
+  const db = getDb();
+  const byRef = new Map(
+    statuses
+      .filter((item) => item.refid)
+      .map((item) => [String(item.refid), item]),
+  );
+
+  const rows = db
+    .prepare(
+      "SELECT id, raw_json FROM transactions " +
+        "WHERE provider = 'kraken' AND category = 'wallet_transfer_out_unclassified'",
+    )
+    .all();
+
+  const update = db.prepare(
+    "UPDATE transactions SET counterparty_ref = ?, source_label = ?, raw_json = ? WHERE id = ?",
+  );
+
+  for (const row of rows) {
+    let raw: JsonObject = {};
+    try {
+      raw = row.raw_json ? asObject(JSON.parse(String(row.raw_json))) : {};
+    } catch {
+      raw = {};
+    }
+
+    const refid = stringValue(raw.refid);
+    const status = byRef.get(refid);
+    if (!status) continue;
+
+    const destination = stringValue(status.info);
+    const txid = status.txid ? String(status.txid) : "";
+    const counterparty = destination || txid || null;
+    const sourceLabel = [status.network, status.method]
+      .filter(Boolean)
+      .map(String)
+      .join(" · ");
+
+    update.run(
+      counterparty,
+      sourceLabel || "Kraken on-chain withdrawal",
+      JSON.stringify({
+        ...raw,
+        financeOsWithdrawalStatus: status,
+      }),
+      String(row.id),
+    );
+  }
+}
+
+function reclassifyLegacyKrakenWalletFlows() {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT id, kind, currency, note, raw_json FROM transactions " +
+        "WHERE provider = 'kraken' AND kind IN ('deposit', 'withdrawal', 'transfer')",
+    )
+    .all();
+  const update = db.prepare(
+    "UPDATE transactions SET kind = ?, flow_scope = ?, category = ? WHERE id = ?",
+  );
+
+  for (const row of rows) {
+    let raw: JsonObject = {};
+    try {
+      raw = row.raw_json ? asObject(JSON.parse(String(row.raw_json))) : {};
+    } catch {
+      raw = {};
+    }
+    const type = stringValue(raw.type, String(row.kind)).toLowerCase();
+    const subtype = stringValue(raw.subtype);
+    const currency = String(row.currency);
+    update.run(
+      ledgerKind(type, currency),
+      ledgerFlowScope(type, currency),
+      ledgerCategory(type, currency, subtype),
+      String(row.id),
+    );
+  }
+}
+
+export async function syncKraken() {
+  return withProviderSyncLock("kraken", async () => {
+    const connection = getConnectionSecret<KrakenCredentials>("kraken");
+    if (!connection) throw new Error("Kraken is not connected.");
+
+    const { credentials } = connection;
+
+    // Private requests are intentionally sequential. Kraken nonces are scoped
+    // to the API key, so parallel requests can arrive out of order even if
+    // locally generated nonce values are unique.
+    const balances = await privateRequest<Record<string, string>>(
+      "/0/private/Balance",
+      credentials,
+    );
+    const pairs = await getAssetPairs();
+    const trades = await fetchAllTrades(credentials);
+    const ledgers = await fetchAllLedgers(credentials);
+    const withdrawalStatuses = await fetchRecentWithdrawalStatuses(credentials);
 
   const accountExternalId = "spot";
   let cashValueCzk = 0;
@@ -517,7 +698,7 @@ export async function syncKraken() {
       provider: "kraken",
       accountId: accountIdValue,
       externalId: `ledger:${ledgerId}`,
-      kind: ledgerKind(type),
+      kind: ledgerKind(type, currency),
       occurredAt,
       currency,
       amount,
@@ -526,16 +707,22 @@ export async function syncKraken() {
       quantity: amount,
       fee: numberValue(ledger.fee, 0),
       note: [type, stringValue(ledger.subtype)].filter(Boolean).join(" · "),
+      category: ledgerCategory(type, currency, stringValue(ledger.subtype)),
+      flowScope: ledgerFlowScope(type, currency),
       raw: ledger,
     });
   }
 
-  recordSnapshot(accountIdValue);
+    reclassifyLegacyKrakenWalletFlows();
+    enrichKrakenWalletTransfers(withdrawalStatuses);
+    recordSnapshot(accountIdValue);
 
-  return {
-    accountId: accountIdValue,
-    holdings: holdings.length,
-    trades: trades.length,
-    ledgers: ledgers.length,
-  };
+    return {
+      accountId: accountIdValue,
+      holdings: holdings.length,
+      trades: trades.length,
+      ledgers: ledgers.length,
+      enrichedWithdrawals: withdrawalStatuses.length,
+    };
+  });
 }
