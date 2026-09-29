@@ -586,6 +586,12 @@ export async function importInvestown(input: InvestownImportInput) {
       sourceLabel: normalize(row.projectType)
         ? "Investown · " + normalize(row.projectType)
         : "Investown",
+      flowScope:
+        item.kind === "deposit" || item.kind === "withdrawal"
+          ? "external"
+          : item.kind === "transfer"
+            ? "internal"
+            : "not_applicable",
       raw: {
         ...row,
         originalTimezone: row.timezone || null,

@@ -35,6 +35,10 @@ export interface AccountInput {
   totalValueCzk: number;
   realizedPnlCzk: number;
   unrealizedPnlCzk: number;
+  unclassifiedValue?: number;
+  unclassifiedValueCzk?: number;
+  reconciliationDifference?: number;
+  reconciliationStatus?: "reconciled" | "warning" | "error" | "unknown";
   raw?: unknown;
 }
 
@@ -78,6 +82,9 @@ export interface TransactionInput {
   note?: string | null;
   category?: string | null;
   sourceLabel?: string | null;
+  flowScope?: "external" | "internal" | "unclassified" | "not_applicable" | "legacy";
+  counterpartyRef?: string | null;
+  transferValueCzk?: number | null;
   raw?: unknown;
 }
 
@@ -202,9 +209,12 @@ export function upsertAccount(input: AccountInput): string {
         id, provider, external_id, name, type, currency,
         cash_value, invested_value, total_value, realized_pnl, unrealized_pnl,
         cash_value_czk, invested_value_czk, total_value_czk,
-        realized_pnl_czk, unrealized_pnl_czk, updated_at, raw_json
+        realized_pnl_czk, unrealized_pnl_czk,
+        unclassified_value, unclassified_value_czk,
+        reconciliation_difference, reconciliation_status,
+        updated_at, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -219,6 +229,10 @@ export function upsertAccount(input: AccountInput): string {
         total_value_czk = excluded.total_value_czk,
         realized_pnl_czk = excluded.realized_pnl_czk,
         unrealized_pnl_czk = excluded.unrealized_pnl_czk,
+        unclassified_value = excluded.unclassified_value,
+        unclassified_value_czk = excluded.unclassified_value_czk,
+        reconciliation_difference = excluded.reconciliation_difference,
+        reconciliation_status = excluded.reconciliation_status,
         updated_at = excluded.updated_at,
         raw_json = excluded.raw_json
     `)
@@ -239,6 +253,10 @@ export function upsertAccount(input: AccountInput): string {
       input.totalValueCzk,
       input.realizedPnlCzk,
       input.unrealizedPnlCzk,
+      input.unclassifiedValue ?? 0,
+      input.unclassifiedValueCzk ?? 0,
+      input.reconciliationDifference ?? 0,
+      input.reconciliationStatus ?? "unknown",
       now(),
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
@@ -312,9 +330,10 @@ export function upsertTransaction(input: TransactionInput) {
       INSERT INTO transactions(
         id, provider, account_id, external_id, kind, occurred_at, currency,
         amount, amount_czk, asset_id, quantity, price, fee, note,
-        category, source_label, raw_json
+        category, source_label, flow_scope, counterparty_ref,
+        transfer_value_czk, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         account_id = excluded.account_id,
         kind = excluded.kind,
@@ -329,6 +348,9 @@ export function upsertTransaction(input: TransactionInput) {
         note = excluded.note,
         category = excluded.category,
         source_label = excluded.source_label,
+        flow_scope = excluded.flow_scope,
+        counterparty_ref = excluded.counterparty_ref,
+        transfer_value_czk = excluded.transfer_value_czk,
         raw_json = excluded.raw_json
     `)
     .run(
@@ -348,6 +370,9 @@ export function upsertTransaction(input: TransactionInput) {
       input.note ?? null,
       input.category ?? null,
       input.sourceLabel ?? null,
+      input.flowScope ?? "legacy",
+      input.counterpartyRef ?? null,
+      input.transferValueCzk ?? null,
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
 }

@@ -53,20 +53,48 @@ export default function PerformancePage() {
           value={data.totals.estimatedProfitCzk}
           format="currency"
           hint="Aktuální hodnota mínus čisté vklady"
-          positive={data.totals.estimatedProfitCzk >= 0}
+          positive={
+            data.totals.estimatedProfitCzk === null
+              ? undefined
+              : data.totals.estimatedProfitCzk >= 0
+          }
         />
         <StatCard
           label="XIRR"
-          value={data.totals.xirrPct ?? 0}
+          value={data.totals.xirrPct}
           format="percent"
           hint={
             data.totals.xirrPct === null
               ? "Nedostatek cash-flow dat"
               : "Annualizovaný money-weighted return"
           }
-          positive={(data.totals.xirrPct ?? 0) >= 0}
+          positive={
+            data.totals.xirrPct === null
+              ? undefined
+              : data.totals.xirrPct >= 0
+          }
         />
       </section>
+
+      {data.totals.performanceStatus === "partial" ? (
+        <div className="mt-4 rounded-2xl border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-4">
+          <p className="text-sm font-semibold text-[var(--warning)]">
+            Celkový výkon je dočasně neúplný
+          </p>
+          <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
+            FinanceOS vidí {data.totals.unlinkedWalletTransferCount} on-chain
+            převod{data.totals.unlinkedWalletTransferCount === 1 ? "" : "ů"},
+            ale cílová vlastní peněženka zatím není napojená. Tyto převody
+            nemění externí vklady, ale dokud FinanceOS nevidí i cílová aktiva,
+            nevydává chybějící hodnotu za investiční ztrátu. Známá přenesená
+            účetní hodnota je přibližně{" "}
+            {data.totals.unlinkedWalletBookValueOutCzk.toLocaleString("cs-CZ", {
+              maximumFractionDigits: 0,
+            })}{" "}
+            Kč.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <SectionCard
@@ -89,9 +117,11 @@ export default function PerformancePage() {
                   <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                     <th className="pb-3 font-medium">Account</th>
                     <th className="pb-3 text-right font-medium">Current value</th>
-                    <th className="pb-3 text-right font-medium">Deposits</th>
-                    <th className="pb-3 text-right font-medium">Withdrawals</th>
-                    <th className="pb-3 text-right font-medium">Net contributed</th>
+                    <th className="pb-3 text-right font-medium">External in</th>
+                    <th className="pb-3 text-right font-medium">External out</th>
+                    <th className="pb-3 text-right font-medium">Wallet in</th>
+                    <th className="pb-3 text-right font-medium">Wallet out</th>
+                    <th className="pb-3 text-right font-medium">Capital attributed</th>
                     <th className="pb-3 text-right font-medium">Est. profit</th>
                     <th className="pb-3 text-right font-medium">Simple return</th>
                     <th className="pb-3 text-right font-medium">XIRR</th>
@@ -107,6 +137,11 @@ export default function PerformancePage() {
                         <p className="font-medium">{account.name}</p>
                         <p className="mt-1 text-xs text-[var(--muted)]">
                           {account.provider} · {account.externalFlowCount} external flows
+                          {account.unclassifiedTransferCount
+                            ? " · " +
+                              account.unclassifiedTransferCount +
+                              " wallet transfer(s) without known book value"
+                            : ""}
                         </p>
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
@@ -123,6 +158,18 @@ export default function PerformancePage() {
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {account.withdrawalsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.transferInCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.transferOutCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 0,
                         })}{" "}
                         Kč
@@ -171,10 +218,13 @@ export default function PerformancePage() {
       <div className="mt-4 rounded-3xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-5">
         <p className="text-sm font-semibold">Jak číst tato čísla</p>
         <p className="mt-2 max-w-5xl text-sm leading-6 text-[var(--muted)]">
-          Nákupy a prodeje uvnitř účtu nejsou externí cash flow a XIRR je
-          nepočítá jako nové peníze. Vklad na investiční účet ano, výběr z něj
-          také. Pokud starší vklady v provider historii chybí, FinanceOS raději
-          zobrazí omezený odhad než aby si historii vymýšlel.
+          Nákupy a prodeje uvnitř účtu nejsou externí cash flow. Přesun mezi
+          vlastními platformami nebo peněženkami také nemění celkové vložené
+          peníze v portfoliu. U konkrétního provideru se ale carried book value
+          přesunu odečte/přičte, takže například Kraken → Phantom nezůstane
+          navždy vedený jako kapitál na Krakenu. Neidentifikované on-chain
+          převody jsou viditelně označené místo toho, aby je FinanceOS svévolně
+          vydával za bankovní výběr.
         </p>
       </div>
     </main>

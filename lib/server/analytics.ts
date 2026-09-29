@@ -57,10 +57,17 @@ export interface PortfolioHistoryMetric {
   returnPct: number | null;
 }
 
+export interface PortfolioHistoryCoverage {
+  complete: boolean;
+  knownProviders: string[];
+  missingProviders: string[];
+}
+
 export interface PortfolioHistoryPoint {
   date: string;
   total: PortfolioHistoryMetric;
   providers: Record<string, PortfolioHistoryMetric>;
+  coverage: PortfolioHistoryCoverage;
 }
 
 function historyMetric(
@@ -97,18 +104,85 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     `)
     .all();
 
+  const accountActivityRows = db
+    .prepare(`
+      SELECT
+        a.id AS account_id,
+        a.provider,
+        MIN(t.occurred_at) AS first_transaction,
+        MIN(s.recorded_at) AS first_snapshot
+      FROM accounts a
+      LEFT JOIN transactions t ON t.account_id = a.id
+      LEFT JOIN snapshots s ON s.account_id = a.id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+      GROUP BY a.id, a.provider
+    `)
+    .all();
+
+  const accountActivity = accountActivityRows.map((row) => {
+    const transactionDate = row.first_transaction
+      ? String(row.first_transaction).slice(0, 10)
+      : null;
+    const snapshotDate = row.first_snapshot
+      ? String(row.first_snapshot).slice(0, 10)
+      : null;
+    const startDate =
+      transactionDate && snapshotDate
+        ? transactionDate < snapshotDate
+          ? transactionDate
+          : snapshotDate
+        : transactionDate || snapshotDate;
+
+    return {
+      accountId: String(row.account_id),
+      provider: String(row.provider),
+      startDate,
+    };
+  });
+
+  const unlinkedWalletRow = db
+    .prepare(`
+      SELECT
+        MIN(substr(occurred_at, 1, 10)) AS first_gap,
+        COUNT(*) AS count
+      FROM transactions
+      WHERE kind = 'transfer'
+        AND flow_scope = 'unclassified'
+    `)
+    .get();
+  const unlinkedWalletStart = unlinkedWalletRow?.first_gap
+    ? String(unlinkedWalletRow.first_gap)
+    : null;
+
   const flowRows = db
     .prepare(`
       SELECT
         substr(t.occurred_at, 1, 10) AS day,
         t.provider,
         t.kind,
-        ABS(t.amount_czk) AS amount
+        t.flow_scope,
+        t.amount_czk,
+        t.transfer_value_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
-        AND t.amount_czk IS NOT NULL
-        AND t.kind IN ('deposit', 'withdrawal')
+        AND (
+          (
+            t.kind IN ('deposit', 'withdrawal')
+            AND t.amount_czk IS NOT NULL
+            AND (
+              t.flow_scope = 'external'
+              OR (
+                t.flow_scope = 'legacy'
+                AND t.provider IN ('kraken', 'investown', 'mintos')
+              )
+            )
+          )
+          OR (
+            t.kind = 'transfer'
+            AND t.transfer_value_czk IS NOT NULL
+          )
+        )
       ORDER BY day ASC, t.occurred_at ASC
     `)
     .all();
@@ -140,16 +214,30 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     providers.add(String(row.provider));
   }
 
-  const flows = flowRows.map((row) => ({
-    date: String(row.day),
-    provider: String(row.provider),
-    delta:
-      String(row.kind) === "deposit"
-        ? Math.abs(num(row.amount))
-        : -Math.abs(num(row.amount)),
-  }));
+  const flows = flowRows.map((row) => {
+    const kind = String(row.kind);
+    const isExternal = kind === "deposit" || kind === "withdrawal";
+    const externalDelta =
+      kind === "deposit"
+        ? Math.abs(num(row.amount_czk))
+        : kind === "withdrawal"
+          ? -Math.abs(num(row.amount_czk))
+          : 0;
+    const providerDelta =
+      isExternal
+        ? externalDelta
+        : num(row.transfer_value_czk);
+
+    return {
+      date: String(row.day),
+      provider: String(row.provider),
+      externalDelta,
+      providerDelta,
+    };
+  });
 
   const contributionByProvider = new Map<string, number>();
+  let totalExternalContribution = 0;
   const points: PortfolioHistoryPoint[] = [];
   let flowIndex = 0;
 
@@ -158,8 +246,10 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const flow = flows[flowIndex];
       contributionByProvider.set(
         flow.provider,
-        (contributionByProvider.get(flow.provider) ?? 0) + flow.delta,
+        (contributionByProvider.get(flow.provider) ?? 0) +
+          flow.providerDelta,
       );
+      totalExternalContribution += flow.externalDelta;
       flowIndex += 1;
     }
 
@@ -180,32 +270,83 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
     const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
     let totalValue = 0;
-    let totalContribution = 0;
+    const knownProviders: string[] = [];
+    const missingProviders: string[] = [];
 
     for (const provider of [...providers].sort()) {
-      const hasValue = providerValues.has(provider);
-      const value = hasValue ? providerValues.get(provider) ?? 0 : null;
+      const activeAccounts = accountActivity.filter(
+        (item) =>
+          item.provider === provider &&
+          item.startDate !== null &&
+          item.startDate <= date,
+      );
+      const providerShouldExist = activeAccounts.length > 0;
+      const providerComplete =
+        providerShouldExist &&
+        activeAccounts.every((item) => latestByAccount.has(item.accountId));
+      const value =
+        providerComplete && providerValues.has(provider)
+          ? providerValues.get(provider) ?? 0
+          : providerShouldExist
+            ? null
+            : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
       providerMetrics[provider] = historyMetric(value, contributed);
-      if (value !== null) {
+
+      if (!providerShouldExist) continue;
+      if (value === null) {
+        missingProviders.push(provider);
+      } else {
+        knownProviders.push(provider);
         totalValue += value;
-        // Only compare contributions against providers whose portfolio value
-        // is actually known on this date. This avoids fake losses before a
-        // newly connected provider has its first historical snapshot.
-        totalContribution += contributed;
       }
     }
 
+    const hasUnlinkedWalletGap =
+      unlinkedWalletStart !== null && unlinkedWalletStart <= date;
+    if (hasUnlinkedWalletGap) {
+      missingProviders.push("unlinked-wallet");
+    }
+
+    const complete =
+      missingProviders.length === 0 && knownProviders.length > 0;
+
     points.push({
       date,
-      total: historyMetric(totalValue, totalContribution),
+      // Never present a partial sum of providers as the user's historical
+      // total portfolio value. Until every provider known to be active on the
+      // date has a valuation source, total value / P&L / return stay unknown.
+      total: historyMetric(
+        complete ? totalValue : null,
+        totalExternalContribution,
+      ),
       providers: providerMetrics,
+      coverage: {
+        complete,
+        knownProviders,
+        missingProviders,
+      },
     });
   }
+
+  const completePoints = points.filter((point) => point.coverage.complete);
+  const coverageStatus: "complete" | "partial" | "insufficient" =
+    completePoints.length === points.length && points.length > 0
+      ? "complete"
+      : completePoints.length > 0
+        ? "partial"
+        : "insufficient";
 
   return {
     providers: [...providers].sort(),
     points,
+    coverage: {
+      completePointCount: completePoints.length,
+      totalPointCount: points.length,
+      firstCompleteDate: completePoints[0]?.date ?? null,
+      latestCompleteDate: completePoints.at(-1)?.date ?? null,
+      status: coverageStatus,
+    },
   };
 }
 
@@ -219,13 +360,17 @@ export function getDashboardData() {
         COALESCE(SUM(total_value_czk), 0) AS net_worth,
         COALESCE(SUM(invested_value_czk), 0) AS invested,
         COALESCE(SUM(unrealized_pnl_czk), 0) AS unrealized_pnl,
-        COALESCE(SUM(cash_value_czk), 0) AS cash
+        COALESCE(SUM(cash_value_czk), 0) AS cash,
+        COALESCE(SUM(unclassified_value_czk), 0) AS unclassified
       FROM accounts
     `).get() ?? {};
 
   const accounts = db
     .prepare(`
-      SELECT id, provider, name, type, currency, total_value_czk, updated_at
+      SELECT
+        id, provider, name, type, currency, total_value_czk,
+        unclassified_value_czk, reconciliation_difference,
+        reconciliation_status, updated_at
       FROM accounts
       WHERE total_value_czk != 0 OR provider != 'manual'
       ORDER BY total_value_czk DESC
@@ -238,6 +383,9 @@ export function getDashboardData() {
       type: String(row.type),
       currency: String(row.currency),
       valueCzk: num(row.total_value_czk),
+      unclassifiedValueCzk: num(row.unclassified_value_czk),
+      reconciliationDifferenceCzk: num(row.reconciliation_difference),
+      reconciliationStatus: String(row.reconciliation_status || "unknown"),
       updatedAt: String(row.updated_at),
     }));
 
@@ -364,6 +512,19 @@ export function getDashboardData() {
     );
   }
 
+  const unclassifiedRow = db
+    .prepare(
+      "SELECT COALESCE(SUM(unclassified_value_czk), 0) AS total FROM accounts",
+    )
+    .get();
+  const unclassifiedValue = num(unclassifiedRow?.total);
+  if (Math.abs(unclassifiedValue) > 0.01) {
+    allocationMap.set(
+      "unclassified",
+      (allocationMap.get("unclassified") ?? 0) + unclassifiedValue,
+    );
+  }
+
   const standaloneCashRow = db
     .prepare(
       "SELECT COALESCE(SUM(total_value_czk), 0) AS total FROM accounts " +
@@ -402,6 +563,7 @@ export function getDashboardData() {
       investedCzk: num(totals.invested),
       unrealizedPnlCzk: num(totals.unrealized_pnl),
       cashCzk: num(totals.cash),
+      unclassifiedCzk: num(totals.unclassified),
     },
     accounts,
     holdings,
@@ -729,12 +891,43 @@ export function getPerformanceData() {
         WHERE account_id = ?
           AND amount_czk IS NOT NULL
           AND kind IN ('deposit', 'withdrawal')
+          AND (
+            flow_scope = 'external'
+            OR (
+              flow_scope = 'legacy'
+              AND provider IN ('kraken', 'investown', 'mintos')
+            )
+          )
         ORDER BY occurred_at ASC
       `)
       .all(id);
 
+    const transferRows = db
+      .prepare(`
+        SELECT occurred_at, transfer_value_czk, flow_scope, category
+        FROM transactions
+        WHERE account_id = ?
+          AND kind = 'transfer'
+          AND transfer_value_czk IS NOT NULL
+        ORDER BY occurred_at ASC
+      `)
+      .all(id);
+
+    const unclassifiedTransferRow = db
+      .prepare(`
+        SELECT COUNT(*) AS count
+        FROM transactions
+        WHERE account_id = ?
+          AND kind = 'transfer'
+          AND flow_scope = 'unclassified'
+          AND transfer_value_czk IS NULL
+      `)
+      .get(id);
+
     let deposits = 0;
     let withdrawals = 0;
+    let transferIn = 0;
+    let transferOut = 0;
     const flows: DatedCashFlow[] = [];
 
     for (const row of cashRows) {
@@ -751,12 +944,28 @@ export function getPerformanceData() {
       }
     }
 
+    for (const row of transferRows) {
+      const value = num(row.transfer_value_czk);
+      const date = new Date(String(row.occurred_at));
+      if (value > 0) {
+        transferIn += value;
+        flows.push({ date, amount: -value });
+      }
+      if (value < 0) {
+        transferOut += Math.abs(value);
+        flows.push({ date, amount: Math.abs(value) });
+      }
+    }
+
     const currentValue = num(account.total_value_czk);
     if (currentValue > 0) {
       flows.push({ date: now, amount: currentValue });
     }
 
-    const netContributed = deposits - withdrawals;
+    // Per-account/provider capital attribution moves with owned-wallet
+    // transfers. Portfolio-level contribution below remains external-only.
+    const netContributed =
+      deposits - withdrawals + transferIn - transferOut;
     const estimatedProfit = currentValue - netContributed;
     const simpleReturn =
       netContributed > 0 ? (estimatedProfit / netContributed) * 100 : null;
@@ -770,6 +979,8 @@ export function getPerformanceData() {
       currentValueCzk: currentValue,
       depositsCzk: deposits,
       withdrawalsCzk: withdrawals,
+      transferInCzk: transferIn,
+      transferOutCzk: transferOut,
       netContributedCzk: netContributed,
       estimatedProfitCzk: estimatedProfit,
       simpleReturnPct: simpleReturn,
@@ -777,6 +988,7 @@ export function getPerformanceData() {
       realizedPnlCzk: num(account.realized_pnl_czk),
       unrealizedPnlCzk: num(account.unrealized_pnl_czk),
       externalFlowCount: cashRows.length,
+      unclassifiedTransferCount: num(unclassifiedTransferRow?.count),
     };
   });
 
@@ -798,6 +1010,27 @@ export function getPerformanceData() {
     },
   );
 
+  const portfolioWalletGap = db
+    .prepare(`
+      SELECT
+        COUNT(*) AS count,
+        SUM(
+          CASE
+            WHEN transfer_value_czk < 0 THEN ABS(transfer_value_czk)
+            ELSE 0
+          END
+        ) AS known_book_value_out
+      FROM transactions
+      WHERE kind = 'transfer'
+        AND flow_scope = 'unclassified'
+    `)
+    .get();
+  const unlinkedWalletTransferCount = num(portfolioWalletGap?.count);
+  const unlinkedWalletBookValueOutCzk = num(
+    portfolioWalletGap?.known_book_value_out,
+  );
+  const portfolioPerformanceComplete = unlinkedWalletTransferCount === 0;
+
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
       SELECT t.kind, t.occurred_at, t.amount_czk
@@ -806,6 +1039,13 @@ export function getPerformanceData() {
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.amount_czk IS NOT NULL
         AND t.kind IN ('deposit', 'withdrawal')
+        AND (
+          t.flow_scope = 'external'
+          OR (
+            t.flow_scope = 'legacy'
+            AND t.provider IN ('kraken', 'investown', 'mintos')
+          )
+        )
       ORDER BY t.occurred_at ASC
     `)
     .all()
@@ -822,7 +1062,9 @@ export function getPerformanceData() {
   }
 
   const netContributedCzk = totals.depositsCzk - totals.withdrawalsCzk;
-  const estimatedProfitCzk = totals.currentValueCzk - netContributedCzk;
+  const estimatedProfitCzk = portfolioPerformanceComplete
+    ? totals.currentValueCzk - netContributedCzk
+    : null;
 
   return {
     accounts: accountRows,
@@ -831,16 +1073,23 @@ export function getPerformanceData() {
       netContributedCzk,
       estimatedProfitCzk,
       simpleReturnPct:
+        portfolioPerformanceComplete &&
+        estimatedProfitCzk !== null &&
         netContributedCzk > 0
           ? (estimatedProfitCzk / netContributedCzk) * 100
           : null,
-      xirrPct: (() => {
-        const value = solveXirr(portfolioFlows);
-        return value === null ? null : value * 100;
-      })(),
+      xirrPct: portfolioPerformanceComplete
+        ? (() => {
+            const value = solveXirr(portfolioFlows);
+            return value === null ? null : value * 100;
+          })()
+        : null,
       externalFlowCount: portfolioFlows.length
         ? Math.max(0, portfolioFlows.length - 1)
         : 0,
+      performanceStatus: portfolioPerformanceComplete ? "complete" : "partial",
+      unlinkedWalletTransferCount,
+      unlinkedWalletBookValueOutCzk,
     },
   };
 }
@@ -1206,6 +1455,13 @@ export function getHistoryData() {
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.amount_czk IS NOT NULL
         AND t.kind IN ('deposit', 'withdrawal')
+        AND (
+          t.flow_scope = 'external'
+          OR (
+            t.flow_scope = 'legacy'
+            AND t.provider IN ('kraken', 'investown', 'mintos')
+          )
+        )
       GROUP BY day, t.kind
       ORDER BY day ASC
     `)

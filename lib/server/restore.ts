@@ -20,7 +20,8 @@ export function restoreExport(input: unknown) {
   }
 
   const backup = input as Record<string, unknown>;
-  if (Number(backup.version) !== 1) {
+  const version = Number(backup.version);
+  if (![1, 2].includes(version)) {
     throw new Error("Unsupported FinanceOS backup version.");
   }
 
@@ -57,9 +58,12 @@ export function restoreExport(input: unknown) {
         id, provider, external_id, name, type, currency,
         cash_value, invested_value, total_value, realized_pnl, unrealized_pnl,
         cash_value_czk, invested_value_czk, total_value_czk,
-        realized_pnl_czk, unrealized_pnl_czk, updated_at, raw_json
+        realized_pnl_czk, unrealized_pnl_czk,
+        unclassified_value, unclassified_value_czk,
+        reconciliation_difference, reconciliation_status,
+        updated_at, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         external_id = excluded.external_id,
@@ -76,6 +80,10 @@ export function restoreExport(input: unknown) {
         total_value_czk = excluded.total_value_czk,
         realized_pnl_czk = excluded.realized_pnl_czk,
         unrealized_pnl_czk = excluded.unrealized_pnl_czk,
+        unclassified_value = excluded.unclassified_value,
+        unclassified_value_czk = excluded.unclassified_value_czk,
+        reconciliation_difference = excluded.reconciliation_difference,
+        reconciliation_status = excluded.reconciliation_status,
         updated_at = excluded.updated_at,
         raw_json = excluded.raw_json
     `);
@@ -99,6 +107,10 @@ export function restoreExport(input: unknown) {
         value(row, "total_value_czk"),
         value(row, "realized_pnl_czk"),
         value(row, "unrealized_pnl_czk"),
+        value(row, "unclassified_value") ?? 0,
+        value(row, "unclassified_value_czk") ?? 0,
+        value(row, "reconciliation_difference") ?? 0,
+        value(row, "reconciliation_status") ?? "unknown",
         value(row, "updated_at"),
         value(row, "raw_json"),
       );
@@ -180,9 +192,10 @@ export function restoreExport(input: unknown) {
       INSERT INTO transactions(
         id, provider, account_id, external_id, kind, occurred_at, currency,
         amount, amount_czk, asset_id, quantity, price, fee, note,
-        category, source_label, raw_json
+        category, source_label, flow_scope, counterparty_ref,
+        transfer_value_czk, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         account_id = excluded.account_id,
@@ -199,6 +212,9 @@ export function restoreExport(input: unknown) {
         note = excluded.note,
         category = excluded.category,
         source_label = excluded.source_label,
+        flow_scope = excluded.flow_scope,
+        counterparty_ref = excluded.counterparty_ref,
+        transfer_value_czk = excluded.transfer_value_czk,
         raw_json = excluded.raw_json
     `);
 
@@ -223,6 +239,9 @@ export function restoreExport(input: unknown) {
         value(row, "note"),
         value(row, "category"),
         value(row, "source_label"),
+        value(row, "flow_scope") ?? "legacy",
+        value(row, "counterparty_ref"),
+        value(row, "transfer_value_czk"),
         value(row, "raw_json"),
       );
     }

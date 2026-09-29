@@ -1,4 +1,5 @@
 import type { ProviderId, TransactionKind } from "@/lib/domain";
+import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 import { maybeToCzk, toCzk } from "@/lib/server/fx";
 import {
   getConnectionSecret,
@@ -172,18 +173,21 @@ export async function validateTrading212(
   environment: string,
   credentials: Trading212Credentials,
 ) {
-  if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
-    throw new Error("Trading 212 API key and secret are required.");
-  }
+  return withProviderSyncLock("trading212", async () => {
+    if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
+      throw new Error("Trading 212 API key and secret are required.");
+    }
 
-  await request(
-    environment,
-    credentials,
-    "/equity/account/summary",
-  );
+    await request(
+      environment,
+      credentials,
+      "/equity/account/summary",
+    );
+  });
 }
 
 export async function syncTrading212() {
+  return withProviderSyncLock("trading212", async () => {
   const connection = getConnectionSecret<Trading212Credentials>("trading212");
   if (!connection) throw new Error("Trading 212 is not connected.");
 
@@ -208,10 +212,16 @@ export async function syncTrading212() {
   const currency = stringValue(summary, ["currency"], "CZK").toUpperCase();
   const externalAccountId = stringValue(summary, ["id"], "primary");
 
-  const cashValue = numberValue(cash, ["availableToTrade"], 0)
-    + numberValue(cash, ["inPies"], 0)
-    + numberValue(cash, ["reservedForOrders"], 0);
-  const investedValue = numberValue(investments, ["currentValue"], 0);
+  const availableToTrade = numberValue(cash, ["availableToTrade"], 0);
+  const pieCash = numberValue(cash, ["inPies"], 0);
+  const reservedCash = numberValue(cash, ["reservedForOrders"], 0);
+  const cashValue = availableToTrade + pieCash + reservedCash;
+  const providerInvestmentsCurrentValue = numberValue(
+    investments,
+    ["currentValue"],
+    0,
+  );
+  const investedValue = providerInvestmentsCurrentValue;
   const totalValue = numberValue(summary, ["totalValue"], 0);
   const realizedPnl = numberValue(investments, ["realizedProfitLoss"], 0);
   const unrealizedPnl = numberValue(investments, ["unrealizedProfitLoss"], 0);
@@ -315,6 +325,67 @@ export async function syncTrading212() {
     });
   }
   replaceHoldings(accountIdValue, holdings);
+
+  const positionsMarketValue = holdings.reduce(
+    (sum, holding) => sum + holding.marketValue,
+    0,
+  );
+  const positionsMarketValueCzk = holdings.reduce(
+    (sum, holding) => sum + holding.marketValueCzk,
+    0,
+  );
+  const unclassifiedValue =
+    totalValue - positionsMarketValue - cashValue;
+  const unclassifiedValueCzk =
+    totalValueCzk - positionsMarketValueCzk - cashValueCzk;
+  const tolerance = 0.05;
+  const reconciliationStatus =
+    Math.abs(unclassifiedValueCzk) <= tolerance ? "reconciled" : "warning";
+  const pieIncludedInInvestments =
+    Math.abs(
+      providerInvestmentsCurrentValue - positionsMarketValue - pieCash,
+    ) <= tolerance;
+
+  upsertAccount({
+    provider: "trading212",
+    externalId: externalAccountId,
+    name: environment === "demo" ? "Trading 212 Demo" : "Trading 212",
+    type: "brokerage",
+    currency,
+    cashValue,
+    investedValue: positionsMarketValue,
+    totalValue,
+    realizedPnl,
+    unrealizedPnl,
+    cashValueCzk,
+    investedValueCzk: positionsMarketValueCzk,
+    totalValueCzk,
+    realizedPnlCzk,
+    unrealizedPnlCzk,
+    unclassifiedValue:
+      Math.abs(unclassifiedValue) <= tolerance ? 0 : unclassifiedValue,
+    unclassifiedValueCzk:
+      Math.abs(unclassifiedValueCzk) <= tolerance ? 0 : unclassifiedValueCzk,
+    reconciliationDifference:
+      Math.abs(unclassifiedValueCzk) <= tolerance ? 0 : unclassifiedValueCzk,
+    reconciliationStatus,
+    raw: {
+      ...summary,
+      financeOsReconciliation: {
+        positionsMarketValue,
+        knownCash: {
+          availableToTrade,
+          inPies: pieCash,
+          reservedForOrders: reservedCash,
+          total: cashValue,
+        },
+        providerInvestmentsCurrentValue,
+        pieIncludedInInvestments,
+        unclassifiedValue,
+        totalValue,
+      },
+    },
+  });
 
   const [orders, dividends, cashTransactions] = await Promise.all([
     fetchPaginated(
@@ -531,6 +602,8 @@ export async function syncTrading212() {
       amount,
       amountCzk: await maybeToCzk(amount, txCurrency, occurredAt),
       note: stringValue(transaction, ["reference", "description"], type),
+      category: mapCashCategory(type),
+      flowScope: mapCashFlowScope(type),
       raw: transaction,
     });
   }
@@ -544,6 +617,7 @@ export async function syncTrading212() {
     dividends: dividends.length,
     cashTransactions: cashTransactions.length,
   };
+  });
 }
 
 function mapCashKind(type: string): TransactionKind {
@@ -553,6 +627,28 @@ function mapCashKind(type: string): TransactionKind {
   if (type.includes("fee")) return "fee";
   if (type.includes("transfer")) return "transfer";
   return "adjustment";
+}
+
+function mapCashFlowScope(
+  type: string,
+): "external" | "internal" | "unclassified" | "not_applicable" {
+  if (type.includes("deposit")) return "external";
+  if (type.includes("withdraw")) {
+    // Trading 212's generic WITHDRAW history record is not enough to prove
+    // whether the movement was a bank withdrawal, Spending Pot transfer or
+    // card-related cash movement. Keep it out of performance contributions
+    // until a richer source classifies it.
+    return "unclassified";
+  }
+  if (type.includes("transfer")) return "internal";
+  return "not_applicable";
+}
+
+function mapCashCategory(type: string) {
+  if (type.includes("withdraw")) return "cash_out_unclassified";
+  if (type.includes("deposit")) return "external_deposit";
+  if (type.includes("transfer")) return "internal_transfer";
+  return type || null;
 }
 
 function cryptoLike(value: unknown): string {

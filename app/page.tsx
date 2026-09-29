@@ -52,7 +52,11 @@ export default function Home() {
           label="Celkový majetek"
           value={data.summary.netWorthCzk}
           format="currency"
-          hint="Součet aktuálně naceněných účtů"
+          hint={
+            data.summary.unclassifiedCzk
+              ? "Provider totals včetně explicitně nezařazené hodnoty"
+              : "Součet aktuálně naceněných účtů"
+          }
         />
         <StatCard
           label="Investovaná hodnota"
@@ -71,9 +75,30 @@ export default function Home() {
           label="Hotovost"
           value={data.summary.cashCzk}
           format="currency"
-          hint="Cash a ruční cash-flow"
+          hint="Pouze známá hotovost; nezařazená hodnota se sem nepočítá"
         />
       </section>
+
+      {Math.abs(data.summary.unclassifiedCzk) > 0.01 ? (
+        <div className="mt-4 rounded-2xl border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold">Nezařazená hodnota v provider datech</p>
+              <p className="mt-1 max-w-4xl text-xs leading-5 text-[var(--muted)]">
+                FinanceOS ji zahrnuje do celkového majetku, protože ji provider
+                uvádí v account total, ale nevydává ji za hotovost ani investici,
+                dokud ji neumíme bezpečně vysvětlit.
+              </p>
+            </div>
+            <p className="shrink-0 font-mono text-sm text-[var(--warning)]">
+              {data.summary.unclassifiedCzk.toLocaleString("cs-CZ", {
+                maximumFractionDigits: 2,
+              })}{" "}
+              Kč
+            </p>
+          </div>
+        </div>
+      ) : null}
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
         <SectionCard
@@ -103,7 +128,19 @@ export default function Home() {
                         <p className="font-medium">{account.name}</p>
                         <p className="mt-1 text-xs text-[var(--muted)]">
                           {account.type} · {providerLabel(account.provider)}
+                          {account.reconciliationStatus === "warning"
+                            ? " · reconciliation warning"
+                            : ""}
                         </p>
+                        {Math.abs(account.unclassifiedValueCzk) > 0.01 ? (
+                          <p className="mt-1 text-[10px] text-[var(--warning)]">
+                            Nezařazeno{" "}
+                            {account.unclassifiedValueCzk.toLocaleString("cs-CZ", {
+                              maximumFractionDigits: 2,
+                            })}{" "}
+                            Kč
+                          </p>
+                        ) : null}
                       </div>
                       <p className="font-mono text-sm">
                         {account.valueCzk.toLocaleString("cs-CZ", {

@@ -12,6 +12,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   investown: "Investown",
   mintos: "Mintos",
   manual: "Manual",
+  "unlinked-wallet": "Nenapojená vlastní peněženka",
 };
 
 const FALLBACK_COLORS = [
