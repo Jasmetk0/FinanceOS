@@ -4,6 +4,7 @@ import {
   canonicalCryptoIdentity,
   canonicalSecurityIdentity,
   normalizeCurrencyAmount,
+  quantitiesApproximatelyEqual,
 } from "../lib/shared/finance-normalization.mjs";
 
 test("GBX is converted from pence to GBP before FX conversion", () => {
@@ -48,4 +49,10 @@ test("Kraken provider aliases retain listing symbol while sharing canonical cryp
     isin: null,
     canonicalKey: "crypto:BTC",
   });
+});
+
+
+test("cost-basis quantity coverage rejects materially missing ledger quantity", () => {
+  assert.equal(quantitiesApproximatelyEqual(1, 1.000000001), true);
+  assert.equal(quantitiesApproximatelyEqual(1, 0.9), false);
 });
