@@ -35,11 +35,13 @@ const PENDING_KEY = "card_export_pending";
 const CURSOR_KEY = "card_export_cursor";
 const LAST_REFRESH_KEY = "card_export_last_refresh";
 const LAST_ERROR_KEY = "card_export_last_error";
+const RETRY_AFTER_KEY = "card_export_retry_after";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
 const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
+const ERROR_BACKOFF_MS = 60 * 60 * 1000;
 
 function baseUrl(environment: string) {
   return environment === "demo"
@@ -621,6 +623,7 @@ async function requestExport(input: {
   };
   setState(PENDING_KEY, JSON.stringify(pending));
   deleteState(LAST_ERROR_KEY);
+  deleteState(RETRY_AFTER_KEY);
   return pending;
 }
 
@@ -637,6 +640,7 @@ async function syncTrading212CardHistoryInternal(input: {
       CURSOR_KEY,
       LAST_REFRESH_KEY,
       LAST_ERROR_KEY,
+      RETRY_AFTER_KEY,
       CARD_DETECTED_KEY,
     ]) {
       deleteState(key);
@@ -645,6 +649,18 @@ async function syncTrading212CardHistoryInternal(input: {
   setState(ACCOUNT_KEY, input.accountId);
 
   const pending = parsePending(getState(PENDING_KEY));
+  const retryAfter = getState(RETRY_AFTER_KEY);
+  const retryAfterMs = retryAfter ? new Date(retryAfter).getTime() : 0;
+  if (
+    Number.isFinite(retryAfterMs) &&
+    retryAfterMs > Date.now()
+  ) {
+    return {
+      status: "backoff" as const,
+      retryAfter,
+      pendingReportId: pending?.reportId ?? null,
+    };
+  }
 
   if (pending) {
     const reports = await apiJson<Trading212ExportReport[]>(
@@ -671,6 +687,10 @@ async function syncTrading212CardHistoryInternal(input: {
         LAST_ERROR_KEY,
         `Trading 212 card export ended with status ${report.status}.`,
       );
+      setState(
+        RETRY_AFTER_KEY,
+        new Date(Date.now() + ERROR_BACKOFF_MS).toISOString(),
+      );
       return { status: "failed" as const, reportStatus: report.status };
     }
 
@@ -687,6 +707,10 @@ async function syncTrading212CardHistoryInternal(input: {
       setState(
         LAST_ERROR_KEY,
         "Finished Trading 212 card export did not provide a download link.",
+      );
+      setState(
+        RETRY_AFTER_KEY,
+        new Date(Date.now() + ERROR_BACKOFF_MS).toISOString(),
       );
       return {
         status: "missing-download-link" as const,
@@ -717,6 +741,7 @@ async function syncTrading212CardHistoryInternal(input: {
     setState(LAST_REFRESH_KEY, new Date().toISOString());
     deleteState(PENDING_KEY);
     deleteState(LAST_ERROR_KEY);
+    deleteState(RETRY_AFTER_KEY);
 
     return {
       status: "processed" as const,
@@ -830,6 +855,10 @@ export async function syncTrading212CardHistory(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     setState(LAST_ERROR_KEY, message);
+    setState(
+      RETRY_AFTER_KEY,
+      new Date(Date.now() + ERROR_BACKOFF_MS).toISOString(),
+    );
     return {
       status: "error" as const,
       error: message,
@@ -1029,6 +1058,7 @@ export function getTrading212CardStatus() {
     coverageCursor: getState(CURSOR_KEY),
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),
+    retryAfter: getState(RETRY_AFTER_KEY),
     accountCurrency: account?.currency ? String(account.currency) : null,
     reconciliationStatus: account?.reconciliation_status
       ? String(account.reconciliation_status)
