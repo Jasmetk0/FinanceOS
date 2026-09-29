@@ -40,6 +40,7 @@ export default function Home() {
           </p>
           <Link
             href="/connections"
+            prefetch={false}
             className="mt-4 inline-flex rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
           >
             Open Connections
