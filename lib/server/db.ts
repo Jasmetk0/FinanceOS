@@ -72,7 +72,7 @@ function backfillLegacyFlowScopes(db: DatabaseSync) {
   `);
 }
 
-function repairTrading212CashSemantics(db: DatabaseSync) {
+export function repairTrading212CashSemantics(db: DatabaseSync) {
   // PR #16 initially classified legacy T212 deposits as external and generic
   // withdrawals as unclassified. The 212 Card audit showed that the public
   // endpoint mixes real deposits with cashback, while card purchases surface
