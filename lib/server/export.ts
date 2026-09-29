@@ -55,6 +55,21 @@ export function buildExport() {
       error: connection.lastError,
     }));
 
+  const pnlCoverage = accounts.reduce<Record<string, number>>((acc, row) => {
+    if (!["brokerage", "crypto", "p2p"].includes(String(row.type))) return acc;
+    const realized = String(row.realized_pnl_status || "unknown");
+    const unrealized = String(row.unrealized_pnl_status || "unknown");
+    const key = realized + "/" + unrealized;
+    acc[key] = (acc[key] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const canonicalIdentity = {
+    withCanonicalKey: assets.filter((row) => Boolean(row.canonical_key)).length,
+    withIsin: assets.filter((row) => Boolean(row.isin)).length,
+    total: assets.length,
+  };
+
   return {
     exportedAt: new Date().toISOString(),
     version: 2,
@@ -65,6 +80,8 @@ export function buildExport() {
       unclassifiedFlows,
       historicalPriceRows: assetPrices.length,
       connectionErrors,
+      pnlCoverage,
+      canonicalIdentity,
       counts: {
         accounts: accounts.length,
         assets: assets.length,
