@@ -37,6 +37,7 @@ const LAST_REFRESH_KEY = "card_export_last_refresh";
 const LAST_ERROR_KEY = "card_export_last_error";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
+const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -740,22 +741,50 @@ async function syncTrading212CardHistoryInternal(input: {
     && cursorDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000;
 
   if (historical) {
-    // Transactions-only exports are small enough to backfill the complete
-    // account history in one report. This is preferable to yearly chunks
-    // because Trading 212 can notify the user whenever an export is generated.
-    const requested = await requestExport({
-      environment: input.environment,
-      credentials: input.credentials,
-      timeFrom: cursorDate.toISOString(),
-      timeTo: nowIso,
-      historical: true,
-    });
-    return {
-      status: "requested" as const,
-      reportId: requested.reportId,
-      timeFrom: requested.timeFrom,
-      timeTo: requested.timeTo,
-    };
+    // Prefer one complete transactions-only backfill to minimize provider
+    // export notifications. Some Trading 212 export surfaces historically
+    // limited a report to roughly one year, so fall back to bounded windows
+    // only when the provider rejects the full range.
+    try {
+      const requested = await requestExport({
+        environment: input.environment,
+        credentials: input.credentials,
+        timeFrom: cursorDate.toISOString(),
+        timeTo: nowIso,
+        historical: true,
+      });
+      return {
+        status: "requested" as const,
+        reportId: requested.reportId,
+        timeFrom: requested.timeFrom,
+        timeTo: requested.timeTo,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("(400)") && !message.includes("(413)")) {
+        throw error;
+      }
+
+      const fallbackTimeTo = new Date(
+        Math.min(
+          cursorDate.getTime() + FALLBACK_HISTORY_WINDOW_MS,
+          now.getTime(),
+        ),
+      ).toISOString();
+      const requested = await requestExport({
+        environment: input.environment,
+        credentials: input.credentials,
+        timeFrom: cursorDate.toISOString(),
+        timeTo: fallbackTimeTo,
+        historical: true,
+      });
+      return {
+        status: "requested-fallback-window" as const,
+        reportId: requested.reportId,
+        timeFrom: requested.timeFrom,
+        timeTo: requested.timeTo,
+      };
+    }
   }
 
   const lastRefresh = getState(LAST_REFRESH_KEY);
