@@ -9,6 +9,7 @@ import {
 } from "@/lib/server/analytics";
 import { reconstructPricedHoldingsHistory } from "@/lib/server/historical-prices";
 import { getInvestownImportStatus } from "@/lib/server/investown";
+import { getTrading212CardStatus } from "@/lib/server/trading212-card";
 
 export function buildAiContext() {
   const dashboard = getDashboardData();
@@ -20,6 +21,7 @@ export function buildAiContext() {
   const transactions = getTransactions(250);
   const reconstructedHistory = reconstructPricedHoldingsHistory();
   const investown = getInvestownImportStatus();
+  const trading212Card = getTrading212CardStatus();
 
   return {
     schema: "financeos-ai-context-v1",
@@ -47,6 +49,7 @@ export function buildAiContext() {
     recentTransactions: transactions,
     providerCoverage: {
       investown,
+      trading212Card,
     },
     historicalMarketData: {
       priceCoverage: reconstructedHistory.assetCoverage,
