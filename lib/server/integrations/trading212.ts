@@ -503,14 +503,21 @@ export async function syncTrading212() {
 
     let assetIdValue: string | null = null;
     if (ticker) {
+      const identity = canonicalSecurityIdentity(
+        ticker,
+        stringValue(metadata, ["isin"]),
+      );
       assetIdValue = upsertAsset({
         provider: "trading212",
         externalId: ticker,
-        symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
-        name: stringValue(metadata, ["name", "shortName"], ticker),
+        symbol: identity.canonicalSymbol,
+        name: stringValue(metadata, ["name", "shortName"], identity.canonicalSymbol),
         assetClass: mapAssetClass(stringValue(metadata, ["type"], "OTHER")),
         currency: instrumentCurrency,
-        raw: metadata,
+        canonicalKey: identity.canonicalKey,
+        isin: identity.isin,
+        listingSymbol: identity.listingSymbol,
+        raw: { ...metadata, financeOsIdentity: identity },
       });
     }
 
@@ -557,14 +564,21 @@ export async function syncTrading212() {
     let assetIdValue: string | null = null;
     if (ticker) {
       const metadata = metadataByTicker.get(ticker) ?? {};
+      const identity = canonicalSecurityIdentity(
+        ticker,
+        stringValue(metadata, ["isin"]),
+      );
       assetIdValue = upsertAsset({
         provider: "trading212",
         externalId: ticker,
-        symbol: ticker.replace(/_[A-Z]+_EQ$/i, ""),
-        name: stringValue(metadata, ["name", "shortName"], ticker),
+        symbol: identity.canonicalSymbol,
+        name: stringValue(metadata, ["name", "shortName"], identity.canonicalSymbol),
         assetClass: mapAssetClass(stringValue(metadata, ["type"], "OTHER")),
         currency: stringValue(metadata, ["currencyCode", "currency"], dividendCurrency).toUpperCase(),
-        raw: metadata,
+        canonicalKey: identity.canonicalKey,
+        isin: identity.isin,
+        listingSymbol: identity.listingSymbol,
+        raw: { ...metadata, financeOsIdentity: identity },
       });
     }
 
