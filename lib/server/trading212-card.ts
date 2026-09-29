@@ -875,6 +875,27 @@ export function getTrading212CardStatus() {
         SUM(CASE WHEN category = 'card_cashback' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS spend_count,
         SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
+        SUM(
+          CASE
+            WHEN flow_scope = 'unclassified' AND kind = 'deposit' THEN 1
+            ELSE 0
+          END
+        ) AS unresolved_cash_in_count,
+        SUM(
+          CASE
+            WHEN flow_scope = 'unclassified' AND kind = 'deposit'
+            THEN ABS(COALESCE(amount_czk, 0))
+            ELSE 0
+          END
+        ) AS unresolved_cash_in_czk,
+        SUM(
+          CASE
+            WHEN external_id LIKE 'card-export:%'
+              AND COALESCE(raw_json, '') LIKE '%"enrichmentOnly":true%'
+            THEN 1
+            ELSE 0
+          END
+        ) AS enrichment_only_count,
         MIN(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS first_card_at,
         MAX(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS last_card_at
       FROM transactions
@@ -907,6 +928,9 @@ export function getTrading212CardStatus() {
       netSpendCzk > 0 ? (cashbackCzk / netSpendCzk) * 100 : null,
     spendCount: Number(stats?.spend_count) || 0,
     cashbackCount: Number(stats?.cashback_count) || 0,
+    unresolvedCashInCount: Number(stats?.unresolved_cash_in_count) || 0,
+    unresolvedCashInCzk: Number(stats?.unresolved_cash_in_czk) || 0,
+    enrichmentOnlyCount: Number(stats?.enrichment_only_count) || 0,
     firstCardAt: stats?.first_card_at ? String(stats.first_card_at) : null,
     lastCardAt: stats?.last_card_at ? String(stats.last_card_at) : null,
     pending: parsePending(getState(PENDING_KEY)),
