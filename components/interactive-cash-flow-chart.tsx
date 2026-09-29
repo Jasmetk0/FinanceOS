@@ -25,17 +25,17 @@ function compact(value: number) {
     return (
       (value / 1_000_000).toLocaleString("cs-CZ", {
         maximumFractionDigits: 1,
-      }) + " mil."
+      }) + " mil. Kč"
     );
   }
   if (abs >= 1_000) {
     return (
       (value / 1_000).toLocaleString("cs-CZ", {
         maximumFractionDigits: 0,
-      }) + " tis."
+      }) + " tis. Kč"
     );
   }
-  return value.toLocaleString("cs-CZ", { maximumFractionDigits: 0 });
+  return value.toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) + " Kč";
 }
 
 export function InteractiveCashFlowChart({
