@@ -35,6 +35,10 @@ export interface AccountInput {
   totalValueCzk: number;
   realizedPnlCzk: number;
   unrealizedPnlCzk: number;
+  unclassifiedValue?: number;
+  unclassifiedValueCzk?: number;
+  reconciliationDifference?: number;
+  reconciliationStatus?: "reconciled" | "warning" | "error" | "unknown";
   raw?: unknown;
 }
 
@@ -205,9 +209,12 @@ export function upsertAccount(input: AccountInput): string {
         id, provider, external_id, name, type, currency,
         cash_value, invested_value, total_value, realized_pnl, unrealized_pnl,
         cash_value_czk, invested_value_czk, total_value_czk,
-        realized_pnl_czk, unrealized_pnl_czk, updated_at, raw_json
+        realized_pnl_czk, unrealized_pnl_czk,
+        unclassified_value, unclassified_value_czk,
+        reconciliation_difference, reconciliation_status,
+        updated_at, raw_json
       )
-      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(provider, external_id) DO UPDATE SET
         name = excluded.name,
         type = excluded.type,
@@ -222,6 +229,10 @@ export function upsertAccount(input: AccountInput): string {
         total_value_czk = excluded.total_value_czk,
         realized_pnl_czk = excluded.realized_pnl_czk,
         unrealized_pnl_czk = excluded.unrealized_pnl_czk,
+        unclassified_value = excluded.unclassified_value,
+        unclassified_value_czk = excluded.unclassified_value_czk,
+        reconciliation_difference = excluded.reconciliation_difference,
+        reconciliation_status = excluded.reconciliation_status,
         updated_at = excluded.updated_at,
         raw_json = excluded.raw_json
     `)
@@ -242,6 +253,10 @@ export function upsertAccount(input: AccountInput): string {
       input.totalValueCzk,
       input.realizedPnlCzk,
       input.unrealizedPnlCzk,
+      input.unclassifiedValue ?? 0,
+      input.unclassifiedValueCzk ?? 0,
+      input.reconciliationDifference ?? 0,
+      input.reconciliationStatus ?? "unknown",
       now(),
       input.raw === undefined ? null : JSON.stringify(input.raw),
     );
