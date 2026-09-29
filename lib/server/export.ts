@@ -22,6 +22,9 @@ export function buildExport() {
   const assetPrices = db
     .prepare("SELECT * FROM asset_prices ORDER BY asset_id, price_date ASC")
     .all();
+  const providerSyncState = db
+    .prepare("SELECT * FROM provider_sync_state ORDER BY provider, key")
+    .all();
 
   const reconciliation = accounts.reduce<Record<string, number>>(
     (acc, row) => {
@@ -104,6 +107,7 @@ export function buildExport() {
         holdings: holdings.length,
         transactions: transactions.length,
         snapshots: snapshots.length,
+        providerSyncState: providerSyncState.length,
       },
       note:
         "Unknown/unclassified values are intentionally preserved instead of being coerced to zero or guessed.",
@@ -115,6 +119,7 @@ export function buildExport() {
     transactions,
     snapshots,
     assetPrices,
+    providerSyncState,
     planTargets: db
       .prepare("SELECT * FROM plan_targets ORDER BY asset_class ASC")
       .all(),
