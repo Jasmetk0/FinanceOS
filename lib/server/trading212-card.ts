@@ -389,23 +389,47 @@ function findExistingTransaction(
   if (!occurredAt || amountCzk === null) return null;
   const day = occurredAt.slice(0, 10);
   const kindCandidates =
-    classification.kind === "income"
-      ? ["deposit", "income"]
-      : [classification.kind];
+    classification.category === "card_cashback"
+      ? ["deposit", "withdrawal", "income"]
+      : classification.kind === "income"
+        ? ["deposit", "income"]
+        : [classification.kind];
   const placeholders = kindCandidates.map(() => "?").join(",");
 
   const candidates = db
     .prepare(
       "SELECT * FROM transactions WHERE provider = 'trading212' " +
         `AND kind IN (${placeholders}) ` +
-        "AND substr(occurred_at, 1, 10) = ? " +
+        "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
         "AND amount_czk IS NOT NULL " +
         "AND ABS(ABS(amount_czk) - ?) <= 0.02 " +
-        "ORDER BY occurred_at ASC LIMIT 3",
+        "AND COALESCE(category, '') NOT LIKE 'card_%' " +
+        "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
     )
-    .all(...kindCandidates, day, Math.abs(amountCzk));
+    .all(
+      ...kindCandidates,
+      occurredAt,
+      occurredAt,
+      Math.abs(amountCzk),
+      occurredAt,
+    );
 
-  return candidates.length === 1 ? candidates[0] : null;
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length === 2) {
+    const firstAt = new Date(String(candidates[0].occurred_at)).getTime();
+    const secondAt = new Date(String(candidates[1].occurred_at)).getTime();
+    const target = new Date(occurredAt).getTime();
+    const firstDistance = Math.abs(firstAt - target);
+    const secondDistance = Math.abs(secondAt - target);
+    // Only pick the nearest candidate automatically when it is materially
+    // closer. Equal/similar candidates stay unresolved rather than attaching
+    // the wrong merchant to a payment.
+    if (firstDistance + 60 * 60 * 1000 < secondDistance) {
+      return candidates[0];
+    }
+  }
+
+  return null;
 }
 
 async function enrichReportRows(input: {
@@ -432,9 +456,11 @@ async function enrichReportRows(input: {
     const occurredAt = normalizeOccurredAt(lookup(row, ["Time", "Date", "DateTime"]));
     const id = lookup(row, ["ID", "Id", "Reference", "Transaction ID"]);
     const signedAmount =
-      classification.direction === 0
+      classification.category === "card_cashback"
         ? money.amount
-        : classification.direction * Math.abs(money.amount);
+        : classification.direction === 0
+          ? money.amount
+          : classification.direction * Math.abs(money.amount);
     const amountCzk = await maybeToCzk(
       signedAmount,
       money.currency,
@@ -490,6 +516,11 @@ async function enrichReportRows(input: {
 
     if (!id || !occurredAt) continue;
 
+    const enrichmentOnly =
+      classification.cardEvidence &&
+      classification.category !== "external_deposit" &&
+      classification.category !== "external_withdrawal";
+
     upsertTransaction({
       provider: "trading212",
       accountId: input.accountId,
@@ -502,10 +533,16 @@ async function enrichReportRows(input: {
       note: merchant || actionRaw,
       category: classification.category,
       sourceLabel: merchant || "Trading 212",
-      flowScope: classification.flowScope,
+      // The public transaction feed already contains card account movements.
+      // If we cannot match the richer CSV row safely, keep this row as
+      // enrichment-only so investment performance can never double-count it.
+      flowScope: enrichmentOnly
+        ? "not_applicable"
+        : classification.flowScope,
       counterpartyRef: merchant || merchantCategory || null,
       raw: {
         importedFromTrading212CsvExport: true,
+        enrichmentOnly,
         financeOsCardExport: cardMetadata,
         csv: row,
       },
