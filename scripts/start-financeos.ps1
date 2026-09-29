@@ -1,6 +1,14 @@
+param(
+    [string]$RepoRootOverride = ""
+)
+
 $ErrorActionPreference = "Stop"
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoRoot = if ([string]::IsNullOrWhiteSpace($RepoRootOverride)) {
+    (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else {
+    (Resolve-Path $RepoRootOverride).Path
+}
 $dataDir = if ($env:LOCALAPPDATA) {
     Join-Path $env:LOCALAPPDATA "FinanceOS"
 } else {
@@ -12,6 +20,7 @@ $launcherLog = Join-Path $dataDir "launcher.log"
 $serverLog = Join-Path $dataDir "server.log"
 $buildLog = Join-Path $dataDir "build.log"
 $buildShaFile = Join-Path $dataDir "built.sha"
+$installedLockHashFile = Join-Path $dataDir "installed-package-lock.sha256"
 $pidFile = Join-Path $dataDir "server.pid"
 $syncPidFile = Join-Path $dataDir "background-sync.pid"
 $healthUrl = "http://127.0.0.1:3000/api/health"
@@ -69,12 +78,46 @@ try {
 
     Push-Location $repoRoot
     try {
-        $dirty = git status --porcelain
+        $dirty = @(git status --porcelain)
         if ($LASTEXITCODE -ne 0) {
             throw "Could not read Git status."
         }
-        if ($dirty) {
-            throw "FinanceOS has local uncommitted changes. Commit, stash, or discard them before starting FinanceOS."
+        if ($dirty.Count -gt 0) {
+            $dirtyPaths = @(
+                $dirty |
+                    ForEach-Object {
+                        if ($_.Length -gt 3) { $_.Substring(3).Trim() } else { "" }
+                    } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+            )
+
+            if (
+                $dirtyPaths.Count -eq 1 -and
+                $dirtyPaths[0].Replace("\\", "/") -eq "package-lock.json"
+            ) {
+                $recoveryDir = Join-Path $dataDir "recovery"
+                New-Item -ItemType Directory -Force -Path $recoveryDir | Out-Null
+                $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+                $lockBackup = Join-Path $recoveryDir ("package-lock." + $timestamp + ".json")
+                Copy-Item (Join-Path $repoRoot "package-lock.json") $lockBackup -Force
+
+                Write-LauncherLog (
+                    "Only package-lock.json is dirty. Backed it up to " +
+                    $lockBackup +
+                    " and restoring the tracked version. Older launchers could create this change automatically."
+                )
+                git restore --source=HEAD -- package-lock.json | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Could not restore package-lock.json after creating a recovery backup."
+                }
+
+                $dirty = @(git status --porcelain)
+                if ($LASTEXITCODE -ne 0 -or $dirty.Count -gt 0) {
+                    throw "FinanceOS could not return the repository to a clean state after recovering package-lock.json."
+                }
+            } else {
+                throw "FinanceOS has local uncommitted changes. Commit, stash, or discard them before starting FinanceOS."
+            }
         }
 
         Write-LauncherLog "Fetching GitHub."
@@ -89,10 +132,6 @@ try {
             throw "git pull --ff-only failed. FinanceOS did not overwrite local Git history."
         }
 
-        Write-LauncherLog "Updating npm dependencies."
-        & npm install --no-audit --no-fund *> $null
-        if ($LASTEXITCODE -ne 0) { throw "npm install failed." }
-
         $repoSha = (git rev-parse HEAD).Trim()
         if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoSha)) {
             throw "Could not resolve current Git commit."
@@ -102,6 +141,46 @@ try {
             (Get-Content $buildShaFile -Raw).Trim()
         } else {
             ""
+        }
+
+        $nodeModules = Join-Path $repoRoot "node_modules"
+        $packageLock = Join-Path $repoRoot "package-lock.json"
+        if (-not (Test-Path $packageLock)) {
+            throw "package-lock.json is missing."
+        }
+
+        $currentLockHash = (Get-FileHash -Algorithm SHA256 -Path $packageLock).Hash
+        $installedLockHash = if (Test-Path $installedLockHashFile) {
+            (Get-Content $installedLockHashFile -Raw).Trim()
+        } else {
+            ""
+        }
+
+        $dependenciesNeedInstall =
+            -not (Test-Path $nodeModules) -or
+            $installedLockHash -ne $currentLockHash
+
+        if ($dependenciesNeedInstall) {
+            Write-LauncherLog "Installing exact npm dependencies from package-lock.json."
+            & npm ci --no-audit --no-fund *> $null
+            if ($LASTEXITCODE -ne 0) {
+                throw "npm ci failed. package.json and package-lock.json may be out of sync."
+            }
+
+            # npm ci is expected to be reproducible and must not modify tracked
+            # repository files. Fail loudly if a future npm version violates
+            # that assumption instead of leaving FinanceOS dirty.
+            $postInstallDirty = @(git status --porcelain)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Could not verify Git status after npm ci."
+            }
+            if ($postInstallDirty.Count -gt 0) {
+                throw "Dependency installation unexpectedly changed tracked FinanceOS files. Automatic startup stopped to protect the repository."
+            }
+
+            Set-Content -Path $installedLockHashFile -Value $currentLockHash -Encoding ASCII
+        } else {
+            Write-LauncherLog "npm dependencies already match package-lock.json."
         }
 
         $nextBuild = Join-Path $repoRoot ".next"
