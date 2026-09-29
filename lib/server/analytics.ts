@@ -330,6 +330,12 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   }
 
   const completePoints = points.filter((point) => point.coverage.complete);
+  const coverageStatus: "complete" | "partial" | "insufficient" =
+    completePoints.length === points.length && points.length > 0
+      ? "complete"
+      : completePoints.length > 0
+        ? "partial"
+        : "insufficient";
 
   return {
     providers: [...providers].sort(),
@@ -339,12 +345,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       totalPointCount: points.length,
       firstCompleteDate: completePoints[0]?.date ?? null,
       latestCompleteDate: completePoints.at(-1)?.date ?? null,
-      status:
-        completePoints.length === points.length && points.length > 0
-          ? "complete"
-          : completePoints.length > 0
-            ? "partial"
-            : "insufficient",
+      status: coverageStatus,
     },
   };
 }
