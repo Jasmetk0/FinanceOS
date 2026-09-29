@@ -141,3 +141,11 @@ test("Trading 212 export enrichment backs off repeated provider errors", () => {
   assert.ok(card.includes('status: "backoff" as const'));
   assert.ok(card.includes("retryAfter: getState(RETRY_AFTER_KEY)"));
 });
+
+
+test("Trading 212 card parser accepts the current Time (UTC) export header", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(card.includes('"Time (UTC)"'));
+  assert.ok(card.includes('replace(/\\uFFFD(?=:\\d{2}$)/, "+00")'));
+  assert.ok(card.includes('"Currency (Total)"'));
+});
