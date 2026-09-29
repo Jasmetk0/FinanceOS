@@ -11,6 +11,10 @@ import {
   upsertTransaction,
 } from "@/lib/server/repository";
 import { getDb } from "@/lib/server/db";
+import {
+  hasTrading212CardEvidence,
+  syncTrading212CardHistory,
+} from "@/lib/server/trading212-card";
 
 type JsonObject = Record<string, unknown>;
 
@@ -640,6 +644,82 @@ export async function syncTrading212() {
     });
   }
 
+  const cardSync = await syncTrading212CardHistory({
+    environment,
+    credentials,
+    accountId: accountIdValue,
+    accountCurrency: currency,
+  });
+
+  const cardDetected = hasTrading212CardEvidence();
+  if (
+    cardDetected &&
+    unclassifiedValue >= -tolerance &&
+    unclassifiedValueCzk >= -tolerance
+  ) {
+    const spendingPotValue =
+      Math.abs(unclassifiedValue) <= tolerance ? 0 : unclassifiedValue;
+    const spendingPotValueCzk =
+      Math.abs(unclassifiedValueCzk) <= tolerance ? 0 : unclassifiedValueCzk;
+    const reconciledCashValue = cashValue + spendingPotValue;
+    const reconciledCashValueCzk = cashValueCzk + spendingPotValueCzk;
+
+    upsertAccount({
+      provider: "trading212",
+      externalId: externalAccountId,
+      name: environment === "demo" ? "Trading 212 Demo" : "Trading 212",
+      type: "brokerage",
+      currency,
+      cashValue: reconciledCashValue,
+      investedValue: positionsMarketValue,
+      totalValue,
+      realizedPnl,
+      unrealizedPnl,
+      realizedPnlStatus: "available",
+      unrealizedPnlStatus: "available",
+      cashValueCzk: reconciledCashValueCzk,
+      investedValueCzk: positionsMarketValueCzk,
+      totalValueCzk,
+      realizedPnlCzk,
+      unrealizedPnlCzk,
+      unclassifiedValue: 0,
+      unclassifiedValueCzk: 0,
+      reconciliationDifference: 0,
+      reconciliationStatus: "reconciled",
+      raw: {
+        ...summary,
+        financeOsReconciliation: {
+          positionsMarketValue,
+          knownCash: {
+            availableToTrade,
+            inPies: pieCash,
+            reservedForOrders: reservedCash,
+            total: cashValue,
+          },
+          providerInvestmentsCurrentValue,
+          pieIncludedInInvestments,
+          spendingPot: {
+            value: spendingPotValue,
+            valueCzk: spendingPotValueCzk,
+            source: "provider_total_residual",
+            confidence: "confirmed_by_card_history",
+          },
+          unclassifiedValue: 0,
+          totalValue,
+        },
+      },
+    });
+
+    // Older builds stored the same Spending Pot as an extra account, which
+    // double-counts it because Trading 212 totalValue already includes it.
+    getDb()
+      .prepare(
+        "DELETE FROM accounts WHERE provider = 'trading212' " +
+          "AND external_id = 'spending-pot:manual'",
+      )
+      .run();
+  }
+
   recordSnapshot(accountIdValue);
 
   return {
@@ -648,6 +728,8 @@ export async function syncTrading212() {
     orders: orders.length,
     dividends: dividends.length,
     cashTransactions: cashTransactions.length,
+    cardSync,
+    cardDetected,
   };
   });
 }
