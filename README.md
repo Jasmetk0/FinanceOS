@@ -8,7 +8,8 @@ timeline.
 
 ## Current V1
 
-- Trading 212 read-only connection
+- Trading 212 read-only Invest connection
+- separate Trading 212 Spending pot balance tracking when the public API cannot expose card cash
 - Kraken read-only connection
 - encrypted local credential storage
 - local SQLite database
@@ -16,6 +17,9 @@ timeline.
 - Trading 212 order/dividend/cash history
 - Kraken trade and ledger history
 - daily portfolio snapshots
+- interactive portfolio charts with real date axes, CZK scales, hover values, period filters and provider toggles
+- portfolio value vs net contributions, profit/loss and return-percentage chart modes
+- persistent per-provider chart colors for Trading 212, Kraken, Investown, Mintos and future providers
 - historical price CSV import per asset
 - reconstructed historical priced-position curve from quantities + imported closes
 - current and historical-date CZK conversion using CNB fixing
