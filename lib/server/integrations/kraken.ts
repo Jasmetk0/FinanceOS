@@ -1009,14 +1009,19 @@ export async function syncKraken() {
       amountCzk = null;
     }
 
+    const identity = canonicalCryptoIdentity(currency, rawAsset);
     const assetIdValue = upsertAsset({
       provider: "kraken",
       externalId: rawAsset,
-      symbol: currency,
-      name: currency,
+      symbol: identity.canonicalSymbol,
+      name: identity.canonicalSymbol,
       assetClass: isFiat(currency) ? "cash" : "crypto",
       currency,
-      raw: { rawAsset },
+      canonicalKey: isFiat(currency)
+        ? "currency:" + identity.canonicalSymbol
+        : identity.canonicalKey,
+      listingSymbol: identity.listingSymbol,
+      raw: { rawAsset, financeOsIdentity: identity },
     });
 
     upsertTransaction({
