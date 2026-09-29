@@ -6,6 +6,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { providerColor, providerLabel } from "@/lib/provider-visuals";
 
 export type PortfolioChartMetric = "value" | "profit" | "return" | "contributions";
 
@@ -35,39 +36,6 @@ const TOP = 22;
 const BOTTOM = 54;
 const PLOT_W = VIEW_W - LEFT - RIGHT;
 const PLOT_H = VIEW_H - TOP - BOTTOM;
-
-const DEFAULT_COLORS: Record<string, string> = {
-  trading212: "#4f8cff",
-  kraken: "#a970ff",
-  investown: "#f4ad45",
-  mintos: "#2fcf91",
-  manual: "#94a3b8",
-};
-
-const FALLBACK_COLORS = [
-  "#42c7c7",
-  "#ff7f8e",
-  "#d7b95f",
-  "#7f9cf5",
-  "#d38df0",
-  "#6fce7e",
-];
-
-const PROVIDER_LABELS: Record<string, string> = {
-  trading212: "Trading 212",
-  kraken: "Kraken",
-  investown: "Investown",
-  mintos: "Mintos",
-  manual: "Manual",
-};
-
-function providerLabel(provider: string) {
-  return PROVIDER_LABELS[provider] || provider;
-}
-
-function fallbackColor(provider: string, index: number) {
-  return DEFAULT_COLORS[provider] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
-}
 
 function metricValue(
   metric: PortfolioChartMetric,
@@ -214,7 +182,7 @@ export function PortfolioHistoryChart({
     Object.fromEntries(
       data.providers.map((provider, index) => [
         provider,
-        fallbackColor(provider, index),
+        providerColor(provider),
       ]),
     ),
   );
@@ -530,7 +498,7 @@ export function PortfolioHistoryChart({
                   className="h-2.5 w-2.5 rounded-full"
                   style={{
                     backgroundColor:
-                      colors[provider] || fallbackColor(provider, index),
+                      colors[provider] || providerColor(provider),
                   }}
                 />
                 {providerLabel(provider)}
@@ -538,7 +506,7 @@ export function PortfolioHistoryChart({
               <input
                 aria-label={"Barva " + providerLabel(provider)}
                 type="color"
-                value={colors[provider] || fallbackColor(provider, index)}
+                value={colors[provider] || providerColor(provider)}
                 onChange={(event) =>
                   updateProviderColor(provider, event.target.value)
                 }
@@ -607,7 +575,7 @@ export function PortfolioHistoryChart({
               <TooltipRow
                 key={provider}
                 label={providerLabel(provider)}
-                color={colors[provider] || fallbackColor(provider, index)}
+                color={colors[provider] || providerColor(provider)}
                 value={formatValue(
                   hoverPoint.providers[provider]
                     ? metricValue(metric, hoverPoint.providers[provider])
@@ -753,7 +721,7 @@ export function PortfolioHistoryChart({
                   chart.yScale,
                 )}
                 fill="none"
-                stroke={colors[provider] || fallbackColor(provider, index)}
+                stroke={colors[provider] || providerColor(provider)}
                 strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
               />
