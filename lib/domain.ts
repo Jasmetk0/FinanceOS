@@ -5,6 +5,7 @@ export type ProviderId =
   | "kraken"
   | "mintos"
   | "investown"
+  | "phantom"
   | "manual";
 
 export type ConnectionStatus =
