@@ -234,11 +234,12 @@ type KrakenWalletTransfer = {
   occurredAt: string;
   currency: string;
   amount: number;
+  direction: "to_phantom" | "from_phantom";
   counterpartyRef: string;
   rawJson: string;
 };
 
-type SolanaIncomingTransfer = {
+type SolanaWalletDelta = {
   signature: string;
   occurredAt: string;
   symbol: string;
@@ -248,10 +249,10 @@ type SolanaIncomingTransfer = {
 function unlinkedKrakenTransfers(): KrakenWalletTransfer[] {
   return getDb()
     .prepare(
-      "SELECT id, occurred_at, currency, amount, counterparty_ref, raw_json " +
+      "SELECT id, occurred_at, currency, amount, category, counterparty_ref, raw_json " +
         "FROM transactions WHERE provider = 'kraken' " +
         "AND kind = 'transfer' " +
-        "AND category = 'wallet_transfer_out_unclassified' " +
+        "AND category IN ('wallet_transfer_out_unclassified', 'wallet_transfer_in_unclassified') " +
         "ORDER BY occurred_at ASC",
     )
     .all()
@@ -260,6 +261,10 @@ function unlinkedKrakenTransfers(): KrakenWalletTransfer[] {
       occurredAt: String(row.occurred_at),
       currency: String(row.currency || "").toUpperCase(),
       amount: Math.abs(num(row.amount)),
+      direction:
+        String(row.category) === "wallet_transfer_in_unclassified"
+          ? "from_phantom" as const
+          : "to_phantom" as const,
       counterpartyRef: text(row.counterparty_ref),
       rawJson: String(row.raw_json || "{}"),
     }));
@@ -283,13 +288,13 @@ function tokenBalanceQuantity(raw: unknown) {
   return num(ui.uiAmountString ?? ui.uiAmount, 0);
 }
 
-function incomingTransfersFromTransaction(
+function walletDeltasFromTransaction(
   signature: string,
   blockTime: number,
   transaction: JsonObject,
   address: string,
-): SolanaIncomingTransfer[] {
-  const transfers: SolanaIncomingTransfer[] = [];
+): SolanaWalletDelta[] {
+  const transfers: SolanaWalletDelta[] = [];
   const meta = asObject(transaction.meta);
   const keys = accountKeysFromTransaction(transaction);
   const addressIndex = keys.findIndex((key) => key === address);
@@ -299,7 +304,7 @@ function incomingTransfersFromTransaction(
   if (addressIndex >= 0) {
     const deltaLamports =
       num(postBalances[addressIndex]) - num(preBalances[addressIndex]);
-    if (deltaLamports > 0) {
+    if (deltaLamports !== 0) {
       transfers.push({
         signature,
         occurredAt: new Date(blockTime * 1000).toISOString(),
@@ -340,7 +345,7 @@ function incomingTransfersFromTransaction(
 
   for (const mint of new Set([...preByMint.keys(), ...postByMint.keys()])) {
     const delta = (postByMint.get(mint) ?? 0) - (preByMint.get(mint) ?? 0);
-    if (delta <= 0) continue;
+    if (delta === 0) continue;
     const symbol = TOKEN_META[mint]?.symbol || mint;
     transfers.push({
       signature,
@@ -353,13 +358,13 @@ function incomingTransfersFromTransaction(
   return transfers;
 }
 
-async function scanSolanaIncomingTransfers(
+async function scanSolanaWalletDeltas(
   address: string,
   krakenTransfers: KrakenWalletTransfer[],
 ) {
   if (!krakenTransfers.length) {
     return {
-      candidates: [] as SolanaIncomingTransfer[],
+      candidates: [] as SolanaWalletDelta[],
       signaturesScanned: 0,
       historyCompleteToOldestTransfer: true,
     };
@@ -421,7 +426,7 @@ async function scanSolanaIncomingTransfers(
     ),
   );
 
-  const candidates: SolanaIncomingTransfer[] = [];
+  const candidates: SolanaWalletDelta[] = [];
   for (const item of candidateSignatures) {
     try {
       const transaction = await rpc<JsonObject | null>("getTransaction", [
@@ -434,7 +439,7 @@ async function scanSolanaIncomingTransfers(
       ]);
       if (!transaction) continue;
       candidates.push(
-        ...incomingTransfersFromTransaction(
+        ...walletDeltasFromTransaction(
           item.signature,
           item.blockTime,
           transaction,
@@ -470,7 +475,7 @@ async function matchKrakenWithdrawalsFromChain(address: string) {
     };
   }
 
-  const scan = await scanSolanaIncomingTransfers(address, krakenTransfers);
+  const scan = await scanSolanaWalletDeltas(address, krakenTransfers);
   const used = new Set<string>();
   const db = getDb();
   const update = db.prepare(
@@ -488,7 +493,10 @@ async function matchKrakenWithdrawalsFromChain(address: string) {
         (candidate) =>
           !used.has(candidate.signature + ":" + candidate.symbol) &&
           candidate.symbol === source.currency &&
-          quantityMatches(source.amount, candidate.quantity) &&
+          (source.direction === "to_phantom"
+            ? candidate.quantity > 0
+            : candidate.quantity < 0) &&
+          quantityMatches(source.amount, Math.abs(candidate.quantity)) &&
           Math.abs(
             new Date(candidate.occurredAt).getTime() - sourceTime,
           ) <=
@@ -513,7 +521,9 @@ async function matchKrakenWithdrawalsFromChain(address: string) {
 
     update.run(
       address,
-      "Solana chain match · Phantom",
+      source.direction === "to_phantom"
+        ? "Kraken → Phantom · chain match"
+        : "Phantom → Kraken · chain match",
       JSON.stringify({
         ...raw,
         financeOsPhantomMatch: {
