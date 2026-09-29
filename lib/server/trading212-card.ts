@@ -667,7 +667,7 @@ async function syncTrading212CardHistoryInternal(input: {
       return { status: "failed" as const, reportStatus: report.status };
     }
 
-    if (report.status !== "Finished" || !report.downloadLink) {
+    if (report.status !== "Finished") {
       return {
         status: "waiting" as const,
         reportStatus: report.status,
@@ -675,7 +675,28 @@ async function syncTrading212CardHistoryInternal(input: {
       };
     }
 
-    const text = await downloadCsv(report.downloadLink, input.credentials);
+    if (!report.downloadLink) {
+      deleteState(PENDING_KEY);
+      setState(
+        LAST_ERROR_KEY,
+        "Finished Trading 212 card export did not provide a download link.",
+      );
+      return {
+        status: "missing-download-link" as const,
+        reportId: pending.reportId,
+      };
+    }
+
+    let text: string;
+    try {
+      text = await downloadCsv(report.downloadLink, input.credentials);
+    } catch (error) {
+      // A signed report URL can expire. Clear the pending pointer so a later
+      // sync can request a fresh read-only export rather than retry forever.
+      deleteState(PENDING_KEY);
+      throw error;
+    }
+
     const imported = await enrichReportRows({
       text,
       accountId: input.accountId,
