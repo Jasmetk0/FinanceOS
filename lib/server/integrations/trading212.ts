@@ -531,6 +531,8 @@ export async function syncTrading212() {
       amount,
       amountCzk: await maybeToCzk(amount, txCurrency, occurredAt),
       note: stringValue(transaction, ["reference", "description"], type),
+      category: mapCashCategory(type),
+      flowScope: mapCashFlowScope(type),
       raw: transaction,
     });
   }
@@ -553,6 +555,28 @@ function mapCashKind(type: string): TransactionKind {
   if (type.includes("fee")) return "fee";
   if (type.includes("transfer")) return "transfer";
   return "adjustment";
+}
+
+function mapCashFlowScope(
+  type: string,
+): "external" | "internal" | "unclassified" | "not_applicable" {
+  if (type.includes("deposit")) return "external";
+  if (type.includes("withdraw")) {
+    // Trading 212's generic WITHDRAW history record is not enough to prove
+    // whether the movement was a bank withdrawal, Spending Pot transfer or
+    // card-related cash movement. Keep it out of performance contributions
+    // until a richer source classifies it.
+    return "unclassified";
+  }
+  if (type.includes("transfer")) return "internal";
+  return "not_applicable";
+}
+
+function mapCashCategory(type: string) {
+  if (type.includes("withdraw")) return "cash_out_unclassified";
+  if (type.includes("deposit")) return "external_deposit";
+  if (type.includes("transfer")) return "internal_transfer";
+  return type || null;
 }
 
 function cryptoLike(value: unknown): string {
