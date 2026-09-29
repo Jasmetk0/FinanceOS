@@ -155,6 +155,13 @@ function initialize(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_asset_prices_asset_date
       ON asset_prices(asset_id, price_date ASC);
+
+    CREATE TABLE IF NOT EXISTS provider_sync_locks (
+      provider TEXT PRIMARY KEY,
+      owner TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `);
 
   if (!hasColumn(db, "transactions", "category")) {
@@ -162,6 +169,17 @@ function initialize(db: DatabaseSync) {
   }
   if (!hasColumn(db, "transactions", "source_label")) {
     db.exec("ALTER TABLE transactions ADD COLUMN source_label TEXT;");
+  }
+  if (!hasColumn(db, "transactions", "flow_scope")) {
+    db.exec(
+      "ALTER TABLE transactions ADD COLUMN flow_scope TEXT NOT NULL DEFAULT 'legacy';",
+    );
+  }
+  if (!hasColumn(db, "transactions", "counterparty_ref")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN counterparty_ref TEXT;");
+  }
+  if (!hasColumn(db, "transactions", "transfer_value_czk")) {
+    db.exec("ALTER TABLE transactions ADD COLUMN transfer_value_czk REAL;");
   }
 }
 
