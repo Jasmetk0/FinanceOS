@@ -801,7 +801,7 @@ export function getTrading212CardStatus() {
       SELECT
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS spend,
         SUM(CASE WHEN category LIKE 'card_refund:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS refunds,
-        SUM(CASE WHEN category = 'card_cashback' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS cashback,
+        SUM(CASE WHEN category = 'card_cashback' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS spend_count,
         SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
         MIN(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS first_card_at,
