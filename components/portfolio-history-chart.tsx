@@ -4,6 +4,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { providerColor, providerLabel } from "@/lib/provider-visuals";
@@ -36,6 +37,26 @@ const TOP = 22;
 const BOTTOM = 54;
 const PLOT_W = VIEW_W - LEFT - RIGHT;
 const PLOT_H = VIEW_H - TOP - BOTTOM;
+
+const PROVIDER_COLORS_KEY = "financeos-provider-colors";
+const PROVIDER_COLORS_EVENT = "financeos-provider-colors-change";
+
+function subscribeProviderColors(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener(PROVIDER_COLORS_EVENT, callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener(PROVIDER_COLORS_EVENT, callback);
+  };
+}
+
+function providerColorsSnapshot() {
+  return window.localStorage.getItem(PROVIDER_COLORS_KEY) || "{}";
+}
+
+function providerColorsServerSnapshot() {
+  return "{}";
+}
 
 function metricValue(
   metric: PortfolioChartMetric,
@@ -178,10 +199,27 @@ export function PortfolioHistoryChart({
   const [selectedProviders, setSelectedProviders] = useState<string[]>(
     data.providers,
   );
-  const [colors, setColors] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      data.providers.map((provider) => [provider, providerColor(provider)]),
-    ),
+  const storedColorsRaw = useSyncExternalStore(
+    subscribeProviderColors,
+    providerColorsSnapshot,
+    providerColorsServerSnapshot,
+  );
+  const storedColors = useMemo(() => {
+    try {
+      return JSON.parse(storedColorsRaw) as Record<string, string>;
+    } catch {
+      return {};
+    }
+  }, [storedColorsRaw]);
+  const colors = useMemo(
+    () =>
+      Object.fromEntries(
+        data.providers.map((provider) => [
+          provider,
+          storedColors[provider] || providerColor(provider),
+        ]),
+      ),
+    [data.providers, storedColors],
   );
   const [hoverDate, setHoverDate] = useState<string | null>(null);
 
@@ -320,15 +358,17 @@ export function PortfolioHistoryChart({
       : null;
 
   function updateProviderColor(provider: string, color: string) {
-    const next = { ...colors, [provider]: color };
-    setColors(next);
     try {
+      const current = JSON.parse(
+        window.localStorage.getItem(PROVIDER_COLORS_KEY) || "{}",
+      ) as Record<string, string>;
       window.localStorage.setItem(
-        "financeos-provider-colors",
-        JSON.stringify(next),
+        PROVIDER_COLORS_KEY,
+        JSON.stringify({ ...current, [provider]: color }),
       );
+      window.dispatchEvent(new Event(PROVIDER_COLORS_EVENT));
     } catch {
-      // Local persistence is best-effort only.
+      // Color customization is best-effort only.
     }
   }
 
