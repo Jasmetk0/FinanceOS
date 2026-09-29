@@ -92,7 +92,12 @@ export default function ConnectionsPage() {
             oficiální CSV export API jako enrichment vrstvu. Z něj získá Card
             debit, Spending cashback, Merchant name a Merchant category.
             {trading212Card.lastError
-              ? " Poslední chyba: " + trading212Card.lastError
+              ? " Poslední chyba: " +
+                trading212Card.lastError +
+                (trading212Card.retryAfter
+                  ? " · další automatický pokus po " +
+                    new Date(trading212Card.retryAfter).toLocaleString("cs-CZ")
+                  : "")
               : ""}
           </p>
         </SectionCard>
