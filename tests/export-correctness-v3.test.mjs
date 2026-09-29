@@ -132,3 +132,12 @@ test("Trading 212 provider applies cash semantic repair before card enrichment",
   assert.ok(repairIndex >= 0);
   assert.ok(cardIndex > repairIndex);
 });
+
+
+test("Trading 212 export enrichment backs off repeated provider errors", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(card.includes('const RETRY_AFTER_KEY = "card_export_retry_after"'));
+  assert.ok(card.includes("const ERROR_BACKOFF_MS = 60 * 60 * 1000"));
+  assert.ok(card.includes('status: "backoff" as const'));
+  assert.ok(card.includes("retryAfter: getState(RETRY_AFTER_KEY)"));
+});
