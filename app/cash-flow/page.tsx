@@ -219,6 +219,71 @@ export default function CashFlowPage() {
               zvoleného Pie; FinanceOS proto cashback nepočítá jako nový vklad
               uživatele.
             </p>
+
+            <div className="mt-5 grid gap-4 xl:grid-cols-2">
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Poslední měsíce
+                </p>
+                <div className="space-y-2">
+                  {card.monthly.slice(-6).reverse().map((month) => (
+                    <div
+                      key={month.month}
+                      className="grid grid-cols-[80px_1fr_auto] items-center gap-3 rounded-xl border border-white/6 bg-white/[0.015] px-3 py-2"
+                    >
+                      <p className="font-mono text-xs">{month.month}</p>
+                      <p className="text-xs text-[var(--muted)]">
+                        útrata{" "}
+                        {month.netSpendCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč · cashback{" "}
+                        {month.cashbackCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </p>
+                      <p className="font-mono text-xs">
+                        {month.cashbackPct === null
+                          ? "—"
+                          : month.cashbackPct.toLocaleString("cs-CZ", {
+                              maximumFractionDigits: 2,
+                            }) + " %"}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--muted)]">
+                  Největší obchodníci
+                </p>
+                <div className="space-y-2">
+                  {card.topMerchants.slice(0, 8).map((merchant) => (
+                    <div
+                      key={merchant.merchant}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-white/6 bg-white/[0.015] px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium">
+                          {merchant.merchant}
+                        </p>
+                        <p className="mt-0.5 text-[10px] text-[var(--muted)]">
+                          {merchant.purchases.toLocaleString("cs-CZ")} plateb
+                        </p>
+                      </div>
+                      <p className="shrink-0 font-mono text-xs">
+                        {merchant.netSpendCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </SectionCard>
         </div>
       ) : null}
