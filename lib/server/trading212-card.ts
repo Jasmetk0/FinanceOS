@@ -396,7 +396,6 @@ function findExistingTransaction(
   }
 
   if (!occurredAt || amountCzk === null) return null;
-  const day = occurredAt.slice(0, 10);
   const kindCandidates =
     classification.category === "card_cashback"
       ? ["deposit", "withdrawal", "income"]
