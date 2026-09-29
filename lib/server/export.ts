@@ -1,9 +1,11 @@
 import { getDb } from "@/lib/server/db";
 import { listConnections } from "@/lib/server/repository";
+import { getTrading212CardStatus } from "@/lib/server/trading212-card";
 
 export function buildExport() {
   const db = getDb();
   const connections = listConnections();
+  const trading212Card = getTrading212CardStatus();
   const accounts = db
     .prepare("SELECT * FROM accounts ORDER BY provider, name")
     .all();
@@ -101,6 +103,7 @@ export function buildExport() {
       connectionErrors,
       pnlCoverage,
       canonicalIdentity,
+      trading212Card,
       counts: {
         accounts: accounts.length,
         assets: assets.length,
