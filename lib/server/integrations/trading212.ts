@@ -1,4 +1,5 @@
 import type { ProviderId, TransactionKind } from "@/lib/domain";
+import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 import { maybeToCzk, toCzk } from "@/lib/server/fx";
 import {
   getConnectionSecret,
@@ -172,18 +173,21 @@ export async function validateTrading212(
   environment: string,
   credentials: Trading212Credentials,
 ) {
-  if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
-    throw new Error("Trading 212 API key and secret are required.");
-  }
+  return withProviderSyncLock("trading212", async () => {
+    if (!credentials.apiKey.trim() || !credentials.apiSecret.trim()) {
+      throw new Error("Trading 212 API key and secret are required.");
+    }
 
-  await request(
-    environment,
-    credentials,
-    "/equity/account/summary",
-  );
+    await request(
+      environment,
+      credentials,
+      "/equity/account/summary",
+    );
+  });
 }
 
 export async function syncTrading212() {
+  return withProviderSyncLock("trading212", async () => {
   const connection = getConnectionSecret<Trading212Credentials>("trading212");
   if (!connection) throw new Error("Trading 212 is not connected.");
 
@@ -613,6 +617,7 @@ export async function syncTrading212() {
     dividends: dividends.length,
     cashTransactions: cashTransactions.length,
   };
+  });
 }
 
 function mapCashKind(type: string): TransactionKind {
