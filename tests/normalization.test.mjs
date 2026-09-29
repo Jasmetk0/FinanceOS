@@ -56,3 +56,32 @@ test("cost-basis quantity coverage rejects materially missing ledger quantity", 
   assert.equal(quantitiesApproximatelyEqual(1, 1.000000001), true);
   assert.equal(quantitiesApproximatelyEqual(1, 0.9), false);
 });
+
+
+test("Trading 212 metadata shortName overrides provider-decorated ticker", () => {
+  assert.deepEqual(
+    canonicalSecurityIdentity(
+      "VWCED_EQ",
+      "IE00BK5BQT80",
+      "VWCE",
+    ),
+    {
+      listingSymbol: "VWCED_EQ",
+      canonicalSymbol: "VWCE",
+      isin: "IE00BK5BQT80",
+      canonicalKey: "isin:IE00BK5BQT80",
+    },
+  );
+});
+
+test("metadata shortName also repairs historical ticker changes without ISIN", () => {
+  assert.deepEqual(
+    canonicalSecurityIdentity("ARNC_US_EQ", "", "HWM"),
+    {
+      listingSymbol: "ARNC",
+      canonicalSymbol: "HWM",
+      isin: null,
+      canonicalKey: "symbol:HWM",
+    },
+  );
+});
