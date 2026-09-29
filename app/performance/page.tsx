@@ -31,7 +31,7 @@ export default function PerformancePage() {
         </p>
       </div>
 
-      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Investiční majetek"
           value={data.totals.currentValueCzk}
@@ -48,17 +48,22 @@ export default function PerformancePage() {
           format="currency"
           hint={
             data.totals.performanceStatus === "partial"
-              ? "Pouze bezpečně klasifikované externí cash flow"
-              : data.totals.externalFlowCount
-                ? String(data.totals.externalFlowCount) + " cash-flow záznamů"
-                : "Zatím bez historie vkladů"
+              ? "Pouze bezpečně klasifikované vlastní vklady/výběry"
+              : "Vlastní kapitál bez card rewards"
           }
+        />
+        <StatCard
+          label="Externí odměny"
+          value={data.totals.externalRewardsCzk}
+          format="currency"
+          hint="Např. Trading 212 cashback; není to vlastní vklad ani tržní výnos"
+          positive={data.totals.externalRewardsCzk > 0}
         />
         <StatCard
           label="Odhad zisku"
           value={data.totals.estimatedProfitCzk}
           format="currency"
-          hint="Aktuální hodnota mínus čisté vklady"
+          hint="Aktuální hodnota mínus vlastní kapitál a externí odměny"
           positive={
             data.totals.estimatedProfitCzk === null
               ? undefined
@@ -130,6 +135,7 @@ export default function PerformancePage() {
                     <th className="pb-3 text-right font-medium">Current value</th>
                     <th className="pb-3 text-right font-medium">External in</th>
                     <th className="pb-3 text-right font-medium">External out</th>
+                    <th className="pb-3 text-right font-medium">Rewards</th>
                     <th className="pb-3 text-right font-medium">Wallet in</th>
                     <th className="pb-3 text-right font-medium">Wallet out</th>
                     <th className="pb-3 text-right font-medium">Capital attributed</th>
@@ -169,6 +175,12 @@ export default function PerformancePage() {
                       </td>
                       <td className="py-4 text-right font-mono text-sm">
                         {account.withdrawalsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 0,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-4 text-right font-mono text-sm">
+                        {account.externalRewardsCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 0,
                         })}{" "}
                         Kč
@@ -232,7 +244,10 @@ export default function PerformancePage() {
       <div className="mt-4 rounded-3xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-5">
         <p className="text-sm font-semibold">Jak číst tato čísla</p>
         <p className="mt-2 max-w-5xl text-sm leading-6 text-[var(--muted)]">
-          Nákupy a prodeje uvnitř účtu nejsou externí cash flow. Přesun mezi
+          Nákupy a prodeje uvnitř účtu nejsou externí cash flow. Cashback a
+          podobné odměny zvenku nejsou vlastní vklad, ale při výpočtu investičního
+          výnosu se odečtou jako externí reward capital, aby nezvyšovaly výkon
+          akcií. Přesun mezi
           vlastními platformami nebo peněženkami také nemění celkové vložené
           peníze v portfoliu. U konkrétního provideru se ale carried book value
           přesunu odečte/přičte, takže například Kraken → Phantom nezůstane
