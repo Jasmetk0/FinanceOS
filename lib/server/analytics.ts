@@ -482,7 +482,7 @@ export function getDashboardData() {
 
   // P2P accounts can expose project-level holdings (Investown) or only
   // an account total (Mintos). Add only the account value that is not already
-  // represented by P2P holdings, otherwise allocation would double count it.
+  // represented by holdings of any asset class, otherwise allocation would double count it.
   const p2pAccounts = db
     .prepare(
       "SELECT id, total_value_czk FROM accounts WHERE type = 'p2p'",
@@ -494,8 +494,7 @@ export function getDashboardData() {
     const represented = db
       .prepare(
         "SELECT COALESCE(SUM(h.market_value_czk), 0) AS total " +
-          "FROM holdings h JOIN assets a ON a.id = h.asset_id " +
-          "WHERE h.account_id = ? AND a.asset_class = 'p2p'",
+          "FROM holdings h WHERE h.account_id = ?",
       )
       .get(String(account.id));
 
