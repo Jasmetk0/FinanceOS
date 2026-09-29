@@ -5,6 +5,7 @@ import {
   upsertAsset,
   upsertTransaction,
 } from "@/lib/server/repository";
+import type { HoldingInput } from "@/lib/server/repository";
 import { getConnectionSecret } from "@/lib/server/repository";
 import { getDb } from "@/lib/server/db";
 import { toCzk } from "@/lib/server/fx";
@@ -32,7 +33,7 @@ const TOKEN_META: Record<
   },
 };
 
-let priceCache = new Map<string, { fetchedAt: number; price: number }>();
+const priceCache = new Map<string, { fetchedAt: number; price: number }>();
 
 function asObject(value: unknown): JsonObject {
   return value && typeof value === "object" ? (value as JsonObject) : {};
@@ -274,7 +275,7 @@ function linkKrakenTransfers(
       symbol,
       name: symbol === "USDC" ? "USD Coin" : symbol,
       assetClass: "crypto",
-      currency: symbol === "USDC" ? "USD" : "USD",
+      currency: "USD",
       raw: {
         source: "matched-kraken-transfer",
         phantomAddress: address,
@@ -354,7 +355,7 @@ export async function syncPhantom() {
       },
     });
 
-    const holdings = [];
+    const holdings: HoldingInput[] = [];
     const solAssetId = upsertAsset({
       provider: "phantom",
       externalId: "native:SOL",
