@@ -1,11 +1,6 @@
 import { getDb } from "@/lib/server/db";
 import { listConnections } from "@/lib/server/repository";
 
-function num(value: unknown) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 export function buildExport() {
   const db = getDb();
   const connections = listConnections();
@@ -28,13 +23,13 @@ export function buildExport() {
     .prepare("SELECT * FROM asset_prices ORDER BY asset_id, price_date ASC")
     .all();
 
-  const reconciliation = accounts.reduce(
+  const reconciliation = accounts.reduce<Record<string, number>>(
     (acc, row) => {
       const status = String(row.reconciliation_status || "unknown");
       acc[status] = (acc[status] ?? 0) + 1;
       return acc;
     },
-    {} as Record<string, number>,
+    {},
   );
 
   const missingTransactionCzk = transactions.reduce(
