@@ -94,11 +94,13 @@ test("Trading 212 cashback reversals preserve their sign and do not double-count
   );
 });
 
-test("Trading 212 card export cadence avoids repeated export notifications", () => {
+test("Trading 212 card export cadence minimizes notifications with a bounded fallback", () => {
   const card = source("lib/server/trading212-card.ts");
   assert.ok(card.includes("const REFRESH_MS = 7 * 24 * 60 * 60 * 1000"));
   assert.ok(card.includes("timeTo: nowIso"));
-  assert.equal(card.includes("REPORT_WINDOW_MS"), false);
+  assert.ok(card.includes("FALLBACK_HISTORY_WINDOW_MS"));
+  assert.ok(card.includes('message.includes("(400)")'));
+  assert.ok(card.includes('"requested-fallback-window"'));
 });
 
 
