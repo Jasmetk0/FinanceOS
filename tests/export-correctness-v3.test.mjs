@@ -69,3 +69,34 @@ test("Trading 212 Spending Pot is reconciled inside provider total without doubl
   const db = source("lib/server/db.ts");
   assert.ok(db.includes("CREATE TABLE IF NOT EXISTS provider_sync_state"));
 });
+
+
+test("Trading 212 cashback reversals preserve their sign and do not double-count performance", () => {
+  const card = source("lib/server/trading212-card.ts");
+  const analytics = source("lib/server/analytics.ts");
+  assert.ok(
+    card.includes(
+      'classification.category === "card_cashback"\n        ? money.amount',
+    ),
+  );
+  assert.ok(card.includes('enrichmentOnly'));
+  assert.ok(
+    card.includes(
+      'flowScope: enrichmentOnly\n        ? "not_applicable"\n        : classification.flowScope',
+    ),
+  );
+  assert.ok(analytics.includes("item.cashbackCzk += amount"));
+  assert.equal(
+    card.includes(
+      "SUM(CASE WHEN category = 'card_cashback' THEN ABS(COALESCE(amount_czk, 0))",
+    ),
+    false,
+  );
+});
+
+test("Trading 212 card export cadence avoids repeated export notifications", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(card.includes("const REFRESH_MS = 7 * 24 * 60 * 60 * 1000"));
+  assert.ok(card.includes("timeTo: nowIso"));
+  assert.equal(card.includes("REPORT_WINDOW_MS"), false);
+});
