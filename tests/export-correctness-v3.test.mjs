@@ -305,3 +305,14 @@ test("T212 UI distinguishes validated fallback from merchant-rich export", () =>
   assert.ok(cashFlow.includes("provider-history fallbacku"));
   assert.ok(connections.includes("Ověřený fallback z cash historie"));
 });
+
+
+test("Phantom chain scan skips Kraken transfers already linked by destination metadata", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  const matcherStart = phantom.indexOf("async function matchKrakenTransfersFromChain");
+  const matcherEnd = phantom.indexOf("function phantomAssetExternalId", matcherStart);
+  const matcher = phantom.slice(matcherStart, matcherEnd);
+  assert.ok(matcher.includes("unlinkedKrakenTransfers().filter"));
+  assert.ok(matcher.includes("!matchesAddress(item.counterpartyRef, address)"));
+  assert.ok(matcher.includes("!matchesAddress(destinationFromRaw(item.rawJson), address)"));
+});
