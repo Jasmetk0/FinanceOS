@@ -212,7 +212,7 @@ function Stop-ManagedProcesses {
     }
 }
 
-$launcherMutex = New-Object System.Threading.Mutex(
+$launcherMutex = New-Object System.Threading.Mutex -ArgumentList @(
     $false,
     "Local\FinanceOS-Launcher-SingleInstance"
 )
