@@ -1,6 +1,7 @@
 import { Pill } from "@/components/ui";
 import { ConnectionsManager } from "@/components/connections-manager";
 import { MintosImporter } from "@/components/mintos-importer";
+import { getMintosImportStatus } from "@/lib/server/mintos";
 import { InvestownImporter } from "@/components/investown-importer";
 import { listConnections } from "@/lib/server/repository";
 import { getInvestownImportStatus } from "@/lib/server/investown";
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export default function ConnectionsPage() {
   const connections = listConnections();
   const investownStatus = getInvestownImportStatus();
+  const mintosStatus = getMintosImportStatus();
   const trading212SpendingPot = getTrading212SpendingPot();
 
   return (
@@ -37,7 +39,7 @@ export default function ConnectionsPage() {
       </div>
 
       <div className="mt-4">
-        <MintosImporter />
+        <MintosImporter initialStatus={mintosStatus} />
       </div>
 
       <div className="mt-4">
