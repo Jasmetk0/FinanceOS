@@ -266,3 +266,19 @@ test("exports include Phantom identity and coverage without exposing wallet addr
   assert.ok(phantom.includes("unpricedTokenCount"));
   assert.equal(phantom.includes("return {\n    address,"), false);
 });
+
+
+test("Phantom sync never overwrites canonical identity or pretends PnL is available", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(
+    (phantom.match(/realizedPnlStatus: "unavailable"/g) || []).length >= 2,
+  );
+  assert.ok(
+    (phantom.match(/unrealizedPnlStatus: "unavailable"/g) || []).length >= 2,
+  );
+  const linkStart = phantom.indexOf("function linkKrakenTransfers");
+  const syncStart = phantom.indexOf("export async function syncPhantom", linkStart);
+  const linkBlock = phantom.slice(linkStart, syncStart);
+  assert.ok(linkBlock.includes("canonicalCryptoIdentity(symbol, symbol)"));
+  assert.ok(linkBlock.includes("canonicalKey: identity.canonicalKey"));
+});
