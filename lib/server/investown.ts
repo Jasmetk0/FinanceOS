@@ -499,6 +499,13 @@ export async function importInvestown(input: InvestownImportInput) {
     totalValue,
     realizedPnl: derivedInterest,
     unrealizedPnl: 0,
+    realizedPnlStatus:
+      input.sourceFormat === "investown-native" &&
+      overrideCash === null &&
+      overrideTotal === null
+        ? "available"
+        : "partial",
+    unrealizedPnlStatus: "not_applicable",
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
