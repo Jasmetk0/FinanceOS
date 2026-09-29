@@ -163,6 +163,10 @@ function backfillCanonicalAssets(db: DatabaseSync) {
   }
 }
 
+export function repairStoredData(db: DatabaseSync) {
+  repairStoredData(db);
+}
+
 function initialize(db: DatabaseSync) {
   db.exec("PRAGMA journal_mode = WAL;");
   db.exec("PRAGMA foreign_keys = ON;");
