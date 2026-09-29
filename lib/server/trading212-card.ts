@@ -302,7 +302,7 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
       cardEvidence: true,
     } as const;
   }
-  if (action === "spending cashback") {
+  if (action.includes("cashback")) {
     return {
       kind: "income",
       flowScope: "not_applicable",
