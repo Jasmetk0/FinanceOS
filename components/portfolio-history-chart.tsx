@@ -180,10 +180,7 @@ export function PortfolioHistoryChart({
   );
   const [colors, setColors] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      data.providers.map((provider, index) => [
-        provider,
-        providerColor(provider),
-      ]),
+      data.providers.map((provider) => [provider, providerColor(provider)]),
     ),
   );
   const [hoverDate, setHoverDate] = useState<string | null>(null);
@@ -475,7 +472,7 @@ export function PortfolioHistoryChart({
           Celkem
         </label>
 
-        {data.providers.map((provider, index) => {
+        {data.providers.map((provider) => {
           const checked = selectedProviders.includes(provider);
           return (
             <div
@@ -571,7 +568,7 @@ export function PortfolioHistoryChart({
                 value={formatValue(metricValue(metric, hoverPoint.total), metric)}
               />
             ) : null}
-            {displayProviders.map((provider, index) => (
+            {displayProviders.map((provider) => (
               <TooltipRow
                 key={provider}
                 label={providerLabel(provider)}
@@ -708,7 +705,7 @@ export function PortfolioHistoryChart({
               />
             ) : null}
 
-            {displayProviders.map((provider, index) => (
+            {displayProviders.map((provider) => (
               <path
                 key={provider}
                 d={buildPath(
