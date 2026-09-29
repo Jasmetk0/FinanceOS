@@ -1031,7 +1031,10 @@ export function getTrading212CardStatus() {
       FROM transactions
       WHERE provider = 'trading212'
         AND (
-          category LIKE 'card_spend:%'
+          (
+            category LIKE 'card_spend:%'
+            AND category != 'card_spend:inferred'
+          )
           OR category LIKE 'card_refund:%'
         )
       GROUP BY merchant
