@@ -903,6 +903,92 @@ export function getTrading212CardStatus() {
     `)
     .get();
 
+  const monthly = db
+    .prepare(`
+      SELECT
+        substr(occurred_at, 1, 7) AS month,
+        SUM(
+          CASE
+            WHEN category LIKE 'card_spend:%'
+            THEN ABS(COALESCE(amount_czk, 0))
+            ELSE 0
+          END
+        ) AS spend,
+        SUM(
+          CASE
+            WHEN category LIKE 'card_refund:%'
+            THEN ABS(COALESCE(amount_czk, 0))
+            ELSE 0
+          END
+        ) AS refunds,
+        SUM(
+          CASE
+            WHEN category = 'card_cashback'
+            THEN COALESCE(amount_czk, 0)
+            ELSE 0
+          END
+        ) AS cashback
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND (
+          category LIKE 'card_spend:%'
+          OR category LIKE 'card_refund:%'
+          OR category = 'card_cashback'
+        )
+      GROUP BY month
+      ORDER BY month DESC
+      LIMIT 18
+    `)
+    .all()
+    .map((row) => {
+      const spendCzk = Number(row.spend) || 0;
+      const refundsCzk = Number(row.refunds) || 0;
+      const cashbackCzk = Number(row.cashback) || 0;
+      const netSpendCzk = Math.max(0, spendCzk - refundsCzk);
+      return {
+        month: String(row.month),
+        spendCzk,
+        refundsCzk,
+        netSpendCzk,
+        cashbackCzk,
+        cashbackPct:
+          netSpendCzk > 0 ? (cashbackCzk / netSpendCzk) * 100 : null,
+      };
+    })
+    .reverse();
+
+  const topMerchants = db
+    .prepare(`
+      SELECT
+        COALESCE(NULLIF(source_label, ''), 'Unknown merchant') AS merchant,
+        SUM(
+          CASE
+            WHEN category LIKE 'card_spend:%'
+            THEN ABS(COALESCE(amount_czk, 0))
+            WHEN category LIKE 'card_refund:%'
+            THEN -ABS(COALESCE(amount_czk, 0))
+            ELSE 0
+          END
+        ) AS net_spend,
+        SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS purchases
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND (
+          category LIKE 'card_spend:%'
+          OR category LIKE 'card_refund:%'
+        )
+      GROUP BY merchant
+      HAVING net_spend > 0
+      ORDER BY net_spend DESC
+      LIMIT 12
+    `)
+    .all()
+    .map((row) => ({
+      merchant: String(row.merchant),
+      netSpendCzk: Number(row.net_spend) || 0,
+      purchases: Number(row.purchases) || 0,
+    }));
+
   let spendingPotCzk: number | null = null;
   if (account?.raw_json) {
     const raw = safeJson(account.raw_json);
@@ -941,5 +1027,7 @@ export function getTrading212CardStatus() {
     reconciliationStatus: account?.reconciliation_status
       ? String(account.reconciliation_status)
       : null,
+    monthly,
+    topMerchants,
   };
 }
