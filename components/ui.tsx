@@ -38,17 +38,19 @@ export function StatCard({
   positive,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   format?: "number" | "currency" | "percent";
   hint?: string;
   positive?: boolean;
 }) {
   const formatted =
-    format === "currency"
-      ? `${value.toLocaleString("cs-CZ")} Kč`
-      : format === "percent"
-        ? `${value.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })} %`
-        : value.toLocaleString("cs-CZ");
+    value === null
+      ? "—"
+      : format === "currency"
+        ? `${value.toLocaleString("cs-CZ")} Kč`
+        : format === "percent"
+          ? `${value.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })} %`
+          : value.toLocaleString("cs-CZ");
 
   return (
     <div className="rounded-3xl border border-white/7 bg-[var(--panel)] p-4 sm:p-5">
