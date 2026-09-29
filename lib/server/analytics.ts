@@ -780,7 +780,9 @@ export function getCashFlowData(months = 18) {
       } else if (category.startsWith("card_refund:")) {
         item.expensesCzk -= Math.abs(amount);
       } else if (category === "card_cashback") {
-        item.cashbackCzk += Math.max(0, amount);
+        // Refunds can reverse previously awarded cashback. Preserve the sign
+        // so FinanceOS reports net cashback actually retained.
+        item.cashbackCzk += amount;
       } else if (category === "card_fee") {
         item.expensesCzk += Math.abs(amount);
       }
@@ -890,7 +892,7 @@ export function getCashFlowData(months = 18) {
         END AS source,
         SUM(CASE
           WHEN provider = 'trading212' AND category = 'card_cashback'
-            THEN ABS(amount_czk)
+            THEN amount_czk
           WHEN provider = 'manual' AND kind IN ('income', 'gift', 'interest')
             THEN ABS(amount_czk)
           ELSE 0
