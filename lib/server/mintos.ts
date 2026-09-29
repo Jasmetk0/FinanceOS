@@ -12,6 +12,7 @@ import {
 export interface MintosImportRow {
   externalId?: string;
   occurredAt: string;
+  sourceDate?: string;
   amount: number;
   balance?: number | null;
   currency: string;
@@ -193,6 +194,7 @@ function stableRowBase(row: MintosImportRow): string {
 
   const payload = JSON.stringify({
     occurredAt: row.occurredAt,
+    sourceDate: row.sourceDate || "",
     amount: row.amount,
     balance: row.balance ?? null,
     currency: row.currency,
@@ -227,7 +229,7 @@ function principalDelta(row: MintosImportRow) {
 }
 
 function dateOnly(row: MintosImportRow) {
-  const source = normalized(row.occurredAt);
+  const source = normalized(row.sourceDate || row.occurredAt);
   const match = source.match(/^(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];
   return new Date(row.occurredAt).toISOString().slice(0, 10);
