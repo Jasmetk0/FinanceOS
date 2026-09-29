@@ -140,6 +140,20 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     };
   });
 
+  const unlinkedWalletRow = db
+    .prepare(`
+      SELECT
+        MIN(substr(occurred_at, 1, 10)) AS first_gap,
+        COUNT(*) AS count
+      FROM transactions
+      WHERE kind = 'transfer'
+        AND flow_scope = 'unclassified'
+    `)
+    .get();
+  const unlinkedWalletStart = unlinkedWalletRow?.first_gap
+    ? String(unlinkedWalletRow.first_gap)
+    : null;
+
   const flowRows = db
     .prepare(`
       SELECT
@@ -288,7 +302,14 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       }
     }
 
-    const complete = missingProviders.length === 0 && knownProviders.length > 0;
+    const hasUnlinkedWalletGap =
+      unlinkedWalletStart !== null && unlinkedWalletStart <= date;
+    if (hasUnlinkedWalletGap) {
+      missingProviders.push("unlinked-wallet");
+    }
+
+    const complete =
+      missingProviders.length === 0 && knownProviders.length > 0;
 
     points.push({
       date,
@@ -988,6 +1009,27 @@ export function getPerformanceData() {
     },
   );
 
+  const portfolioWalletGap = db
+    .prepare(`
+      SELECT
+        COUNT(*) AS count,
+        SUM(
+          CASE
+            WHEN transfer_value_czk < 0 THEN ABS(transfer_value_czk)
+            ELSE 0
+          END
+        ) AS known_book_value_out
+      FROM transactions
+      WHERE kind = 'transfer'
+        AND flow_scope = 'unclassified'
+    `)
+    .get();
+  const unlinkedWalletTransferCount = num(portfolioWalletGap?.count);
+  const unlinkedWalletBookValueOutCzk = num(
+    portfolioWalletGap?.known_book_value_out,
+  );
+  const portfolioPerformanceComplete = unlinkedWalletTransferCount === 0;
+
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
       SELECT t.kind, t.occurred_at, t.amount_czk
@@ -1019,7 +1061,9 @@ export function getPerformanceData() {
   }
 
   const netContributedCzk = totals.depositsCzk - totals.withdrawalsCzk;
-  const estimatedProfitCzk = totals.currentValueCzk - netContributedCzk;
+  const estimatedProfitCzk = portfolioPerformanceComplete
+    ? totals.currentValueCzk - netContributedCzk
+    : null;
 
   return {
     accounts: accountRows,
@@ -1028,16 +1072,23 @@ export function getPerformanceData() {
       netContributedCzk,
       estimatedProfitCzk,
       simpleReturnPct:
+        portfolioPerformanceComplete &&
+        estimatedProfitCzk !== null &&
         netContributedCzk > 0
           ? (estimatedProfitCzk / netContributedCzk) * 100
           : null,
-      xirrPct: (() => {
-        const value = solveXirr(portfolioFlows);
-        return value === null ? null : value * 100;
-      })(),
+      xirrPct: portfolioPerformanceComplete
+        ? (() => {
+            const value = solveXirr(portfolioFlows);
+            return value === null ? null : value * 100;
+          })()
+        : null,
       externalFlowCount: portfolioFlows.length
         ? Math.max(0, portfolioFlows.length - 1)
         : 0,
+      performanceStatus: portfolioPerformanceComplete ? "complete" : "partial",
+      unlinkedWalletTransferCount,
+      unlinkedWalletBookValueOutCzk,
     },
   };
 }
