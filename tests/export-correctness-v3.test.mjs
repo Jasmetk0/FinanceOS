@@ -147,3 +147,23 @@ test("Trading 212 card parser accepts the current Time (UTC) export header", () 
   assert.ok(card.includes('replace(/\\uFFFD(?=:\\d{2}$)/, "+00")'));
   assert.ok(card.includes('"Currency (Total)"'));
 });
+
+
+test("Trading 212 cashback is external reward capital, not investment return", () => {
+  const card = source("lib/server/trading212-card.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const performancePage = source("app/performance/page.tsx");
+
+  assert.match(
+    card,
+    /action\.includes\("cashback"\)[\s\S]{0,220}flowScope: "external"[\s\S]{0,120}category: "card_cashback"/,
+  );
+  assert.ok(analytics.includes("externalRewardsCzk"));
+  assert.ok(analytics.includes("performanceExternalCapitalCzk"));
+  assert.ok(
+    analytics.includes(
+      "performanceExternalCapitalCzk =\n    netContributedCzk + totals.externalRewardsCzk",
+    ),
+  );
+  assert.ok(performancePage.includes('label="Externí odměny"'));
+});
