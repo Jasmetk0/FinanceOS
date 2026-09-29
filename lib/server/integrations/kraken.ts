@@ -10,7 +10,10 @@ import {
   upsertTransaction,
 } from "@/lib/server/repository";
 import type { TransactionKind } from "@/lib/domain";
-import { canonicalCryptoIdentity } from "@/lib/shared/finance-normalization.mjs";
+import {
+  canonicalCryptoIdentity,
+  quantitiesApproximatelyEqual,
+} from "@/lib/shared/finance-normalization.mjs";
 import { getDb } from "@/lib/server/db";
 import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 
@@ -724,6 +727,16 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       "WHERE id = ?",
   );
 
+  const holdingQuantityBySymbol = new Map<string, number>();
+  for (const holding of holdings) {
+    const symbol = String(holding.symbol).toUpperCase();
+    holdingQuantityBySymbol.set(
+      symbol,
+      (holdingQuantityBySymbol.get(symbol) ?? 0) +
+        Math.max(0, numberValue(holding.quantity, 0)),
+    );
+  }
+
   let unrealizedKnownTotal = 0;
   let allHoldingsComplete = true;
 
@@ -734,8 +747,16 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       (sum, lot) => sum + Math.max(0, lot.quantity),
       0,
     );
+    const expectedQuantity = holdingQuantityBySymbol.get(symbol) ?? 0;
+    const quantityCoverageComplete = quantitiesApproximatelyEqual(
+      remainingQuantity,
+      expectedQuantity,
+    );
+    if (!quantityCoverageComplete) incompleteSymbols.add(symbol);
+
     const complete =
       !incompleteSymbols.has(symbol) &&
+      quantityCoverageComplete &&
       lots.every((lot) => lot.costCzk !== null);
     const totalCost = complete
       ? lots.reduce((sum, lot) => sum + (lot.costCzk ?? 0), 0)
