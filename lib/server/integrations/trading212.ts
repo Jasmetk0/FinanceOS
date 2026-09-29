@@ -507,6 +507,7 @@ export async function syncTrading212() {
       const identity = canonicalSecurityIdentity(
         ticker,
         stringValue(metadata, ["isin"]),
+        stringValue(metadata, ["shortName"]),
       );
       assetIdValue = upsertAsset({
         provider: "trading212",
@@ -568,6 +569,7 @@ export async function syncTrading212() {
       const identity = canonicalSecurityIdentity(
         ticker,
         stringValue(metadata, ["isin"]),
+        stringValue(metadata, ["shortName"]),
       );
       assetIdValue = upsertAsset({
         provider: "trading212",
