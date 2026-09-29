@@ -514,6 +514,7 @@ function initialize(db: DatabaseSync) {
   );
 
   repairStoredData(db);
+}
 
 export function getDb(): DatabaseSync {
   if (!globalDb.__financeOsDb) {
