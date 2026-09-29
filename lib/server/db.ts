@@ -236,6 +236,7 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   const markCashback = db.prepare(`
     UPDATE transactions
     SET
+      kind = 'income',
       flow_scope = 'external',
       category = 'card_cashback',
       source_label = 'Trading 212 card cashback · inferred'
