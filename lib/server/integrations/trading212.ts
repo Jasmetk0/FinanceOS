@@ -208,10 +208,16 @@ export async function syncTrading212() {
   const currency = stringValue(summary, ["currency"], "CZK").toUpperCase();
   const externalAccountId = stringValue(summary, ["id"], "primary");
 
-  const cashValue = numberValue(cash, ["availableToTrade"], 0)
-    + numberValue(cash, ["inPies"], 0)
-    + numberValue(cash, ["reservedForOrders"], 0);
-  const investedValue = numberValue(investments, ["currentValue"], 0);
+  const availableToTrade = numberValue(cash, ["availableToTrade"], 0);
+  const pieCash = numberValue(cash, ["inPies"], 0);
+  const reservedCash = numberValue(cash, ["reservedForOrders"], 0);
+  const cashValue = availableToTrade + pieCash + reservedCash;
+  const providerInvestmentsCurrentValue = numberValue(
+    investments,
+    ["currentValue"],
+    0,
+  );
+  const investedValue = providerInvestmentsCurrentValue;
   const totalValue = numberValue(summary, ["totalValue"], 0);
   const realizedPnl = numberValue(investments, ["realizedProfitLoss"], 0);
   const unrealizedPnl = numberValue(investments, ["unrealizedProfitLoss"], 0);
@@ -315,6 +321,67 @@ export async function syncTrading212() {
     });
   }
   replaceHoldings(accountIdValue, holdings);
+
+  const positionsMarketValue = holdings.reduce(
+    (sum, holding) => sum + holding.marketValue,
+    0,
+  );
+  const positionsMarketValueCzk = holdings.reduce(
+    (sum, holding) => sum + holding.marketValueCzk,
+    0,
+  );
+  const unclassifiedValue =
+    totalValue - positionsMarketValue - cashValue;
+  const unclassifiedValueCzk =
+    totalValueCzk - positionsMarketValueCzk - cashValueCzk;
+  const tolerance = 0.05;
+  const reconciliationStatus =
+    Math.abs(unclassifiedValueCzk) <= tolerance ? "reconciled" : "warning";
+  const pieIncludedInInvestments =
+    Math.abs(
+      providerInvestmentsCurrentValue - positionsMarketValue - pieCash,
+    ) <= tolerance;
+
+  upsertAccount({
+    provider: "trading212",
+    externalId: externalAccountId,
+    name: environment === "demo" ? "Trading 212 Demo" : "Trading 212",
+    type: "brokerage",
+    currency,
+    cashValue,
+    investedValue: positionsMarketValue,
+    totalValue,
+    realizedPnl,
+    unrealizedPnl,
+    cashValueCzk,
+    investedValueCzk: positionsMarketValueCzk,
+    totalValueCzk,
+    realizedPnlCzk,
+    unrealizedPnlCzk,
+    unclassifiedValue:
+      Math.abs(unclassifiedValue) <= tolerance ? 0 : unclassifiedValue,
+    unclassifiedValueCzk:
+      Math.abs(unclassifiedValueCzk) <= tolerance ? 0 : unclassifiedValueCzk,
+    reconciliationDifference:
+      Math.abs(unclassifiedValueCzk) <= tolerance ? 0 : unclassifiedValueCzk,
+    reconciliationStatus,
+    raw: {
+      ...summary,
+      financeOsReconciliation: {
+        positionsMarketValue,
+        knownCash: {
+          availableToTrade,
+          inPies: pieCash,
+          reservedForOrders: reservedCash,
+          total: cashValue,
+        },
+        providerInvestmentsCurrentValue,
+        pieIncludedInInvestments,
+        unclassifiedValue,
+        totalValue,
+      },
+    },
+  });
 
   const [orders, dividends, cashTransactions] = await Promise.all([
     fetchPaginated(
