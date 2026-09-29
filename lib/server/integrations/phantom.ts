@@ -464,7 +464,7 @@ function quantityMatches(expected: number, actual: number) {
   return Math.abs(expected - actual) <= tolerance;
 }
 
-async function matchKrakenWithdrawalsFromChain(address: string) {
+async function matchKrakenTransfersFromChain(address: string) {
   const krakenTransfers = unlinkedKrakenTransfers();
   if (!krakenTransfers.length) {
     return {
@@ -809,7 +809,7 @@ export async function syncPhantom() {
     };
     try {
       chainMatch = {
-        ...(await matchKrakenWithdrawalsFromChain(address)),
+        ...(await matchKrakenTransfersFromChain(address)),
         error: null,
       };
     } catch (error) {
