@@ -919,7 +919,7 @@ export function getPerformanceData() {
         FROM transactions
         WHERE account_id = ?
           AND kind = 'transfer'
-          AND flow_scope = 'unclassified'
+          AND flow_scope IN ('unclassified', 'internal')
           AND transfer_value_czk IS NULL
       `)
       .get(id);
