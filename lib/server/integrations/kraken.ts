@@ -508,7 +508,8 @@ function reclassifyLegacyKrakenWalletFlows() {
   const db = getDb();
   const rows = db
     .prepare(
-      "SELECT id, kind, currency, note, raw_json FROM transactions " +
+      "SELECT id, kind, currency, note, raw_json, counterparty_ref, category " +
+        "FROM transactions " +
         "WHERE provider = 'kraken' AND external_id LIKE 'ledger:%'",
     )
     .all();
@@ -526,10 +527,16 @@ function reclassifyLegacyKrakenWalletFlows() {
     const type = stringValue(raw.type, String(row.kind)).toLowerCase();
     const subtype = stringValue(raw.subtype);
     const currency = String(row.currency);
+    const ownedWallet =
+      String(row.counterparty_ref || "").startsWith("phantom:") &&
+      type === "withdrawal" &&
+      !isFiat(currency);
     update.run(
       ledgerKind(type, currency),
-      ledgerFlowScope(type, currency),
-      ledgerCategory(type, currency, subtype),
+      ownedWallet ? "internal" : ledgerFlowScope(type, currency),
+      ownedWallet
+        ? "wallet_transfer_out_owned"
+        : ledgerCategory(type, currency, subtype),
       String(row.id),
     );
   }
@@ -669,15 +676,31 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
 
     if (
       kind === "transfer" &&
-      scope === "unclassified" &&
-      quantity < 0
+      (scope === "unclassified" || scope === "internal") &&
+      quantity < 0 &&
+      category.startsWith("wallet_transfer_out")
     ) {
-      const consumed = consumeLots(lots, Math.abs(quantity));
+      // Kraken ledger quantity is the full balance delta (withdrawal + fee).
+      // Only the destination amount carries cost basis into the owned wallet;
+      // the network/withdrawal fee leaves the portfolio and must not be
+      // attributed to Phantom.
+      const destinationQuantity = Math.min(
+        Math.abs(quantity),
+        Math.abs(numberValue(row.amount, 0)),
+      );
+      const feeQuantity = Math.max(0, Math.abs(quantity) - destinationQuantity);
+
+      const transferred = consumeLots(lots, destinationQuantity);
+      if (feeQuantity > 1e-12) {
+        const feeConsumed = consumeLots(lots, feeQuantity);
+        if (feeConsumed.costCzk === null) incompleteSymbols.add(symbol);
+      }
+
       transferUpdate.run(
-        consumed.costCzk === null ? null : -consumed.costCzk,
+        transferred.costCzk === null ? null : -transferred.costCzk,
         String(row.id),
       );
-      if (consumed.costCzk === null) incompleteSymbols.add(symbol);
+      if (transferred.costCzk === null) incompleteSymbols.add(symbol);
       continue;
     }
 
