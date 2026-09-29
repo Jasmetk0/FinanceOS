@@ -53,20 +53,48 @@ export default function PerformancePage() {
           value={data.totals.estimatedProfitCzk}
           format="currency"
           hint="Aktuální hodnota mínus čisté vklady"
-          positive={data.totals.estimatedProfitCzk >= 0}
+          positive={
+            data.totals.estimatedProfitCzk === null
+              ? undefined
+              : data.totals.estimatedProfitCzk >= 0
+          }
         />
         <StatCard
           label="XIRR"
-          value={data.totals.xirrPct ?? 0}
+          value={data.totals.xirrPct}
           format="percent"
           hint={
             data.totals.xirrPct === null
               ? "Nedostatek cash-flow dat"
               : "Annualizovaný money-weighted return"
           }
-          positive={(data.totals.xirrPct ?? 0) >= 0}
+          positive={
+            data.totals.xirrPct === null
+              ? undefined
+              : data.totals.xirrPct >= 0
+          }
         />
       </section>
+
+      {data.totals.performanceStatus === "partial" ? (
+        <div className="mt-4 rounded-2xl border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-4">
+          <p className="text-sm font-semibold text-[var(--warning)]">
+            Celkový výkon je dočasně neúplný
+          </p>
+          <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
+            FinanceOS vidí {data.totals.unlinkedWalletTransferCount} on-chain
+            převod{data.totals.unlinkedWalletTransferCount === 1 ? "" : "ů"},
+            ale cílová vlastní peněženka zatím není napojená. Tyto převody
+            nemění externí vklady, ale dokud FinanceOS nevidí i cílová aktiva,
+            nevydává chybějící hodnotu za investiční ztrátu. Známá přenesená
+            účetní hodnota je přibližně{" "}
+            {data.totals.unlinkedWalletBookValueOutCzk.toLocaleString("cs-CZ", {
+              maximumFractionDigits: 0,
+            })}{" "}
+            Kč.
+          </p>
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <SectionCard
