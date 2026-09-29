@@ -17,8 +17,8 @@ test("fresh transaction schema contains modern flow columns before indexed use",
 
 test("legacy Trading 212 cash history is migrated conservatively", () => {
   const db = source("lib/server/db.ts");
-  assert.ok(db.includes("WHEN kind = 'deposit' THEN 'external'"));
-  assert.ok(db.includes("WHEN kind = 'withdrawal' THEN 'unclassified'"));
+  assert.ok(db.includes("WHEN kind = 'deposit' THEN 'unclassified'"));
+  assert.ok(db.includes("WHEN kind = 'withdrawal' THEN 'external'"));
   assert.ok(db.includes("WHEN kind = 'transfer' THEN 'internal'"));
   assert.ok(db.includes("WHERE provider = 'trading212'"));
 });
@@ -47,4 +47,25 @@ test("export exposes remaining legacy-flow debt", () => {
   const exportSource = source("lib/server/export.ts");
   assert.ok(exportSource.includes("legacyFlows"));
   assert.ok(exportSource.includes("eligibleWithCanonicalKey"));
+});
+
+
+test("Trading 212 card enrichment uses official CSV export state instead of guessing cashback", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(card.includes("/equity/history/exports"));
+  assert.ok(card.includes('"card debit"'));
+  assert.ok(card.includes('"spending cashback"'));
+  assert.ok(card.includes('"card credit"'));
+  assert.ok(card.includes('"Merchant name"'));
+  assert.ok(card.includes('"Merchant category"'));
+  assert.ok(card.includes("card_cashback"));
+});
+
+test("Trading 212 Spending Pot is reconciled inside provider total without double counting", () => {
+  const t212 = source("lib/server/integrations/trading212.ts");
+  assert.ok(t212.includes("source: \"provider_total_residual\""));
+  assert.ok(t212.includes("confidence: \"confirmed_by_card_history\""));
+  assert.ok(t212.includes("external_id = 'spending-pot:manual'"));
+  const db = source("lib/server/db.ts");
+  assert.ok(db.includes("CREATE TABLE IF NOT EXISTS provider_sync_state"));
 });
