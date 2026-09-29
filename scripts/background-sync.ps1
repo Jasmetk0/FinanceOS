@@ -20,7 +20,8 @@ function Write-SyncLog([string]$Message) {
     Add-Content -Path $logPath -Value $line -Encoding UTF8
 }
 
-Write-SyncLog "Background sync worker started."
+Write-SyncLog "Background sync worker started. First automatic sync is delayed to keep startup navigation responsive."
+Start-Sleep -Seconds 30
 
 while ($true) {
     try {
@@ -37,11 +38,13 @@ while ($true) {
 
             $backupName = "financeos-" + (Get-Date -Format "yyyy-MM-dd") + ".json"
             $backupPath = Join-Path $backupDir $backupName
-            try {
-                Invoke-WebRequest -UseBasicParsing -Uri $exportUrl -OutFile $backupPath -TimeoutSec 60
-                Write-SyncLog ("Daily backup refreshed: " + $backupPath)
-            } catch {
-                Write-SyncLog ("Daily backup failed: " + $_.Exception.Message)
+            if (-not (Test-Path $backupPath)) {
+                try {
+                    Invoke-WebRequest -UseBasicParsing -Uri $exportUrl -OutFile $backupPath -TimeoutSec 60
+                    Write-SyncLog ("Daily backup created: " + $backupPath)
+                } catch {
+                    Write-SyncLog ("Daily backup failed: " + $_.Exception.Message)
+                }
             }
 
             Get-ChildItem -Path $backupDir -Filter "financeos-*.json" -File -ErrorAction SilentlyContinue |

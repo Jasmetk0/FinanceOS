@@ -117,13 +117,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       SELECT
         a.id AS account_id,
         a.provider,
-        MIN(t.occurred_at) AS first_transaction,
-        MIN(s.recorded_at) AS first_snapshot
+        (
+          SELECT MIN(t.occurred_at)
+          FROM transactions t
+          WHERE t.account_id = a.id
+        ) AS first_transaction,
+        (
+          SELECT MIN(s.recorded_at)
+          FROM snapshots s
+          WHERE s.account_id = a.id
+        ) AS first_snapshot
       FROM accounts a
-      LEFT JOIN transactions t ON t.account_id = a.id
-      LEFT JOIN snapshots s ON s.account_id = a.id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
-      GROUP BY a.id, a.provider
     `)
     .all();
 
@@ -1583,16 +1588,31 @@ export function getHistoryData() {
         a.provider,
         a.name,
         a.type,
-        COUNT(DISTINCT t.id) AS transaction_count,
-        MIN(t.occurred_at) AS oldest_transaction,
-        MAX(t.occurred_at) AS newest_transaction,
-        COUNT(DISTINCT s.recorded_at) AS snapshot_count,
-        MIN(s.recorded_at) AS first_snapshot,
-        MAX(s.recorded_at) AS last_snapshot
+        COALESCE(t.transaction_count, 0) AS transaction_count,
+        t.oldest_transaction,
+        t.newest_transaction,
+        COALESCE(s.snapshot_count, 0) AS snapshot_count,
+        s.first_snapshot,
+        s.last_snapshot
       FROM accounts a
-      LEFT JOIN transactions t ON t.account_id = a.id
-      LEFT JOIN snapshots s ON s.account_id = a.id
-      GROUP BY a.id, a.provider, a.name, a.type
+      LEFT JOIN (
+        SELECT
+          account_id,
+          COUNT(*) AS transaction_count,
+          MIN(occurred_at) AS oldest_transaction,
+          MAX(occurred_at) AS newest_transaction
+        FROM transactions
+        GROUP BY account_id
+      ) t ON t.account_id = a.id
+      LEFT JOIN (
+        SELECT
+          account_id,
+          COUNT(*) AS snapshot_count,
+          MIN(recorded_at) AS first_snapshot,
+          MAX(recorded_at) AS last_snapshot
+        FROM snapshots
+        GROUP BY account_id
+      ) s ON s.account_id = a.id
       ORDER BY a.name ASC
     `)
     .all()

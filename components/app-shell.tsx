@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
-import { AutoSync } from "@/components/auto-sync";
 
 const navigation = [
   { href: "/", label: "Dashboard", short: "DB" },
@@ -38,6 +37,7 @@ function NavLink({
   return (
     <Link
       href={href}
+      prefetch={false}
       aria-current={active ? "page" : undefined}
       className={[
         "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition",
@@ -66,7 +66,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <>
-      <AutoSync />
       <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="hidden min-h-screen border-r border-white/7 bg-black/10 p-4 lg:flex lg:flex-col">
         <div className="px-2 py-3">
@@ -104,7 +103,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="min-w-0">
         <header className="sticky top-0 z-20 border-b border-white/7 bg-[#07100d]/90 px-4 py-3 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between gap-4">
-            <Link href="/" className="flex items-center gap-2">
+            <Link href="/" prefetch={false} className="flex items-center gap-2">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--accent)] text-xs font-black text-[#07100d]">
                 F
               </span>
@@ -123,6 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Link
                   key={item.href}
                   href={item.href}
+                  prefetch={false}
                   className={[
                     "whitespace-nowrap rounded-lg px-3 py-2 text-xs transition",
                     active
