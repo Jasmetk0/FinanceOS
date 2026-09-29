@@ -1,5 +1,6 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
-import { getPerformanceData } from "@/lib/server/analytics";
+import { getHistoryData, getPerformanceData } from "@/lib/server/analytics";
+import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ function pct(value: number | null) {
 
 export default function PerformancePage() {
   const data = getPerformanceData();
+  const history = getHistoryData();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -65,6 +67,15 @@ export default function PerformancePage() {
           positive={(data.totals.xirrPct ?? 0) >= 0}
         />
       </section>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Zisk a ztráta vůči vkladům"
+          subtitle="Porovnej skutečnou hodnotu s vloženým kapitálem, filtruj platformy i období"
+        >
+          <PortfolioHistoryChart data={history.chart} defaultMetric="profit" />
+        </SectionCard>
+      </div>
 
       <div className="mt-4">
         <SectionCard
