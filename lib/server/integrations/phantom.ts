@@ -563,19 +563,21 @@ function linkKrakenTransfers(
   const rows = db
     .prepare(
       "SELECT t.id, t.occurred_at, t.currency, t.amount, t.quantity, " +
-        "t.transfer_value_czk, t.counterparty_ref, t.raw_json " +
+        "t.transfer_value_czk, t.counterparty_ref, t.raw_json, t.category " +
         "FROM transactions t " +
         "WHERE t.provider = 'kraken' " +
         "AND t.kind = 'transfer' " +
-        "AND t.category IN ('wallet_transfer_out_unclassified', 'wallet_transfer_out_owned') " +
+        "AND t.category IN (" +
+          "'wallet_transfer_out_unclassified', 'wallet_transfer_out_owned', " +
+          "'wallet_transfer_in_unclassified', 'wallet_transfer_in_owned'" +
+        ") " +
         "ORDER BY t.occurred_at ASC",
     )
     .all();
 
   const sourceUpdate = db.prepare(
     "UPDATE transactions SET flow_scope = 'internal', " +
-      "category = 'wallet_transfer_out_owned', counterparty_ref = ?, " +
-      "source_label = ? WHERE id = ?",
+      "category = ?, counterparty_ref = ?, source_label = ? WHERE id = ?",
   );
 
   let matched = 0;
@@ -584,6 +586,8 @@ function linkKrakenTransfers(
   for (const row of rows) {
     const currentCounterparty = text(row.counterparty_ref);
     const rawDestination = destinationFromRaw(row.raw_json);
+    const sourceCategory = String(row.category || "");
+    const fromPhantom = sourceCategory.includes("wallet_transfer_in_");
     const alreadyLinked = currentCounterparty === "phantom:" + address;
     if (
       !alreadyLinked &&
@@ -593,9 +597,15 @@ function linkKrakenTransfers(
       continue;
     }
 
+    const ownedCategory = fromPhantom
+      ? "wallet_transfer_in_owned"
+      : "wallet_transfer_out_owned";
+    const sourceLabel = fromPhantom ? "Phantom → Kraken" : "Kraken → Phantom";
+
     sourceUpdate.run(
+      ownedCategory,
       "phantom:" + address,
-      "Kraken → Phantom",
+      sourceLabel,
       String(row.id),
     );
 
@@ -621,6 +631,16 @@ function linkKrakenTransfers(
         ? null
         : Math.abs(num(row.transfer_value_czk));
 
+    const signedAmount = fromPhantom
+      ? -Math.abs(num(row.amount))
+      : Math.abs(num(row.amount));
+    const signedTransferValue =
+      transferValue === null
+        ? null
+        : fromPhantom
+          ? -transferValue
+          : transferValue;
+
     upsertTransaction({
       provider: "phantom",
       accountId,
@@ -628,21 +648,24 @@ function linkKrakenTransfers(
       kind: "transfer",
       occurredAt: String(row.occurred_at),
       currency: symbol,
-      amount: Math.abs(num(row.amount)),
+      amount: signedAmount,
       amountCzk: null,
       assetId,
-      quantity: Math.abs(num(row.amount)),
+      quantity: signedAmount,
       fee: 0,
-      note: "Kraken → Phantom",
-      category: "wallet_transfer_in_owned",
-      sourceLabel: "Kraken → Phantom",
+      note: sourceLabel,
+      category: fromPhantom
+        ? "wallet_transfer_out_owned"
+        : "wallet_transfer_in_owned",
+      sourceLabel,
       flowScope: "internal",
       counterpartyRef: "kraken:" + String(row.id),
-      transferValueCzk: transferValue,
+      transferValueCzk: signedTransferValue,
       raw: {
         mirroredFromProvider: "kraken",
         mirroredTransactionId: String(row.id),
         phantomAddress: address,
+        direction: fromPhantom ? "phantom-to-kraken" : "kraken-to-phantom",
       },
     });
 
