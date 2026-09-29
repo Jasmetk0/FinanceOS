@@ -106,6 +106,6 @@ export interface PortfolioSnapshot {
 export interface PortfolioSummary {
   netWorthCzk: number;
   investedCzk: number;
-  unrealizedPnlCzk: number;
+  unrealizedPnlCzk: number | null;
   cashCzk: number;
 }

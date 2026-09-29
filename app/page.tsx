@@ -68,8 +68,16 @@ export default function Home() {
           label="Nerealizovaný P/L"
           value={data.summary.unrealizedPnlCzk}
           format="currency"
-          hint="Kde ho provider poskytuje"
-          positive={data.summary.unrealizedPnlCzk >= 0}
+          hint={
+            data.summary.unrealizedPnlCzk === null
+              ? "Nedostatek dat pro kompletní P/L"
+              : "Kde ho provider poskytuje"
+          }
+          positive={
+            data.summary.unrealizedPnlCzk === null
+              ? undefined
+              : data.summary.unrealizedPnlCzk >= 0
+          }
         />
         <StatCard
           label="Hotovost"

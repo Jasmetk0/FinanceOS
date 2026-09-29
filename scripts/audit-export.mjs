@@ -31,6 +31,68 @@ export function auditExport(data) {
   const assetById = new Map(assets.map((row) => [String(row.id), row]));
   const accountById = new Map(accounts.map((row) => [String(row.id), row]));
 
+  const orphanHoldingAccounts = holdings.filter(
+    (row) => !accountById.has(String(row.account_id)),
+  );
+  const orphanHoldingAssets = holdings.filter(
+    (row) => !assetById.has(String(row.asset_id)),
+  );
+  const orphanTransactionAccounts = transactions.filter(
+    (row) => !accountById.has(String(row.account_id)),
+  );
+  const orphanTransactionAssets = transactions.filter(
+    (row) =>
+      row.asset_id !== null &&
+      row.asset_id !== undefined &&
+      !assetById.has(String(row.asset_id)),
+  );
+
+  const duplicateKeys = (rows, keyFor) => {
+    const seen = new Set();
+    const duplicates = new Set();
+    for (const row of rows) {
+      const key = keyFor(row);
+      if (seen.has(key)) duplicates.add(key);
+      seen.add(key);
+    }
+    return [...duplicates];
+  };
+
+  const duplicateSnapshotKeys = duplicateKeys(
+    snapshots,
+    (row) => String(row.account_id) + "|" + String(row.recorded_at),
+  );
+  const duplicateTransactionKeys = duplicateKeys(
+    transactions,
+    (row) => String(row.provider) + "|" + String(row.external_id),
+  );
+  const duplicateAssetKeys = duplicateKeys(
+    assets,
+    (row) => String(row.provider) + "|" + String(row.external_id),
+  );
+
+  const investmentAccounts = accounts.filter((row) =>
+    ["brokerage", "crypto", "p2p"].includes(String(row.type || "")),
+  );
+  const pnlCoverage = investmentAccounts.map((row) => ({
+    provider: String(row.provider || ""),
+    account: String(row.name || row.external_id || row.provider || ""),
+    realized: String(row.realized_pnl_status || "unknown"),
+    unrealized: String(row.unrealized_pnl_status || "unknown"),
+  }));
+  const incompletePnlAccounts = pnlCoverage.filter(
+    (row) =>
+      !["available", "not_applicable"].includes(row.realized) ||
+      !["available", "not_applicable"].includes(row.unrealized),
+  );
+
+  const canonicalAssets = assets.filter(
+    (row) => typeof row.canonical_key === "string" && row.canonical_key.trim(),
+  ).length;
+  const isinAssets = assets.filter(
+    (row) => typeof row.isin === "string" && row.isin.trim(),
+  ).length;
+
   const holdingsByAccount = new Map();
   for (const holding of holdings) {
     const key = String(holding.account_id);
@@ -188,9 +250,54 @@ export function auditExport(data) {
       detail: "Mintos has a balance but no transaction ledger in this export.",
     });
   }
+  if (
+    orphanHoldingAccounts.length ||
+    orphanHoldingAssets.length ||
+    orphanTransactionAccounts.length ||
+    orphanTransactionAssets.length
+  ) {
+    warnings.push({
+      code: "referential_integrity",
+      detail:
+        "Export contains orphan references: " +
+        orphanHoldingAccounts.length +
+        " holding-account, " +
+        orphanHoldingAssets.length +
+        " holding-asset, " +
+        orphanTransactionAccounts.length +
+        " transaction-account, " +
+        orphanTransactionAssets.length +
+        " transaction-asset.",
+    });
+  }
+  if (
+    duplicateSnapshotKeys.length ||
+    duplicateTransactionKeys.length ||
+    duplicateAssetKeys.length
+  ) {
+    warnings.push({
+      code: "duplicate_identity",
+      detail:
+        "Duplicate keys detected: " +
+        duplicateSnapshotKeys.length +
+        " snapshots, " +
+        duplicateTransactionKeys.length +
+        " transactions, " +
+        duplicateAssetKeys.length +
+        " assets.",
+    });
+  }
+  if (incompletePnlAccounts.length) {
+    warnings.push({
+      code: "pnl_coverage_incomplete",
+      detail:
+        incompletePnlAccounts.length +
+        " investment account(s) have partial/unavailable P/L.",
+    });
+  }
 
   return {
-    schemaVersion: n(data.version),
+    schemaVersion: n(data.schemaVersion ?? data.version),
     exportedAt: data.exportedAt || null,
     counts: {
       accounts: accounts.length,
@@ -201,6 +308,24 @@ export function auditExport(data) {
       assetPrices: prices.length,
     },
     accountAudits,
+    dataIntegrity: {
+      orphanHoldingAccounts: orphanHoldingAccounts.length,
+      orphanHoldingAssets: orphanHoldingAssets.length,
+      orphanTransactionAccounts: orphanTransactionAccounts.length,
+      orphanTransactionAssets: orphanTransactionAssets.length,
+      duplicateSnapshotKeys,
+      duplicateTransactionKeys,
+      duplicateAssetKeys,
+    },
+    pnlCoverage: {
+      accounts: pnlCoverage,
+      incompleteAccounts: incompletePnlAccounts.length,
+    },
+    canonicalIdentity: {
+      assetsWithCanonicalKey: canonicalAssets,
+      assetsWithIsin: isinAssets,
+      totalAssets: assets.length,
+    },
     snapshotsByProvider: Object.fromEntries(snapshotByProvider),
     connectionHealth,
     missingCzkTransactions: missingCzk.length,
@@ -279,6 +404,32 @@ export function formatAudit(audit) {
   lines.push(
     "Historical prices: " +
       (audit.counts.assetPrices ? audit.counts.assetPrices : "NONE"),
+  );
+  lines.push(
+    "Data integrity: " +
+      (audit.dataIntegrity.orphanHoldingAccounts +
+        audit.dataIntegrity.orphanHoldingAssets +
+        audit.dataIntegrity.orphanTransactionAccounts +
+        audit.dataIntegrity.orphanTransactionAssets ===
+        0 &&
+      audit.dataIntegrity.duplicateSnapshotKeys.length === 0 &&
+      audit.dataIntegrity.duplicateTransactionKeys.length === 0 &&
+      audit.dataIntegrity.duplicateAssetKeys.length === 0
+        ? "OK"
+        : "WARNING"),
+  );
+  lines.push(
+    "P/L coverage: " +
+      (audit.pnlCoverage.incompleteAccounts === 0
+        ? "COMPLETE"
+        : audit.pnlCoverage.incompleteAccounts + " INCOMPLETE ACCOUNT(S)"),
+  );
+  lines.push(
+    "Canonical identity: " +
+      audit.canonicalIdentity.assetsWithCanonicalKey +
+      "/" +
+      audit.canonicalIdentity.totalAssets +
+      " assets",
   );
 
   if (audit.warnings.length) {

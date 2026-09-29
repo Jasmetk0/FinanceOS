@@ -201,6 +201,40 @@ export function getDiagnostics() {
     }
   }
 
+  const pnlCoverageRows = db
+    .prepare(
+      "SELECT provider, name, realized_pnl_status, unrealized_pnl_status " +
+        "FROM accounts WHERE type IN ('brokerage', 'crypto', 'p2p') ORDER BY provider, name",
+    )
+    .all();
+
+  const incompletePnl = pnlCoverageRows.filter((row) => {
+    const realized = String(row.realized_pnl_status || "unknown");
+    const unrealized = String(row.unrealized_pnl_status || "unknown");
+    const incomplete = (status: string) =>
+      !["available", "not_applicable"].includes(status);
+    return incomplete(realized) || incomplete(unrealized);
+  });
+
+  checks.push({
+    id: "pnl-coverage",
+    severity: incompletePnl.length ? "warning" : "ok",
+    title: "P/L data coverage",
+    detail: incompletePnl.length
+      ? incompletePnl
+          .map(
+            (row) =>
+              String(row.name) +
+              " (realized " +
+              String(row.realized_pnl_status || "unknown") +
+              ", unrealized " +
+              String(row.unrealized_pnl_status || "unknown") +
+              ")",
+          )
+          .join("; ")
+      : "All investment accounts explicitly report available or not-applicable P/L.",
+  });
+
   const krakenTransferStats = db
     .prepare(
       "SELECT " +

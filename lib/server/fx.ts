@@ -1,3 +1,5 @@
+import { normalizeCurrencyAmount } from "@/lib/shared/finance-normalization.mjs";
+
 type Rates = Record<string, number>;
 type YearRates = Map<string, Rates>;
 
@@ -184,8 +186,9 @@ export async function toCzk(
   currency: string,
   at?: string | Date,
 ): Promise<number> {
-  const code = currency.toUpperCase();
-  if (code === "CZK") return amount;
+  const normalized = normalizeCurrencyAmount(amount, currency);
+  const code = normalized.currency;
+  if (code === "CZK") return normalized.amount;
 
   const rates = await getCzkRates(at);
   const rate = rates[code];
@@ -194,7 +197,7 @@ export async function toCzk(
       `Missing CZK exchange rate for ${code}${at ? ` at ${isoDate(at)}` : ""}.`,
     );
   }
-  return amount * rate;
+  return normalized.amount * rate;
 }
 
 export async function maybeToCzk(

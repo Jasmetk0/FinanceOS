@@ -119,3 +119,80 @@ test("Mintos balance-only state is explicit", () => {
 
   assert.equal(audit.mintos.historyStatus, "balance_only");
 });
+
+
+test("export audit catches orphan references, duplicate identities and incomplete P/L", () => {
+  const audit = auditExport({
+    version: 2,
+    schemaVersion: 2,
+    accounts: [
+      {
+        id: "broker",
+        provider: "trading212",
+        name: "Broker",
+        type: "brokerage",
+        total_value_czk: 1000,
+        cash_value_czk: 0,
+        realized_pnl_status: "available",
+        unrealized_pnl_status: "partial",
+      },
+    ],
+    assets: [
+      {
+        id: "asset",
+        provider: "trading212",
+        external_id: "ABC_US_EQ",
+        asset_class: "stock",
+        canonical_key: "symbol:ABC",
+      },
+      {
+        id: "asset-duplicate",
+        provider: "trading212",
+        external_id: "ABC_US_EQ",
+        asset_class: "stock",
+      },
+    ],
+    holdings: [
+      {
+        account_id: "missing-account",
+        asset_id: "missing-asset",
+        market_value_czk: 100,
+      },
+    ],
+    transactions: [
+      {
+        provider: "trading212",
+        external_id: "same",
+        account_id: "broker",
+        asset_id: null,
+        amount_czk: 1,
+      },
+      {
+        provider: "trading212",
+        external_id: "same",
+        account_id: "missing-account",
+        asset_id: "missing-asset",
+        amount_czk: 1,
+      },
+    ],
+    snapshots: [
+      { account_id: "broker", recorded_at: "2026-09-29" },
+      { account_id: "broker", recorded_at: "2026-09-29" },
+    ],
+    assetPrices: [],
+    connections: [],
+  });
+
+  assert.equal(audit.dataIntegrity.orphanHoldingAccounts, 1);
+  assert.equal(audit.dataIntegrity.orphanHoldingAssets, 1);
+  assert.equal(audit.dataIntegrity.orphanTransactionAccounts, 1);
+  assert.equal(audit.dataIntegrity.orphanTransactionAssets, 1);
+  assert.equal(audit.dataIntegrity.duplicateSnapshotKeys.length, 1);
+  assert.equal(audit.dataIntegrity.duplicateTransactionKeys.length, 1);
+  assert.equal(audit.dataIntegrity.duplicateAssetKeys.length, 1);
+  assert.equal(audit.pnlCoverage.incompleteAccounts, 1);
+  assert.equal(audit.canonicalIdentity.assetsWithCanonicalKey, 1);
+  assert.ok(audit.warnings.some((warning) => warning.code === "referential_integrity"));
+  assert.ok(audit.warnings.some((warning) => warning.code === "duplicate_identity"));
+  assert.ok(audit.warnings.some((warning) => warning.code === "pnl_coverage_incomplete"));
+});

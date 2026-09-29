@@ -55,6 +55,8 @@ export async function saveManualBalance(input: {
     totalValue: signedValue,
     realizedPnl: 0,
     unrealizedPnl: 0,
+    realizedPnlStatus: "not_applicable",
+    unrealizedPnlStatus: "not_applicable",
     cashValueCzk: kind === "cash" ? signedValueCzk : 0,
     investedValueCzk: 0,
     totalValueCzk: signedValueCzk,
