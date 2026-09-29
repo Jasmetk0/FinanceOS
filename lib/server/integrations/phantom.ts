@@ -613,16 +613,20 @@ function linkKrakenTransfers(
     if (!symbol) continue;
 
     const externalId = phantomAssetExternalId(symbol);
+    const identity = canonicalCryptoIdentity(symbol, symbol);
     const assetId = upsertAsset({
       provider: "phantom",
       externalId,
-      symbol,
-      name: symbol === "USDC" ? "USD Coin" : symbol,
+      symbol: identity.canonicalSymbol,
+      name: symbol === "USDC" ? "USD Coin" : identity.canonicalSymbol,
       assetClass: "crypto",
       currency: "USD",
+      canonicalKey: identity.canonicalKey,
+      listingSymbol: identity.listingSymbol,
       raw: {
         source: "matched-kraken-transfer",
         phantomAddress: address,
+        financeOsIdentity: identity,
       },
     });
 
@@ -831,6 +835,8 @@ export async function syncPhantom() {
       totalValue: knownValueCzk,
       realizedPnl: 0,
       unrealizedPnl: 0,
+      realizedPnlStatus: "unavailable",
+      unrealizedPnlStatus: "unavailable",
       cashValueCzk: 0,
       investedValueCzk: knownValueCzk,
       totalValueCzk: knownValueCzk,
