@@ -324,6 +324,80 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
       markDeposit.run(String(row.id));
     }
   }
+
+  const cardEvidence = db
+    .prepare(`
+      SELECT 1
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND (
+          category = 'card_cashback'
+          OR category LIKE 'card_spend:%'
+          OR category LIKE 'card_refund:%'
+          OR category = 'card_fee'
+        )
+      LIMIT 1
+    `)
+    .get();
+
+  if (cardEvidence) {
+    const accounts = db
+      .prepare(`
+        SELECT
+          id,
+          cash_value,
+          cash_value_czk,
+          unclassified_value,
+          unclassified_value_czk,
+          raw_json
+        FROM accounts
+        WHERE provider = 'trading212'
+          AND type = 'brokerage'
+          AND unclassified_value_czk > 0
+      `)
+      .all();
+
+    const reconcile = db.prepare(`
+      UPDATE accounts
+      SET
+        cash_value = ?,
+        cash_value_czk = ?,
+        unclassified_value = 0,
+        unclassified_value_czk = 0,
+        reconciliation_difference = 0,
+        reconciliation_status = 'reconciled',
+        raw_json = ?
+      WHERE id = ?
+    `);
+
+    for (const row of accounts) {
+      const spendingPot = Number(row.unclassified_value) || 0;
+      const spendingPotCzk = Number(row.unclassified_value_czk) || 0;
+      const raw = parseJsonObject(row.raw_json);
+      const oldReconciliation = parseJsonObject(
+        raw.financeOsReconciliation,
+      );
+
+      reconcile.run(
+        (Number(row.cash_value) || 0) + spendingPot,
+        (Number(row.cash_value_czk) || 0) + spendingPotCzk,
+        JSON.stringify({
+          ...raw,
+          financeOsReconciliation: {
+            ...oldReconciliation,
+            spendingPot: {
+              value: spendingPot,
+              valueCzk: spendingPotCzk,
+              source: "provider_total_residual",
+              confidence: "confirmed_by_card_cashback_signature",
+            },
+            unclassifiedValue: 0,
+          },
+        }),
+        String(row.id),
+      );
+    }
+  }
 }
 
 function backfillAccountCoverage(db: DatabaseSync) {
