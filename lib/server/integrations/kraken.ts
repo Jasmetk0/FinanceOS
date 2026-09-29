@@ -10,6 +10,7 @@ import {
   upsertTransaction,
 } from "@/lib/server/repository";
 import type { TransactionKind } from "@/lib/domain";
+import { canonicalCryptoIdentity } from "@/lib/shared/finance-normalization.mjs";
 import { getDb } from "@/lib/server/db";
 import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 
@@ -723,6 +724,9 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       "WHERE id = ?",
   );
 
+  let unrealizedKnownTotal = 0;
+  let allHoldingsComplete = true;
+
   for (const holding of holdings) {
     const symbol = String(holding.symbol).toUpperCase();
     const lots = lotsBySymbol.get(symbol) ?? [];
@@ -747,6 +751,12 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       allocatedCost === null
         ? null
         : numberValue(holding.market_value_czk, 0) - allocatedCost;
+
+    if (unrealized === null || !complete) {
+      allHoldingsComplete = false;
+    } else {
+      unrealizedKnownTotal += unrealized;
+    }
 
     holdingUpdate.run(
       averagePrice,
@@ -777,15 +787,23 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
       raw = {};
     }
     db.prepare(
-      "UPDATE accounts SET raw_json = ?, realized_pnl_czk = ? WHERE id = ?",
+      "UPDATE accounts SET raw_json = ?, realized_pnl_czk = ?, realized_pnl_status = ?, " +
+        "unrealized_pnl_czk = ?, unrealized_pnl_status = ? WHERE id = ?",
     ).run(
       JSON.stringify({
         ...raw,
-        costBasisStatus: realizedComplete ? "complete" : "partial",
+        costBasisStatus:
+          realizedComplete && allHoldingsComplete ? "complete" : "partial",
         incompleteCostBasisSymbols: [...incompleteSymbols].sort(),
         reconstructedRealizedPnlCzk: realizedComplete ? realizedTotal : null,
+        reconstructedUnrealizedPnlCzk: allHoldingsComplete
+          ? unrealizedKnownTotal
+          : null,
       }),
       realizedComplete ? realizedTotal : 0,
+      realizedComplete ? "available" : "partial",
+      allHoldingsComplete ? unrealizedKnownTotal : 0,
+      allHoldingsComplete ? "available" : "partial",
       String(account.id),
     );
   }
@@ -855,6 +873,8 @@ export async function syncKraken() {
     totalValue: totalValueCzk,
     realizedPnl: 0,
     unrealizedPnl: 0,
+    realizedPnlStatus: "unavailable",
+    unrealizedPnlStatus: "unavailable",
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
@@ -865,6 +885,7 @@ export async function syncKraken() {
 
   const holdings = [];
   for (const item of preparedHoldings) {
+    const identity = canonicalCryptoIdentity(item.normalized, item.rawAsset);
     const assetIdValue = upsertAsset({
       provider: "kraken",
       externalId: item.rawAsset,
@@ -872,7 +893,11 @@ export async function syncKraken() {
       name: item.normalized,
       assetClass: isFiat(item.normalized) ? "cash" : "crypto",
       currency: item.quote,
-      raw: { rawAsset: item.rawAsset },
+      canonicalKey: isFiat(item.normalized)
+        ? "currency:" + item.normalized
+        : identity.canonicalKey,
+      listingSymbol: identity.listingSymbol,
+      raw: { rawAsset: item.rawAsset, financeOsIdentity: identity },
     });
 
     holdings.push({
@@ -912,6 +937,7 @@ export async function syncKraken() {
     const occurredAt = new Date(numberValue(trade.time) * 1000).toISOString();
 
     let assetIdValue = assetId("kraken", baseRaw);
+    const identity = canonicalCryptoIdentity(base, baseRaw);
     assetIdValue = upsertAsset({
       provider: "kraken",
       externalId: baseRaw,
@@ -919,7 +945,9 @@ export async function syncKraken() {
       name: base,
       assetClass: "crypto",
       currency: quote,
-      raw: pairMeta,
+      canonicalKey: identity.canonicalKey,
+      listingSymbol: identity.listingSymbol,
+      raw: { ...pairMeta, financeOsIdentity: identity },
     });
 
     upsertTransaction({
