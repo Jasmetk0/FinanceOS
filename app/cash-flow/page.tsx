@@ -63,7 +63,11 @@ export default function CashFlowPage() {
           label="212 cashback"
           value={data.totals.cashbackCzk}
           format="currency"
-          hint="Skutečně rozpoznaný cashback z karty"
+          hint={
+            card.classificationSource === "validated_public_history"
+              ? "Cashback rozpoznaný z opakovaného provider vzorce"
+              : "Cashback rozpoznaný z provider historie"
+          }
           positive={data.totals.cashbackCzk > 0}
         />
       </section>
@@ -177,7 +181,13 @@ export default function CashFlowPage() {
         <div className="mt-4">
           <SectionCard
             title="Trading 212 Card"
-            subtitle="Card debit / refund / cashback rozpoznané z bohatšího Trading 212 CSV exportu"
+            subtitle={
+              card.classificationSource === "rich_export"
+                ? "Card debit / refund / cashback z bohatšího Trading 212 exportu"
+                : card.classificationSource === "mixed"
+                  ? "Kombinace merchant exportu a ověřeného fallbacku"
+                  : "Card spend / cashback z ověřeného provider-history fallbacku"
+            }
           >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {[
@@ -211,13 +221,13 @@ export default function CashFlowPage() {
             </div>
             <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
               FinanceOS nepředpokládá, že každý malý příchozí pohyb je cashback.
-              Přesnou klasifikaci přebírá z Trading 212 history exportu. Zobrazené
-              procento je skutečný cashback dělený všemi rozpoznanými kartovými
-              výdaji, takže nemusí být přesně 1,5 % kvůli neeligible platbám,
-              vratkám nebo měsíčnímu limitu. Aktuální 212 program při splnění
-              podmínek používá Invest cashback a odměnu následně investuje do
-              zvoleného Pie; FinanceOS proto cashback nepočítá jako nový vklad
-              uživatele.
+              Bohatší Trading 212 export je preferovaný zdroj merchant detailu.
+              Když je rate-limitovaný, fallback se aktivuje až po opakovaném
+              potvrzení provider vzorce a jako card spend označí pouze dny
+              potvrzené odpovídajícím cashbackem. Zobrazené procento je cashback
+              dělený rozpoznanými kartovými výdaji a není použito k dopočítání
+              zůstatku. Cashback se vede jako externí odměna, ne jako vlastní
+              vklad ani tržní výnos.
             </p>
 
             <div className="mt-5 grid gap-4 xl:grid-cols-2">
