@@ -3,6 +3,14 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
+type LiveProvider = "trading212" | "kraken" | "phantom";
+
+function liveProviderLabel(provider: LiveProvider) {
+  if (provider === "trading212") return "Trading 212";
+  if (provider === "kraken") return "Kraken";
+  return "Phantom";
+}
+
 interface ConnectionSafe {
   provider: string;
   label: string;
@@ -54,7 +62,7 @@ export function ConnectionsManager({
   const [message, setMessage] = useState<string | null>(null);
 
   async function connect(
-    provider: "trading212" | "kraken",
+    provider: LiveProvider,
     form: HTMLFormElement,
   ) {
     setBusy(provider);
@@ -70,9 +78,12 @@ export function ConnectionsManager({
           environment:
             provider === "trading212"
               ? String(formData.get("environment") || "live")
-              : "live",
+              : provider === "phantom"
+                ? "solana-mainnet"
+                : "live",
           apiKey: String(formData.get("apiKey") || ""),
           apiSecret: String(formData.get("apiSecret") || ""),
+          address: String(formData.get("address") || ""),
         }),
       });
       const data = (await response.json()) as {
@@ -84,7 +95,7 @@ export function ConnectionsManager({
       setConnections(data.connections ?? []);
       form.reset();
       setMessage(
-        (provider === "trading212" ? "Trading 212" : "Kraken") +
+        liveProviderLabel(provider) +
           " připojen. Probíhá první synchronizace…",
       );
 
@@ -105,8 +116,7 @@ export function ConnectionsManager({
       }
 
       setMessage(
-        (provider === "trading212" ? "Trading 212" : "Kraken") +
-          " připojen a synchronizován.",
+        liveProviderLabel(provider) + " připojen a synchronizován.",
       );
       const refreshed = await fetch("/api/connections", { cache: "no-store" });
       const refreshedData = (await refreshed.json()) as {
@@ -121,7 +131,7 @@ export function ConnectionsManager({
     }
   }
 
-  async function disconnect(provider: "trading212" | "kraken") {
+  async function disconnect(provider: LiveProvider) {
     if (!window.confirm("Odpojit provider? Synchronizovaná historie zůstane v lokální databázi.")) {
       return;
     }
@@ -148,7 +158,7 @@ export function ConnectionsManager({
     }
   }
 
-  async function syncOne(provider: "trading212" | "kraken") {
+  async function syncOne(provider: LiveProvider) {
     setBusy(provider);
     setMessage(null);
 
@@ -180,6 +190,7 @@ export function ConnectionsManager({
 
   const trading212 = providerConnection(connections, "trading212");
   const kraken = providerConnection(connections, "kraken");
+  const phantom = providerConnection(connections, "phantom");
 
   return (
     <div className="space-y-4">
@@ -221,6 +232,17 @@ export function ConnectionsManager({
           onDisconnect={() => disconnect("kraken")}
           onSync={() => syncOne("kraken")}
         />
+
+        <ProviderCard
+          title="Phantom (Solana)"
+          description="Watch-only synchronizace přes veřejnou Solana adresu. FinanceOS nikdy nepotřebuje seed phrase ani private key."
+          connection={phantom}
+          busy={busy === "phantom"}
+          onSubmit={(form) => connect("phantom", form)}
+          onDisconnect={() => disconnect("phantom")}
+          onSync={() => syncOne("phantom")}
+          credentialMode="phantom"
+        />
       </div>
     </div>
   );
@@ -235,6 +257,7 @@ function ProviderCard({
   onDisconnect,
   onSync,
   children,
+  credentialMode = "api",
 }: {
   title: string;
   description: string;
@@ -244,6 +267,7 @@ function ProviderCard({
   onDisconnect: () => void;
   onSync: () => void;
   children?: React.ReactNode;
+  credentialMode?: "api" | "phantom";
 }) {
   return (
     <article className="rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
@@ -306,32 +330,63 @@ function ProviderCard({
           }}
         >
           {children}
-          <label className="block">
-            <span className="text-xs text-[var(--muted)]">API key</span>
-            <input
-              name="apiKey"
-              type="password"
-              autoComplete="off"
-              required
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
-            />
-          </label>
-          <label className="block">
-            <span className="text-xs text-[var(--muted)]">API secret / private key</span>
-            <input
-              name="apiSecret"
-              type="password"
-              autoComplete="off"
-              required
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
-            />
-          </label>
+          {credentialMode === "phantom" ? (
+            <>
+              <label className="block">
+                <span className="text-xs text-[var(--muted)]">
+                  Veřejná Solana adresa
+                </span>
+                <input
+                  name="address"
+                  type="text"
+                  autoComplete="off"
+                  required
+                  spellCheck={false}
+                  placeholder="Např. veřejná adresa z Phantom Receive"
+                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 font-mono text-xs outline-none focus:border-[var(--accent)]/50"
+                />
+              </label>
+              <p className="rounded-xl border border-[var(--accent)]/15 bg-[var(--accent)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+                Vkládej pouze veřejnou adresu. Seed phrase, recovery phrase ani
+                private key do FinanceOS nikdy nezadávej.
+              </p>
+            </>
+          ) : (
+            <>
+              <label className="block">
+                <span className="text-xs text-[var(--muted)]">API key</span>
+                <input
+                  name="apiKey"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
+                />
+              </label>
+              <label className="block">
+                <span className="text-xs text-[var(--muted)]">
+                  API secret / private key
+                </span>
+                <input
+                  name="apiSecret"
+                  type="password"
+                  autoComplete="off"
+                  required
+                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
+                />
+              </label>
+            </>
+          )}
           <button
             type="submit"
             disabled={busy}
             className="w-full rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:opacity-60"
           >
-            {busy ? "Testing connection…" : "Test & connect"}
+            {busy
+              ? "Testing connection…"
+              : credentialMode === "phantom"
+                ? "Check address & connect"
+                : "Test & connect"}
           </button>
         </form>
       )}

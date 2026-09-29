@@ -265,6 +265,64 @@ export function getDiagnostics() {
     }
   }
 
+  const phantomAccount = db
+    .prepare(
+      "SELECT raw_json, total_value_czk FROM accounts WHERE provider = 'phantom' LIMIT 1",
+    )
+    .get();
+
+  if (phantomAccount?.raw_json) {
+    try {
+      const raw = JSON.parse(String(phantomAccount.raw_json)) as Record<string, unknown>;
+      const valuationStatus =
+        typeof raw.valuationStatus === "string"
+          ? raw.valuationStatus
+          : "unknown";
+      const unpricedMints = Array.isArray(raw.unpricedMints)
+        ? raw.unpricedMints.map(String)
+        : [];
+      const matched = num(raw.matchedKrakenTransfers);
+      const matchedWithBookValue = num(
+        raw.matchedKrakenTransfersWithBookValue,
+      );
+
+      checks.push({
+        id: "phantom-valuation",
+        severity: valuationStatus === "complete" ? "ok" : "warning",
+        title: "Phantom valuation",
+        detail:
+          valuationStatus === "complete"
+            ? "Current Solana wallet holdings are fully priced by the supported watch-only valuation set."
+            : "Phantom valuation is " +
+              valuationStatus +
+              (unpricedMints.length
+                ? "; " +
+                  unpricedMints.length.toLocaleString("cs-CZ") +
+                  " token mint(s) are stored but not valued."
+                : "."),
+      });
+
+      checks.push({
+        id: "phantom-kraken-links",
+        severity:
+          matched > 0 && matchedWithBookValue < matched ? "warning" : "ok",
+        title: "Kraken → Phantom transfer links",
+        detail:
+          matched.toLocaleString("cs-CZ") +
+          " transfer(s) matched to this wallet; " +
+          matchedWithBookValue.toLocaleString("cs-CZ") +
+          " carry reconstructed book value.",
+      });
+    } catch {
+      checks.push({
+        id: "phantom-valuation",
+        severity: "warning",
+        title: "Phantom valuation",
+        detail: "Phantom wallet metadata could not be parsed.",
+      });
+    }
+  }
+
   const investownAccount = db
     .prepare(
       "SELECT raw_json, total_value_czk, cash_value_czk, invested_value_czk FROM accounts WHERE provider = 'investown' LIMIT 1",
