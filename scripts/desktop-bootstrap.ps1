@@ -38,6 +38,38 @@ function Show-BootstrapError([string]$Message) {
     }
 }
 
+function Invoke-GitProcess([string[]]$Arguments) {
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    if (-not $gitCommand) {
+        throw "Git was not found in PATH."
+    }
+
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $gitCommand.Source
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.Arguments = (
+        $Arguments |
+            ForEach-Object { '"' + ([string]$_).Replace('"', '\"') + '"' }
+    ) -join " "
+
+    $process = New-Object System.Diagnostics.Process
+    $process.StartInfo = $startInfo
+    [void]$process.Start()
+
+    $stdout = $process.StandardOutput.ReadToEnd()
+    $stderr = $process.StandardError.ReadToEnd()
+    $process.WaitForExit()
+
+    return [PSCustomObject]@{
+        ExitCode = $process.ExitCode
+        StdOut = $stdout
+        StdErr = $stderr
+    }
+}
+
 function Invoke-PowerShellScript(
     [string]$Script,
     [string[]]$ExtraArguments
@@ -54,11 +86,17 @@ function Invoke-PowerShellScript(
 }
 
 function Read-RemoteScript([string]$Path) {
-    $lines = @(& git -C $resolvedRepoRoot show ("origin/buuk:" + $Path) 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $lines.Count -eq 0) {
+    $result = Invoke-GitProcess @(
+        "-C", $resolvedRepoRoot,
+        "show", ("origin/buuk:" + $Path)
+    )
+    if ($result.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace($result.StdOut)) {
+        if (-not [string]::IsNullOrWhiteSpace($result.StdErr)) {
+            Write-BootstrapLog ("git show failed: " + $result.StdErr.Trim())
+        }
         return $null
     }
-    return ($lines -join [Environment]::NewLine)
+    return $result.StdOut.TrimEnd()
 }
 
 try {
@@ -71,18 +109,25 @@ try {
         throw "FinanceOS Git repository was not found at $resolvedRepoRoot."
     }
 
-    $git = Get-Command git -ErrorAction SilentlyContinue
-    if (-not $git) {
-        throw "Git was not found in PATH."
-    }
-
     $remoteAvailable = $false
-    & git -C $resolvedRepoRoot fetch origin buuk --prune *> $null
-    if ($LASTEXITCODE -eq 0) {
+    $fetchResult = Invoke-GitProcess @(
+        "-C", $resolvedRepoRoot,
+        "fetch", "origin", "buuk", "--prune"
+    )
+    if ($fetchResult.ExitCode -eq 0) {
         $remoteAvailable = $true
         Write-BootstrapLog "Fetched origin/buuk."
+        if (-not [string]::IsNullOrWhiteSpace($fetchResult.StdErr)) {
+            Write-BootstrapLog ("git fetch: " + $fetchResult.StdErr.Trim())
+        }
     } else {
-        Write-BootstrapLog "git fetch failed; cached/local fallback will be used where possible."
+        Write-BootstrapLog (
+            "git fetch failed (exit " +
+            $fetchResult.ExitCode +
+            "): " +
+            $fetchResult.StdErr.Trim()
+        )
+        Write-BootstrapLog "Cached/local fallback will be used where possible."
     }
 
     # The installed bootstrap is only a stable loader. Whenever GitHub is
