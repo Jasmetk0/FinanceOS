@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 
 function n(value) {
   const parsed = Number(value);
@@ -297,7 +298,7 @@ export function formatAudit(audit) {
   return lines.join("\n");
 }
 
-if (import.meta.url === new URL(process.argv[1], "file:").href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const filename = process.argv[2];
   if (!filename) {
     console.error("Usage: node scripts/audit-export.mjs <financeos-export.json>");
