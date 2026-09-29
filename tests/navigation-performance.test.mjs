@@ -43,3 +43,25 @@ test("background sync yields startup to interactive navigation", () => {
   assert.ok(worker.includes("Start-Sleep -Seconds 30"));
   assert.ok(worker.includes("if (-not (Test-Path $backupPath))"));
 });
+
+
+test("desktop launcher cleans stale Next.js generated state before rebuild", () => {
+  const launcher = source("scripts/start-financeos.ps1");
+  assert.ok(launcher.includes('$productionBuildId = Join-Path $nextBuild "BUILD_ID"'));
+  assert.ok(launcher.includes('Remove-Item $nextBuild -Recurse -Force -ErrorAction Stop'));
+  assert.ok(
+    launcher.includes(
+      'Building FinanceOS production bundle from a clean .next directory.',
+    ),
+  );
+});
+
+test("Windows credential protection explicitly loads the DPAPI assembly", () => {
+  const cryptoSource = source("lib/server/crypto.ts");
+  assert.ok(
+    cryptoSource.includes(
+      'Add-Type -AssemblyName System.Security -ErrorAction Stop;',
+    ),
+  );
+  assert.ok(cryptoSource.includes("LOAD_WINDOWS_SECURITY"));
+});
