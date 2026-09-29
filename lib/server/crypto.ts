@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/paths";
 
 const VERSION = "v1";
+const LOAD_WINDOWS_SECURITY = "Add-Type -AssemblyName System.Security -ErrorAction Stop;";
 let cachedMasterKey: Buffer | null = null;
 
 function validateKey(key: Buffer): Buffer {
@@ -39,6 +40,7 @@ function runWindowsPowerShell(script: string): string {
 function protectWithDpapi(key: Buffer): string {
   const input = key.toString("base64");
   const script =
+    LOAD_WINDOWS_SECURITY +
     "$bytes=[Convert]::FromBase64String('" +
     input +
     "');" +
@@ -53,6 +55,7 @@ function protectWithDpapi(key: Buffer): string {
 function unprotectWithDpapi(payload: string): Buffer {
   const safe = payload.trim();
   const script =
+    LOAD_WINDOWS_SECURITY +
     "$bytes=[Convert]::FromBase64String('" +
     safe +
     "');" +
