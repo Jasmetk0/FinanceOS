@@ -13,6 +13,10 @@ import {
   validateKraken,
   type KrakenCredentials,
 } from "@/lib/server/integrations/kraken";
+import {
+  validatePhantom,
+  type PhantomCredentials,
+} from "@/lib/server/integrations/phantom";
 import type { ProviderId } from "@/lib/domain";
 
 export const runtime = "nodejs";
@@ -34,6 +38,7 @@ export async function POST(request: Request) {
     const environment = String(body.environment || "live");
     const apiKey = String(body.apiKey || "").trim();
     const apiSecret = String(body.apiSecret || "").trim();
+    const address = String(body.address || "").trim();
 
     if (provider === "trading212") {
       if (!["live", "demo"].includes(environment)) {
@@ -46,6 +51,10 @@ export async function POST(request: Request) {
       const credentials: KrakenCredentials = { apiKey, apiSecret };
       await validateKraken(credentials);
       saveConnection("kraken", "Kraken", "live", credentials);
+    } else if (provider === "phantom") {
+      const credentials: PhantomCredentials = { address };
+      await validatePhantom(credentials);
+      saveConnection("phantom", "Phantom", "solana-mainnet", credentials);
     } else {
       return NextResponse.json({ error: "Unsupported provider." }, { status: 400 });
     }
@@ -64,7 +73,11 @@ export async function DELETE(request: Request) {
   try {
     const body = (await request.json()) as Record<string, unknown>;
     const provider = String(body.provider || "") as ProviderId;
-    if (provider !== "trading212" && provider !== "kraken") {
+    if (
+      provider !== "trading212" &&
+      provider !== "kraken" &&
+      provider !== "phantom"
+    ) {
       return NextResponse.json({ error: "Unsupported provider." }, { status: 400 });
     }
 
