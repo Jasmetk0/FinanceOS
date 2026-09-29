@@ -187,8 +187,13 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const value = hasValue ? providerValues.get(provider) ?? 0 : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
       providerMetrics[provider] = historyMetric(value, contributed);
-      if (value !== null) totalValue += value;
-      totalContribution += contributed;
+      if (value !== null) {
+        totalValue += value;
+        // Only compare contributions against providers whose portfolio value
+        // is actually known on this date. This avoids fake losses before a
+        // newly connected provider has its first historical snapshot.
+        totalContribution += contributed;
+      }
     }
 
     points.push({
