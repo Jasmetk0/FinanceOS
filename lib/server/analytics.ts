@@ -6,6 +6,14 @@ function num(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function pnlIsKnown(status: unknown) {
+  return status === "available" || status === "not_applicable";
+}
+
+function pnlValue(value: unknown, status: unknown): number | null {
+  return pnlIsKnown(status) ? num(value) : null;
+}
+
 function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
   const rows = db
     .prepare(`
@@ -360,6 +368,13 @@ export function getDashboardData() {
         COALESCE(SUM(total_value_czk), 0) AS net_worth,
         COALESCE(SUM(invested_value_czk), 0) AS invested,
         COALESCE(SUM(unrealized_pnl_czk), 0) AS unrealized_pnl,
+        COALESCE(SUM(
+          CASE
+            WHEN type IN ('brokerage', 'crypto', 'p2p')
+              AND unrealized_pnl_status NOT IN ('available', 'not_applicable')
+            THEN 1 ELSE 0
+          END
+        ), 0) AS unavailable_unrealized_pnl,
         COALESCE(SUM(cash_value_czk), 0) AS cash,
         COALESCE(SUM(unclassified_value_czk), 0) AS unclassified
       FROM accounts
@@ -560,7 +575,10 @@ export function getDashboardData() {
     summary: {
       netWorthCzk: num(totals.net_worth),
       investedCzk: num(totals.invested),
-      unrealizedPnlCzk: num(totals.unrealized_pnl),
+      unrealizedPnlCzk:
+        num(totals.unavailable_unrealized_pnl) > 0
+          ? null
+          : num(totals.unrealized_pnl),
       cashCzk: num(totals.cash),
       unclassifiedCzk: num(totals.unclassified),
     },
@@ -873,7 +891,8 @@ export function getPerformanceData() {
     .prepare(`
       SELECT
         id, provider, name, type, total_value_czk,
-        realized_pnl_czk, unrealized_pnl_czk
+        realized_pnl_czk, unrealized_pnl_czk,
+        realized_pnl_status, unrealized_pnl_status
       FROM accounts
       WHERE type IN ('brokerage', 'crypto', 'p2p')
       ORDER BY total_value_czk DESC
@@ -984,8 +1003,16 @@ export function getPerformanceData() {
       estimatedProfitCzk: estimatedProfit,
       simpleReturnPct: simpleReturn,
       xirrPct: xirr === null ? null : xirr * 100,
-      realizedPnlCzk: num(account.realized_pnl_czk),
-      unrealizedPnlCzk: num(account.unrealized_pnl_czk),
+      realizedPnlCzk: pnlValue(
+        account.realized_pnl_czk,
+        account.realized_pnl_status,
+      ),
+      unrealizedPnlCzk: pnlValue(
+        account.unrealized_pnl_czk,
+        account.unrealized_pnl_status,
+      ),
+      realizedPnlStatus: String(account.realized_pnl_status || "unknown"),
+      unrealizedPnlStatus: String(account.unrealized_pnl_status || "unknown"),
       externalFlowCount: cashRows.length,
       unclassifiedTransferCount: num(unclassifiedTransferRow?.count),
     };
@@ -996,8 +1023,16 @@ export function getPerformanceData() {
       acc.currentValueCzk += account.currentValueCzk;
       acc.depositsCzk += account.depositsCzk;
       acc.withdrawalsCzk += account.withdrawalsCzk;
-      acc.realizedPnlCzk += account.realizedPnlCzk;
-      acc.unrealizedPnlCzk += account.unrealizedPnlCzk;
+      if (account.realizedPnlCzk === null) {
+        acc.realizedPnlUnknown += 1;
+      } else {
+        acc.realizedPnlCzk += account.realizedPnlCzk;
+      }
+      if (account.unrealizedPnlCzk === null) {
+        acc.unrealizedPnlUnknown += 1;
+      } else {
+        acc.unrealizedPnlCzk += account.unrealizedPnlCzk;
+      }
       return acc;
     },
     {
@@ -1006,8 +1041,15 @@ export function getPerformanceData() {
       withdrawalsCzk: 0,
       realizedPnlCzk: 0,
       unrealizedPnlCzk: 0,
+      realizedPnlUnknown: 0,
+      unrealizedPnlUnknown: 0,
     },
   );
+
+  const realizedPnlCzk =
+    totals.realizedPnlUnknown > 0 ? null : totals.realizedPnlCzk;
+  const unrealizedPnlCzk =
+    totals.unrealizedPnlUnknown > 0 ? null : totals.unrealizedPnlCzk;
 
   const portfolioWalletGap = db
     .prepare(`
@@ -1068,7 +1110,11 @@ export function getPerformanceData() {
   return {
     accounts: accountRows,
     totals: {
-      ...totals,
+      currentValueCzk: totals.currentValueCzk,
+      depositsCzk: totals.depositsCzk,
+      withdrawalsCzk: totals.withdrawalsCzk,
+      realizedPnlCzk,
+      unrealizedPnlCzk,
       netContributedCzk,
       estimatedProfitCzk,
       simpleReturnPct:
