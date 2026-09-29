@@ -465,7 +465,14 @@ function quantityMatches(expected: number, actual: number) {
 }
 
 async function matchKrakenTransfersFromChain(address: string) {
-  const krakenTransfers = unlinkedKrakenTransfers();
+  // Transfers whose Kraken funding metadata already names this address can be
+  // linked directly later. Only spend public-RPC history budget on genuinely
+  // unresolved counterparties.
+  const krakenTransfers = unlinkedKrakenTransfers().filter(
+    (item) =>
+      !matchesAddress(item.counterpartyRef, address) &&
+      !matchesAddress(destinationFromRaw(item.rawJson), address),
+  );
   if (!krakenTransfers.length) {
     return {
       matched: 0,
