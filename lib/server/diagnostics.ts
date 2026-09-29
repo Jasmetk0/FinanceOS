@@ -139,7 +139,17 @@ export function getDiagnostics() {
 
   const accountRows = db
     .prepare(
-      "SELECT a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk, COALESCE(SUM(CASE WHEN ast.asset_class = 'cash' THEN 0 ELSE h.market_value_czk END), 0) AS holdings_value_czk FROM accounts a LEFT JOIN holdings h ON h.account_id = a.id LEFT JOIN assets ast ON ast.id = h.asset_id GROUP BY a.id, a.provider, a.name, a.type, a.total_value_czk, a.cash_value_czk ORDER BY a.name"
+      "SELECT a.id, a.provider, a.name, a.type, a.total_value_czk, " +
+        "a.cash_value_czk, a.unclassified_value_czk, " +
+        "a.reconciliation_difference, a.reconciliation_status, " +
+        "COALESCE(SUM(CASE WHEN ast.asset_class = 'cash' THEN 0 ELSE h.market_value_czk END), 0) AS holdings_value_czk " +
+        "FROM accounts a " +
+        "LEFT JOIN holdings h ON h.account_id = a.id " +
+        "LEFT JOIN assets ast ON ast.id = h.asset_id " +
+        "GROUP BY a.id, a.provider, a.name, a.type, a.total_value_czk, " +
+        "a.cash_value_czk, a.unclassified_value_czk, " +
+        "a.reconciliation_difference, a.reconciliation_status " +
+        "ORDER BY a.name"
     )
     .all();
 
@@ -153,26 +163,104 @@ export function getDiagnostics() {
     const total = num(row.total_value_czk);
     const cash = num(row.cash_value_czk);
     const holdings = num(row.holdings_value_czk);
-    const expected = cash + holdings;
+    const unclassified = num(row.unclassified_value_czk);
+    const expected = cash + holdings + unclassified;
     const difference = total - expected;
-    const tolerance = Math.max(5, Math.abs(total) * 0.005);
+    const storedStatus = String(row.reconciliation_status || "unknown");
+    const tolerance = Math.max(0.05, Math.abs(total) * 0.000001);
 
-    if (Math.abs(difference) > tolerance) {
+    if (
+      storedStatus === "warning" ||
+      storedStatus === "error" ||
+      Math.abs(difference) > tolerance
+    ) {
       checks.push({
         id: "reconcile-" + String(row.id),
-        severity: "warning",
+        severity: storedStatus === "error" ? "error" : "warning",
         title: String(row.name) + " reconciliation",
         detail:
-          "Account total differs from cash + holdings by " +
-          difference.toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) +
-          " Kč. This can be normal if the provider exposes unsettled or reserved balances.",
+          "Total " +
+          total.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) +
+          " Kč = holdings " +
+          holdings.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) +
+          " Kč + known cash " +
+          cash.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) +
+          " Kč + unclassified " +
+          unclassified.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) +
+          " Kč. Remaining arithmetic difference: " +
+          difference.toLocaleString("cs-CZ", { maximumFractionDigits: 2 }) +
+          " Kč.",
       });
     } else {
       checks.push({
         id: "reconcile-" + String(row.id),
         severity: "ok",
         title: String(row.name) + " reconciliation",
-        detail: "Account total is consistent with cash + current holdings.",
+        detail: "Account total is fully explained by holdings + known cash.",
+      });
+    }
+  }
+
+  const krakenTransferStats = db
+    .prepare(
+      "SELECT " +
+        "SUM(CASE WHEN kind = 'transfer' AND flow_scope = 'unclassified' THEN 1 ELSE 0 END) AS unclassified, " +
+        "SUM(CASE WHEN kind = 'transfer' AND flow_scope = 'unclassified' AND transfer_value_czk IS NULL THEN 1 ELSE 0 END) AS missing_value, " +
+        "SUM(CASE WHEN kind = 'transfer' AND flow_scope = 'unclassified' AND transfer_value_czk < 0 THEN ABS(transfer_value_czk) ELSE 0 END) AS valued_out " +
+        "FROM transactions WHERE provider = 'kraken'",
+    )
+    .get();
+
+  const krakenUnclassified = num(krakenTransferStats?.unclassified);
+  const krakenMissingTransferValue = num(krakenTransferStats?.missing_value);
+  const krakenValuedOut = num(krakenTransferStats?.valued_out);
+  if (krakenUnclassified > 0) {
+    checks.push({
+      id: "kraken-wallet-transfers",
+      severity: krakenMissingTransferValue > 0 ? "warning" : "info",
+      title: "Kraken wallet transfers",
+      detail:
+        krakenUnclassified.toLocaleString("cs-CZ") +
+        " on-chain transfer(s) are kept outside external contributions. " +
+        krakenValuedOut.toLocaleString("cs-CZ", { maximumFractionDigits: 0 }) +
+        " Kč of outgoing book value is reconstructed" +
+        (krakenMissingTransferValue > 0
+          ? "; " +
+            krakenMissingTransferValue.toLocaleString("cs-CZ") +
+            " transfer(s) still have incomplete carried value."
+          : "."),
+    });
+  }
+
+  const krakenAccount = db
+    .prepare("SELECT raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1")
+    .get();
+  if (krakenAccount?.raw_json) {
+    try {
+      const raw = JSON.parse(String(krakenAccount.raw_json)) as Record<string, unknown>;
+      const status = typeof raw.costBasisStatus === "string"
+        ? raw.costBasisStatus
+        : "unknown";
+      const incomplete = Array.isArray(raw.incompleteCostBasisSymbols)
+        ? raw.incompleteCostBasisSymbols.map(String)
+        : [];
+      checks.push({
+        id: "kraken-cost-basis",
+        severity: status === "complete" ? "ok" : "warning",
+        title: "Kraken cost basis",
+        detail:
+          status === "complete"
+            ? "Kraken ledger cost basis is complete for reconstructed assets."
+            : "Kraken cost basis is " +
+              status +
+              (incomplete.length ? ": " + incomplete.join(", ") : "."),
+      });
+    } catch {
+      checks.push({
+        id: "kraken-cost-basis",
+        severity: "warning",
+        title: "Kraken cost basis",
+        detail: "Kraken cost-basis metadata could not be parsed.",
       });
     }
   }
