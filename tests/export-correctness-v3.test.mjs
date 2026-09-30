@@ -38,8 +38,8 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(investown.includes('"Zákonné úroky z prodlení": "interest"'));
   assert.ok(investown.includes('"Odměna": "income"'));
   assert.ok(investown.includes("derivedInterest + derivedOtherIncome - derivedFees"));
-  assert.ok(investown.includes("realizedPnl: derivedRealizedPnl"));
-  assert.ok(investown.includes("realizedPnlCzk: derivedRealizedPnl"));
+  assert.ok(investown.includes("realizedPnl: effectiveRealizedPnl"));
+  assert.ok(investown.includes("realizedPnlCzk: effectiveRealizedPnl"));
 
   assert.ok(db.includes("function repairInvestownRealizedPnl"));
   assert.ok(db.includes("kind = 'interest'"));
