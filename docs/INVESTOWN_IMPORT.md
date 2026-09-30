@@ -80,9 +80,16 @@ when an Investown statement-derived valuation does not reach the current date.
 
 ## Re-import behavior
 
-A new complete Investown statement replaces the previous Investown statement in
-one SQLite transaction and rebuilds transactions, projects, holdings and Investown
-snapshots. This prevents duplicate or stale rows.
+Investown history is cumulative. A statement only has to be imported once.
+Later files are merged with transactions already stored in FinanceOS; overlapping
+rows are deduplicated by canonical transaction identity and genuinely new rows are
+added. This means a later export may contain the full history, an overlapping
+window, or only a newer period.
+
+After merging, FinanceOS atomically rebuilds Investown transactions, projects,
+holdings and daily snapshots from the complete known transaction set. The rebuild
+also normalizes legacy transaction IDs and reapplies the current transaction
+classification without losing older history.
 
 If an import fails, the previous complete Investown state remains intact.
 
