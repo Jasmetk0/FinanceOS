@@ -305,12 +305,47 @@ export default async function AccountDetailPage({
                     {" assetů"}
                   </dd>
                 </div>
+                <div>
+                  <dt className="text-[var(--muted)]">Quantity nesoulady</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .quantityMismatchCount ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--muted)]">
+                    Nevysvětlený počáteční cash
+                  </dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {money(
+                      Number(
+                        detail.sourceMetadata.historicalReconstruction
+                          .openingCashResidualCzk ?? 0,
+                      ),
+                    )}
+                  </dd>
+                </div>
               </dl>
               <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
                 Historické body jsou rekonstruované z transakcí, denních close
                 cen a historických kurzů ČNB. Skutečné snapshoty načtené přímo
                 z Trading 212 mají vždy přednost.
               </p>
+              {Array.isArray(
+                detail.sourceMetadata.historicalReconstruction
+                  .unresolvedAssets,
+              ) &&
+              detail.sourceMetadata.historicalReconstruction.unresolvedAssets
+                .length ? (
+                <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+                  Bez historické ceny zatím:{" "}
+                  {detail.sourceMetadata.historicalReconstruction.unresolvedAssets
+                    .map(String)
+                    .join(", ")}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </SectionCard>
