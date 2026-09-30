@@ -32,7 +32,7 @@ export default function HistoryPage() {
         </p>
       </div>
 
-      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Známé čisté vklady"
           value={data.summary.netContributedCzk}
@@ -50,6 +50,13 @@ export default function HistoryPage() {
           format="currency"
         />
         <StatCard
+          label="Externí odměny"
+          value={data.summary.externalRewardsCzk}
+          format="currency"
+          hint="Např. Trading 212 cashback; není to vlastní vklad"
+          positive={data.summary.externalRewardsCzk > 0}
+        />
+        <StatCard
           label="Portfolio snapshots"
           value={data.snapshots.length}
           hint={
@@ -62,6 +69,79 @@ export default function HistoryPage() {
           }
         />
       </section>
+
+      <div className="mt-4">
+        <SectionCard
+          title="Historie vkladů, výběrů a externích odměn"
+          subtitle="Vlastní kapitál je vedený odděleně od cashbacku a dalších externích odměn"
+        >
+          {data.monthlyCapitalFlows.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                    <th className="pb-3 font-medium">Měsíc</th>
+                    <th className="pb-3 text-right font-medium">Vklady</th>
+                    <th className="pb-3 text-right font-medium">Výběry</th>
+                    <th className="pb-3 text-right font-medium">Čisté vlastní vklady</th>
+                    <th className="pb-3 text-right font-medium">Externí odměny</th>
+                    <th className="pb-3 text-right font-medium">Kapitál pro P/L</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...data.monthlyCapitalFlows].reverse().map((item) => (
+                    <tr
+                      key={item.month}
+                      className="border-b border-white/6 last:border-0"
+                    >
+                      <td className="py-3 font-mono text-sm">{item.month}</td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.depositsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.withdrawalsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.netContributedCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.externalRewardsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.capitalForPnlCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--muted)]">
+              Zatím nejsou rozpoznané žádné externí investiční vklady nebo výběry.
+            </p>
+          )}
+          <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+            „Čisté vlastní vklady“ = tvoje vklady mínus výběry. „Kapitál pro
+            P/L“ k nim přidává externí odměny, aby cashback nezvyšoval vykázaný
+            investiční výnos.
+          </p>
+        </SectionCard>
+      </div>
 
       <div className="mt-4">
         <SectionCard
