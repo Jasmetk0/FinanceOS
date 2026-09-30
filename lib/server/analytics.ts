@@ -2012,6 +2012,32 @@ export function getHistoryData() {
     0,
   );
 
+  const unresolvedHistory = db
+    .prepare(`
+      SELECT
+        SUM(
+          CASE
+            WHEN t.kind IN ('deposit', 'withdrawal') THEN 1
+            ELSE 0
+          END
+        ) AS cash_count,
+        SUM(
+          CASE
+            WHEN t.kind IN ('deposit', 'withdrawal')
+              AND t.amount_czk IS NOT NULL
+            THEN ABS(t.amount_czk)
+            ELSE 0
+          END
+        ) AS cash_value_czk,
+        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.flow_scope = 'unclassified'
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+    `)
+    .get();
+
   const interactiveChart = getPortfolioHistoryChartData(db);
 
   return {
@@ -2030,6 +2056,9 @@ export function getHistoryData() {
       netContributedCzk: depositsCzk - withdrawalsCzk,
       capitalForPnlCzk:
         depositsCzk - withdrawalsCzk + externalRewardsCzk,
+      unresolvedCashFlowCount: num(unresolvedHistory?.cash_count),
+      unresolvedCashFlowCzk: num(unresolvedHistory?.cash_value_czk),
+      unresolvedWalletTransferCount: num(unresolvedHistory?.transfer_count),
     },
   };
 }
