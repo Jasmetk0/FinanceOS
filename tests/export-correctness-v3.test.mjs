@@ -66,6 +66,8 @@ test("Investown statement history is never carried past source coverage", () => 
     false,
   );
 
+  assert.ok(investown.includes("previousStatementLastAt"));
+  assert.ok(investown.includes("previousLastAt: previousStatementLastAt"));
   assert.ok(analytics.includes("valueThroughDate"));
   assert.ok(analytics.includes("date <= item.valueThroughDate"));
   assert.ok(analytics.includes("const valueIsCurrent"));
