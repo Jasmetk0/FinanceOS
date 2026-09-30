@@ -61,6 +61,8 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
 export interface PortfolioHistoryMetric {
   valueCzk: number | null;
   contributedCzk: number;
+  externalRewardsCzk: number;
+  capitalAttributedCzk: number;
   profitCzk: number | null;
   returnPct: number | null;
 }
@@ -81,21 +83,25 @@ export interface PortfolioHistoryPoint {
 function historyMetric(
   valueCzk: number | null,
   contributedCzk: number,
+  externalRewardsCzk: number,
+  capitalAttributedCzk: number,
   performanceComplete = true,
 ): PortfolioHistoryMetric {
   const profitCzk =
     valueCzk === null || !performanceComplete
       ? null
-      : valueCzk - contributedCzk;
+      : valueCzk - capitalAttributedCzk;
 
   return {
     valueCzk,
     contributedCzk,
+    externalRewardsCzk,
+    capitalAttributedCzk,
     profitCzk,
     returnPct:
-      profitCzk === null || contributedCzk <= 0
+      profitCzk === null || capitalAttributedCzk <= 0
         ? null
-        : (profitCzk / contributedCzk) * 100,
+        : (profitCzk / capitalAttributedCzk) * 100,
   };
 }
 
@@ -269,31 +275,30 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     const kind = String(row.kind);
     const category = String(row.category || "");
     const isReward = kind === "income" && category === "card_cashback";
-    const isExternal =
-      kind === "deposit" || kind === "withdrawal" || isReward;
-    const externalDelta =
+    const ownContributionDelta =
       kind === "deposit"
         ? Math.abs(num(row.amount_czk))
         : kind === "withdrawal"
           ? -Math.abs(num(row.amount_czk))
-          : isReward
-            ? num(row.amount_czk)
-            : 0;
-    const providerDelta =
-      isExternal
-        ? externalDelta
-        : num(row.transfer_value_czk);
+          : 0;
+    const rewardDelta = isReward ? num(row.amount_czk) : 0;
+    const transferDelta =
+      kind === "transfer" ? num(row.transfer_value_czk) : 0;
 
     return {
       date: String(row.day),
       provider: String(row.provider),
-      externalDelta,
-      providerDelta,
+      ownContributionDelta,
+      rewardDelta,
+      transferDelta,
     };
   });
 
   const contributionByProvider = new Map<string, number>();
-  let totalExternalContribution = 0;
+  const rewardsByProvider = new Map<string, number>();
+  const transferAttributionByProvider = new Map<string, number>();
+  let totalOwnContribution = 0;
+  let totalExternalRewards = 0;
   const points: PortfolioHistoryPoint[] = [];
   let flowIndex = 0;
 
@@ -303,9 +308,19 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       contributionByProvider.set(
         flow.provider,
         (contributionByProvider.get(flow.provider) ?? 0) +
-          flow.providerDelta,
+          flow.ownContributionDelta,
       );
-      totalExternalContribution += flow.externalDelta;
+      rewardsByProvider.set(
+        flow.provider,
+        (rewardsByProvider.get(flow.provider) ?? 0) + flow.rewardDelta,
+      );
+      transferAttributionByProvider.set(
+        flow.provider,
+        (transferAttributionByProvider.get(flow.provider) ?? 0) +
+          flow.transferDelta,
+      );
+      totalOwnContribution += flow.ownContributionDelta;
+      totalExternalRewards += flow.rewardDelta;
       flowIndex += 1;
     }
 
@@ -347,12 +362,19 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
             ? null
             : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
+      const externalRewards = rewardsByProvider.get(provider) ?? 0;
+      const transferAttribution =
+        transferAttributionByProvider.get(provider) ?? 0;
+      const capitalAttributed =
+        contributed + externalRewards + transferAttribution;
       const providerPerformanceGap = performanceGapByProvider.get(provider);
       const providerPerformanceComplete =
         !providerPerformanceGap || date < providerPerformanceGap;
       providerMetrics[provider] = historyMetric(
         value,
         contributed,
+        externalRewards,
+        capitalAttributed,
         providerPerformanceComplete,
       );
 
@@ -381,7 +403,9 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       // date has a valuation source, total value / P&L / return stay unknown.
       total: historyMetric(
         complete ? totalValue : null,
-        totalExternalContribution,
+        totalOwnContribution,
+        totalExternalRewards,
+        totalOwnContribution + totalExternalRewards,
         !firstPerformanceGap || date < firstPerformanceGap,
       ),
       providers: providerMetrics,
