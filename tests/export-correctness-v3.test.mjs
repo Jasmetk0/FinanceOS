@@ -332,7 +332,7 @@ test("history chart keeps user deposits, rewards and P/L capital distinct", () =
   assert.ok(chart.includes("Vlastní čisté vklady"));
   assert.ok(chart.includes("Kapitál pro P/L"));
   assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
-  assert.ok(historyPage.includes("Čisté vlastní vklady"));
+  assert.ok(historyPage.includes("Čistý vlastní kapitál"));
 });
 
 
@@ -376,4 +376,16 @@ test("Connections shows privacy-safe Phantom valuation and Kraken-link coverage"
   assert.ok(page.includes("matchedKrakenTransfers"));
   assert.ok(page.includes("unpricedTokenCount"));
   assert.equal(page.includes("phantomStatus.address"), false);
+});
+
+
+test("History separates 212 Card spend and refunds from ordinary withdrawals", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+  assert.ok(analytics.includes("cardSpendCzk"));
+  assert.ok(analytics.includes("cardRefundsCzk"));
+  assert.ok(analytics.includes('category.startsWith("card_spend:")'));
+  assert.ok(analytics.includes('category.startsWith("card_refund:")'));
+  assert.ok(history.includes("Čistá útrata 212 Card"));
+  assert.ok(history.includes("Card refundy"));
 });
