@@ -674,7 +674,7 @@ export function PortfolioHistoryChart({
               />
             ))}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
-              Vlastní čisté vklady:{" "}
+              Čistý vlastní kapitál:{" "}
               {formatCurrency(hoverPoint.total.contributedCzk)}
               <br />
               Externí odměny:{" "}
