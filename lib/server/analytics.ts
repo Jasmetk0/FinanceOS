@@ -126,6 +126,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       SELECT
         a.id AS account_id,
         a.provider,
+        a.raw_json,
         (
           SELECT MIN(t.occurred_at)
           FROM transactions t
@@ -155,12 +156,51 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : snapshotDate
         : transactionDate || snapshotDate;
 
+    let providerReportedProfitCzk: number | null = null;
+    let providerReportedProfitAsOf: string | null = null;
+    if (row.raw_json) {
+      try {
+        const raw = JSON.parse(String(row.raw_json)) as Record<string, unknown>;
+        const reported = Number(raw.providerReportedProfitCzk);
+        if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+        if (typeof raw.providerReportedProfitAsOf === "string") {
+          providerReportedProfitAsOf = raw.providerReportedProfitAsOf;
+        }
+      } catch {
+        // Invalid optional metadata must not break historical analytics.
+      }
+    }
+
     return {
       accountId: String(row.account_id),
       provider: String(row.provider),
       startDate,
+      providerReportedProfitCzk,
+      providerReportedProfitAsOf,
     };
   });
+
+  const providerProfitOverrides = new Map<
+    string,
+    { valueCzk: number; asOf: string }
+  >();
+  for (const item of accountActivity) {
+    if (
+      item.providerReportedProfitCzk === null ||
+      !item.providerReportedProfitAsOf
+    ) {
+      continue;
+    }
+    const existing = providerProfitOverrides.get(item.provider);
+    providerProfitOverrides.set(item.provider, {
+      valueCzk:
+        (existing?.valueCzk ?? 0) + item.providerReportedProfitCzk,
+      asOf:
+        !existing || item.providerReportedProfitAsOf > existing.asOf
+          ? item.providerReportedProfitAsOf
+          : existing.asOf,
+    });
+  }
 
   const unlinkedWalletRow = db
     .prepare(`
@@ -341,6 +381,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
     const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
     let totalValue = 0;
+    let currentProfitOverrideDelta = 0;
     const knownProviders: string[] = [];
     const missingProviders: string[] = [];
 
@@ -370,13 +411,32 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const providerPerformanceGap = performanceGapByProvider.get(provider);
       const providerPerformanceComplete =
         !providerPerformanceGap || date < providerPerformanceGap;
-      providerMetrics[provider] = historyMetric(
+      const baseProviderMetric = historyMetric(
         value,
         contributed,
         externalRewards,
         capitalAttributed,
         providerPerformanceComplete,
       );
+      const profitOverride = providerProfitOverrides.get(provider);
+      const overrideApplies =
+        profitOverride &&
+        date >= profitOverride.asOf.slice(0, 10) &&
+        baseProviderMetric.profitCzk !== null;
+      if (overrideApplies && profitOverride) {
+        currentProfitOverrideDelta +=
+          profitOverride.valueCzk - (baseProviderMetric.profitCzk ?? 0);
+        providerMetrics[provider] = {
+          ...baseProviderMetric,
+          profitCzk: profitOverride.valueCzk,
+          returnPct:
+            capitalAttributed > 0
+              ? (profitOverride.valueCzk / capitalAttributed) * 100
+              : null,
+        };
+      } else {
+        providerMetrics[provider] = baseProviderMetric;
+      }
 
       if (!providerShouldExist) continue;
       if (value === null) {
@@ -396,18 +456,35 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     const complete =
       missingProviders.length === 0 && knownProviders.length > 0;
 
+    // Never present a partial sum of providers as the user's historical
+    // total portfolio value. Until every provider known to be active on the
+    // date has a valuation source, total value / P&L / return stay unknown.
+    const baseTotalMetric = historyMetric(
+      complete ? totalValue : null,
+      totalOwnContribution,
+      totalExternalRewards,
+      totalOwnContribution + totalExternalRewards,
+      !firstPerformanceGap || date < firstPerformanceGap,
+    );
+    const totalMetric =
+      baseTotalMetric.profitCzk !== null && currentProfitOverrideDelta !== 0
+        ? {
+            ...baseTotalMetric,
+            profitCzk:
+              baseTotalMetric.profitCzk + currentProfitOverrideDelta,
+            returnPct:
+              baseTotalMetric.capitalAttributedCzk > 0
+                ? ((baseTotalMetric.profitCzk +
+                    currentProfitOverrideDelta) /
+                    baseTotalMetric.capitalAttributedCzk) *
+                  100
+                : null,
+          }
+        : baseTotalMetric;
+
     points.push({
       date,
-      // Never present a partial sum of providers as the user's historical
-      // total portfolio value. Until every provider known to be active on the
-      // date has a valuation source, total value / P&L / return stay unknown.
-      total: historyMetric(
-        complete ? totalValue : null,
-        totalOwnContribution,
-        totalExternalRewards,
-        totalOwnContribution + totalExternalRewards,
-        !firstPerformanceGap || date < firstPerformanceGap,
-      ),
+      total: totalMetric,
       providers: providerMetrics,
       coverage: {
         complete,
