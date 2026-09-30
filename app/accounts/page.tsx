@@ -1,6 +1,7 @@
 import { Pill, SectionCard } from "@/components/ui";
 import { getAccounts } from "@/lib/server/analytics";
 import { ManualBalancesManager } from "@/components/manual-balances-manager";
+import { DataFreshnessBadge } from "@/components/data-freshness-badge";
 import { listManualBalances } from "@/lib/server/manual-balance";
 
 export const runtime = "nodejs";
@@ -33,7 +34,10 @@ export default function AccountsPage() {
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h2 className="font-semibold">{account.name}</h2>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="font-semibold">{account.name}</h2>
+                        <DataFreshnessBadge freshness={account.dataFreshness} />
+                      </div>
                       <p className="mt-1 text-xs text-[var(--muted)]">
                         {account.provider} · {account.type} · {account.currency}
                       </p>
@@ -68,7 +72,14 @@ export default function AccountsPage() {
                   </dl>
 
                   <p className="mt-4 text-xs text-[var(--muted)]">
-                    Updated {new Date(account.updatedAt).toLocaleString("cs-CZ")}
+                    FinanceOS záznam aktualizován{" "}
+                    {new Date(account.updatedAt).toLocaleString("cs-CZ")}
+                    {account.dataFreshness.coverageThrough
+                      ? " · data doložena do " +
+                        new Date(
+                          account.dataFreshness.coverageThrough + "T12:00:00",
+                        ).toLocaleDateString("cs-CZ")
+                      : ""}
                   </p>
                 </article>
               ))}

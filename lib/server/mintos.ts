@@ -512,6 +512,7 @@ export async function importMintos(input: MintosImportInput) {
       raw: {
         imported: true,
         importMode: "balance-only",
+        balanceMode: "manual-override",
         lifetimeComplete: false,
         continuityOk: true,
       },
@@ -747,6 +748,10 @@ export async function importMintos(input: MintosImportInput) {
       raw: {
         imported: true,
         importMode: input.sourceFormat || "mapped",
+        balanceMode:
+          overrideCash !== null || overrideTotal !== null
+            ? "manual-override"
+            : "derived-from-full-statement",
         statementFiles: [
           ...new Set(
             prepared
@@ -931,14 +936,19 @@ export async function importMintos(input: MintosImportInput) {
         );
       }
 
-      const today = new Date().toISOString().slice(0, 10);
-      insertSnapshot.run(
-        accountId,
-        today,
-        totalValueCzk,
-        cashValueCzk,
-        investedValueCzk,
-      );
+      // A statement-derived valuation is only proven through the newest
+      // statement row. Only an explicit current balance override is a true
+      // point-in-time value for the import date.
+      if (overrideCash !== null || overrideTotal !== null) {
+        const today = new Date().toISOString().slice(0, 10);
+        insertSnapshot.run(
+          accountId,
+          today,
+          totalValueCzk,
+          cashValueCzk,
+          investedValueCzk,
+        );
+      }
     }
 
     db.exec("COMMIT;");

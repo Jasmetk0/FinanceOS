@@ -97,7 +97,39 @@ test("Investown statement history is never carried past source coverage", () => 
     ),
   );
   assert.ok(performance.includes("nemá hodnotu"));
-  assert.ok(performance.includes("value through"));
+  assert.ok(performance.includes("DataFreshnessBadge"));
+});
+
+test("all account surfaces expose provider-aware data freshness", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const accounts = source("app/accounts/page.tsx");
+  const dashboard = source("app/page.tsx");
+  const performance = source("app/performance/page.tsx");
+  const badge = source("components/data-freshness-badge.tsx");
+  const mintos = source("lib/server/mintos.ts");
+
+  assert.ok(analytics.includes("function accountDataFreshness"));
+  assert.ok(analytics.includes('provider === "trading212"'));
+  assert.ok(analytics.includes('provider === "kraken"'));
+  assert.ok(analytics.includes('provider === "phantom"'));
+  assert.ok(analytics.includes('provider === "manual"'));
+  assert.ok(analytics.includes("statementLastAt"));
+  assert.ok(analytics.includes("missingSince: nextIsoDate(coverageThrough)"));
+  assert.ok(analytics.includes("dataFreshness: accountDataFreshness(row)"));
+  assert.ok(analytics.includes("dataFreshness: freshness"));
+
+  assert.ok(accounts.includes("DataFreshnessBadge"));
+  assert.ok(dashboard.includes("DataFreshnessBadge"));
+  assert.ok(performance.includes("DataFreshnessBadge"));
+  assert.ok(badge.includes("Chybí od "));
+  assert.ok(badge.includes("Aktuální"));
+  assert.ok(badge.includes("Aktuálnost neznámá"));
+
+  assert.ok(mintos.includes('balanceMode: "manual-override"'));
+  assert.ok(mintos.includes('"derived-from-full-statement"'));
+  assert.ok(
+    mintos.includes("if (overrideCash !== null || overrideTotal !== null)"),
+  );
 });
 
 test("performance is blocked by unresolved flows or stale valuations", () => {

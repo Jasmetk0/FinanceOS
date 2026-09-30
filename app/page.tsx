@@ -4,6 +4,7 @@ import { SyncButton } from "@/components/sync-button";
 import { getDashboardData, getHistoryData } from "@/lib/server/analytics";
 import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
 import { providerColor, providerLabel } from "@/lib/provider-visuals";
+import { DataFreshnessBadge } from "@/components/data-freshness-badge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export default function Home() {
           hint={
             data.summary.unclassifiedCzk
               ? "Provider totals včetně explicitně nezařazené hodnoty"
-              : "Součet aktuálně naceněných účtů"
+              : "Součet posledních doložených hodnot účtů"
           }
         />
         <StatCard
@@ -117,7 +118,10 @@ export default function Home() {
           <PortfolioHistoryChart data={history.chart} compact />
         </SectionCard>
 
-        <SectionCard title="Účty" subtitle="Aktuální hodnota podle zdroje">
+        <SectionCard
+          title="Účty"
+          subtitle="Poslední doložená hodnota podle zdroje"
+        >
           {data.accounts.length ? (
             <div className="space-y-5">
               {data.accounts.map((account) => {
@@ -134,7 +138,13 @@ export default function Home() {
                   <div key={account.id}>
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <p className="font-medium">{account.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{account.name}</p>
+                          <DataFreshnessBadge
+                            freshness={account.dataFreshness}
+                            compact
+                          />
+                        </div>
                         <p className="mt-1 text-xs text-[var(--muted)]">
                           {account.type} · {providerLabel(account.provider)}
                           {account.reconciliationStatus === "warning"

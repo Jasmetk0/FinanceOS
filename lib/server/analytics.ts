@@ -14,6 +14,143 @@ function pnlValue(value: unknown, status: unknown): number | null {
   return pnlIsKnown(status) ? num(value) : null;
 }
 
+export type AccountDataFreshnessStatus =
+  | "current"
+  | "stale"
+  | "manual"
+  | "unknown";
+
+export type AccountDataFreshnessSource =
+  | "api_sync"
+  | "statement"
+  | "manual_override"
+  | "manual"
+  | "unknown";
+
+export interface AccountDataFreshness {
+  status: AccountDataFreshnessStatus;
+  source: AccountDataFreshnessSource;
+  coverageThrough: string | null;
+  missingSince: string | null;
+  updatedAt: string | null;
+}
+
+function parseRawObject(value: unknown): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object"
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function isoDate(value: unknown): string | null {
+  if (!value) return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime())
+    ? null
+    : parsed.toISOString().slice(0, 10);
+}
+
+function nextIsoDate(date: string): string {
+  const parsed = new Date(date + "T00:00:00.000Z");
+  parsed.setUTCDate(parsed.getUTCDate() + 1);
+  return parsed.toISOString().slice(0, 10);
+}
+
+function accountDataFreshness(row: {
+  provider?: unknown;
+  updated_at?: unknown;
+  raw_json?: unknown;
+}): AccountDataFreshness {
+  const provider = String(row.provider || "");
+  const updatedAt =
+    row.updated_at === null || row.updated_at === undefined
+      ? null
+      : String(row.updated_at);
+  const updatedDate = isoDate(updatedAt);
+  const raw = parseRawObject(row.raw_json);
+
+  if (provider === "manual") {
+    return {
+      status: "manual",
+      source: "manual",
+      coverageThrough: updatedDate,
+      missingSince: null,
+      updatedAt,
+    };
+  }
+
+  let source: AccountDataFreshnessSource = "unknown";
+  let coverageThrough: string | null = null;
+
+  const balanceMode =
+    typeof raw.balanceMode === "string" ? raw.balanceMode : "";
+  const importMode =
+    typeof raw.importMode === "string" ? raw.importMode : "";
+  const statementLastAt =
+    typeof raw.statementLastAt === "string"
+      ? isoDate(raw.statementLastAt)
+      : null;
+
+  if (balanceMode === "manual-override" || importMode === "balance-only") {
+    source = "manual_override";
+    coverageThrough = updatedDate;
+  } else if (
+    statementLastAt &&
+    (
+      balanceMode === "derived-from-full-statement" ||
+      provider === "investown" ||
+      provider === "mintos"
+    )
+  ) {
+    source = "statement";
+    coverageThrough = statementLastAt;
+  } else if (
+    provider === "trading212" ||
+    provider === "kraken" ||
+    provider === "phantom"
+  ) {
+    source = "api_sync";
+    coverageThrough = updatedDate;
+  } else if (updatedDate) {
+    source = "unknown";
+    coverageThrough = updatedDate;
+  }
+
+  if (!coverageThrough) {
+    return {
+      status: "unknown",
+      source,
+      coverageThrough: null,
+      missingSince: null,
+      updatedAt,
+    };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (coverageThrough >= today) {
+    return {
+      status: "current",
+      source,
+      coverageThrough,
+      missingSince: null,
+      updatedAt,
+    };
+  }
+
+  return {
+    status: "stale",
+    source,
+    coverageThrough,
+    missingSince: nextIsoDate(coverageThrough),
+    updatedAt,
+  };
+}
+
 function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
   const rows = db
     .prepare(`
@@ -126,6 +263,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       SELECT
         a.id AS account_id,
         a.provider,
+        a.updated_at,
         a.raw_json,
         (
           SELECT MIN(t.occurred_at)
@@ -156,27 +294,14 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : snapshotDate
         : transactionDate || snapshotDate;
 
-    let valueThroughDate: string | null = null;
-    if (String(row.provider) === "investown" && row.raw_json) {
-      try {
-        const raw = JSON.parse(String(row.raw_json)) as Record<string, unknown>;
-        if (
-          raw.importMode === "investown-native" &&
-          raw.balanceMode === "derived-from-full-statement" &&
-          typeof raw.statementLastAt === "string"
-        ) {
-          valueThroughDate = raw.statementLastAt.slice(0, 10);
-        }
-      } catch {
-        // Optional provider coverage metadata must never break analytics.
-      }
-    }
+    const freshness = accountDataFreshness(row);
 
     return {
       accountId: String(row.account_id),
       provider: String(row.provider),
       startDate,
-      valueThroughDate,
+      valueThroughDate:
+        freshness.status === "manual" ? null : freshness.coverageThrough,
     };
   });
 
@@ -487,7 +612,7 @@ export function getDashboardData() {
       SELECT
         id, provider, name, type, currency, total_value_czk,
         unclassified_value_czk, reconciliation_difference,
-        reconciliation_status, updated_at
+        reconciliation_status, updated_at, raw_json
       FROM accounts
       WHERE total_value_czk != 0 OR provider != 'manual'
       ORDER BY total_value_czk DESC
@@ -504,6 +629,7 @@ export function getDashboardData() {
       reconciliationDifferenceCzk: num(row.reconciliation_difference),
       reconciliationStatus: String(row.reconciliation_status || "unknown"),
       updatedAt: String(row.updated_at),
+      dataFreshness: accountDataFreshness(row),
     }));
 
   const holdings = db
@@ -762,7 +888,7 @@ export function getAccounts() {
       SELECT
         id, provider, external_id, name, type, currency,
         cash_value_czk, invested_value_czk, total_value_czk,
-        realized_pnl_czk, unrealized_pnl_czk, updated_at
+        realized_pnl_czk, unrealized_pnl_czk, updated_at, raw_json
       FROM accounts
       ORDER BY total_value_czk DESC, name ASC
     `)
@@ -780,6 +906,7 @@ export function getAccounts() {
       realizedPnlCzk: num(row.realized_pnl_czk),
       unrealizedPnlCzk: num(row.unrealized_pnl_czk),
       updatedAt: String(row.updated_at),
+      dataFreshness: accountDataFreshness(row),
     }));
 }
 
@@ -1084,7 +1211,7 @@ export function getPerformanceData() {
       SELECT
         id, provider, name, type, total_value_czk,
         realized_pnl_czk, unrealized_pnl_czk,
-        realized_pnl_status, unrealized_pnl_status, raw_json
+        realized_pnl_status, unrealized_pnl_status, updated_at, raw_json
       FROM accounts
       WHERE type IN ('brokerage', 'crypto', 'p2p')
       ORDER BY total_value_czk DESC
@@ -1198,24 +1325,10 @@ export function getPerformanceData() {
     }
 
     const currentValue = num(account.total_value_czk);
-    let valueThroughDate: string | null = null;
-    if (String(account.provider) === "investown" && account.raw_json) {
-      try {
-        const raw = JSON.parse(String(account.raw_json)) as Record<string, unknown>;
-        if (
-          raw.importMode === "investown-native" &&
-          raw.balanceMode === "derived-from-full-statement" &&
-          typeof raw.statementLastAt === "string"
-        ) {
-          valueThroughDate = raw.statementLastAt.slice(0, 10);
-        }
-      } catch {
-        // Optional source coverage metadata must not break analytics.
-      }
-    }
-    const today = now.toISOString().slice(0, 10);
+    const freshness = accountDataFreshness(account);
+    const valueThroughDate = freshness.coverageThrough;
     const valueIsCurrent =
-      valueThroughDate === null || valueThroughDate >= today;
+      freshness.status === "current" || freshness.status === "manual";
     if (currentValue > 0 && valueIsCurrent) {
       flows.push({ date: now, amount: currentValue });
     }
@@ -1260,6 +1373,7 @@ export function getPerformanceData() {
       estimatedProfitCzk: estimatedProfit,
       valueThroughDate,
       valueIsCurrent,
+      dataFreshness: freshness,
       simpleReturnPct: simpleReturn,
       xirrPct: xirr === null ? null : xirr * 100,
       realizedPnlCzk: pnlValue(
