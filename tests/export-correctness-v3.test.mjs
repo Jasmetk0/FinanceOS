@@ -187,6 +187,8 @@ test("Trading 212 deposit fallback requires repeated provider cashback signature
   assert.ok(db.includes("kind = 'income'"));
   assert.ok(db.includes("category = 'card_cashback'"));
   assert.ok(db.includes("category = 'external_deposit'"));
+  assert.ok(db.includes("ambiguousCardEraIds"));
+  assert.ok(db.includes("date >= firstCardDate"));
   assert.ok(
     db.includes("Trading 212 card cashback · inferred"),
   );
@@ -315,4 +317,20 @@ test("Phantom chain scan skips Kraken transfers already linked by destination me
   assert.ok(matcher.includes("unlinkedKrakenTransfers().filter"));
   assert.ok(matcher.includes("!matchesAddress(item.counterpartyRef, address)"));
   assert.ok(matcher.includes("!matchesAddress(destinationFromRaw(item.rawJson), address)"));
+});
+
+
+test("history chart keeps user deposits, rewards and P/L capital distinct", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const chart = source("components/portfolio-history-chart.tsx");
+  const historyPage = source("app/history/page.tsx");
+
+  assert.ok(analytics.includes("externalRewardsCzk"));
+  assert.ok(analytics.includes("capitalAttributedCzk"));
+  assert.ok(analytics.includes("totalOwnContribution"));
+  assert.ok(analytics.includes("totalExternalRewards"));
+  assert.ok(chart.includes("Vlastní čisté vklady"));
+  assert.ok(chart.includes("Kapitál pro P/L"));
+  assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
+  assert.ok(historyPage.includes("Čisté vlastní vklady"));
 });
