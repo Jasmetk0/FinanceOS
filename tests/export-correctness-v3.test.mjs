@@ -334,3 +334,25 @@ test("history chart keeps user deposits, rewards and P/L capital distinct", () =
   assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
   assert.ok(historyPage.includes("Čisté vlastní vklady"));
 });
+
+
+test("transaction history exposes flow scope and capital audit filters", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const table = source("components/transactions-table.tsx");
+
+  assert.ok(analytics.includes("t.flow_scope"));
+  assert.ok(analytics.includes("t.transfer_value_czk"));
+  assert.ok(table.includes('flow === "own_capital"'));
+  assert.ok(table.includes('flow === "rewards"'));
+  assert.ok(table.includes('flow === "internal"'));
+  assert.ok(table.includes('flow === "unresolved"'));
+  assert.ok(table.includes("transferValueCzk"));
+});
+
+test("History page exposes unresolved flow gaps instead of folding them into deposits", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+  assert.ok(analytics.includes("unresolvedCashFlowCount"));
+  assert.ok(analytics.includes("unresolvedWalletTransferCount"));
+  assert.ok(history.includes("Část historie ještě není bezpečně klasifikovaná"));
+});
