@@ -1276,7 +1276,6 @@ export function getPerformanceData() {
       performanceStatus: accountPerformanceComplete ? "complete" : "partial",
       unclassifiedFlowCount,
       knownUnclassifiedFlowCzk,
-      staleValuationCount: totals.staleValuationCount,
     };
   });
 
@@ -1437,6 +1436,7 @@ export function getPerformanceData() {
       performanceStatus: portfolioPerformanceComplete ? "complete" : "partial",
       unclassifiedFlowCount,
       knownUnclassifiedFlowCzk,
+      staleValuationCount: totals.staleValuationCount,
       unlinkedWalletTransferCount,
       unlinkedWalletBookValueOutCzk,
     },
