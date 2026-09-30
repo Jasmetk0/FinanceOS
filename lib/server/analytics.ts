@@ -1139,7 +1139,7 @@ export function getPerformanceData() {
       SELECT
         id, provider, name, type, total_value_czk,
         realized_pnl_czk, unrealized_pnl_czk,
-        realized_pnl_status, unrealized_pnl_status
+        realized_pnl_status, unrealized_pnl_status, raw_json
       FROM accounts
       WHERE type IN ('brokerage', 'crypto', 'p2p')
       ORDER BY total_value_czk DESC
@@ -1268,8 +1268,19 @@ export function getPerformanceData() {
       unresolvedAccountFlowRow?.known_value_czk,
     );
     const accountPerformanceComplete = unclassifiedFlowCount === 0;
+    let providerReportedProfitCzk: number | null = null;
+    if (String(account.provider) === "investown" && account.raw_json) {
+      try {
+        const raw = JSON.parse(String(account.raw_json)) as Record<string, unknown>;
+        const reported = Number(raw.providerReportedProfitCzk);
+        if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+      } catch {
+        // Optional provider metadata must not block performance analytics.
+      }
+    }
     const estimatedProfit = accountPerformanceComplete
-      ? currentValue - performanceExternalCapital
+      ? providerReportedProfitCzk ??
+        (currentValue - performanceExternalCapital)
       : null;
     const simpleReturn =
       accountPerformanceComplete &&
@@ -1293,6 +1304,10 @@ export function getPerformanceData() {
       netContributedCzk: netContributed,
       performanceExternalCapitalCzk: performanceExternalCapital,
       estimatedProfitCzk: estimatedProfit,
+      profitSource:
+        providerReportedProfitCzk === null
+          ? "value-minus-capital"
+          : "provider-reported",
       simpleReturnPct: simpleReturn,
       xirrPct: xirr === null ? null : xirr * 100,
       realizedPnlCzk: pnlValue(
