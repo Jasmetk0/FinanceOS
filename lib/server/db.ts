@@ -472,6 +472,52 @@ function backfillAccountCoverage(db: DatabaseSync) {
   }
 }
 
+function repairInvestownRealizedPnl(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, currency, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+
+  const totals = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
+      COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_czk ELSE 0 END), 0) AS income_czk,
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
+    FROM transactions
+    WHERE account_id = ?
+      AND amount_czk IS NOT NULL
+  `);
+  const update = db.prepare(
+    "UPDATE accounts SET realized_pnl = ?, realized_pnl_czk = ?, raw_json = ? WHERE id = ?",
+  );
+
+  for (const account of accounts) {
+    const raw = parseJsonObject(account.raw_json);
+    if (raw.importMode !== "investown-native") continue;
+    if (String(account.currency || "").toUpperCase() !== "CZK") continue;
+
+    const row = totals.get(String(account.id));
+    const interestCzk = Number(row?.interest_czk) || 0;
+    const incomeCzk = Number(row?.income_czk) || 0;
+    const feesCzk = Number(row?.fees_czk) || 0;
+    const realizedPnlCzk = interestCzk + incomeCzk - feesCzk;
+
+    update.run(
+      realizedPnlCzk,
+      realizedPnlCzk,
+      JSON.stringify({
+        ...raw,
+        derivedInterest: interestCzk,
+        derivedOtherIncome: incomeCzk,
+        derivedFees: feesCzk,
+        derivedRealizedPnl: realizedPnlCzk,
+      }),
+      String(account.id),
+    );
+  }
+}
+
 function backfillCanonicalAssets(db: DatabaseSync) {
   const rows = db
     .prepare(
@@ -534,6 +580,7 @@ export function repairStoredData(db: DatabaseSync) {
   backfillLegacyFlowScopes(db);
   repairTrading212CashSemantics(db);
   backfillAccountCoverage(db);
+  repairInvestownRealizedPnl(db);
   backfillCanonicalAssets(db);
 }
 

@@ -41,6 +41,7 @@ export interface InvestownImportStatus {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  realizedProfitCzk: number;
   transactions: number;
   projects: number;
   activeProjects: number;
@@ -97,11 +98,17 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     }));
 
   let mode = "unknown";
+  let realizedYieldCzk = Number(account.realized_pnl_czk) || 0;
+  let realizedProfitCzk = Number(account.realized_pnl_czk) || 0;
   try {
     const raw = account.raw_json
       ? (JSON.parse(String(account.raw_json)) as Record<string, unknown>)
       : {};
     if (typeof raw.importMode === "string") mode = raw.importMode;
+    const storedYield = Number(raw.derivedInterest);
+    if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
+    const storedProfit = Number(raw.derivedRealizedPnl);
+    if (Number.isFinite(storedProfit)) realizedProfitCzk = storedProfit;
   } catch {
     mode = "invalid metadata";
   }
@@ -112,7 +119,8 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     currentValueCzk: Number(account.total_value_czk) || 0,
     walletCashCzk: Number(account.cash_value_czk) || 0,
     investedValueCzk: Number(account.invested_value_czk) || 0,
-    realizedYieldCzk: Number(account.realized_pnl_czk) || 0,
+    realizedYieldCzk,
+    realizedProfitCzk,
     transactions: Number(transactionStats?.count) || 0,
     projects: Number(projectStats?.count) || 0,
     activeProjects: Number(activeStats?.count) || 0,
@@ -440,10 +448,26 @@ export async function importInvestown(input: InvestownImportInput) {
   const derivedInterest = prepared.reduce(
     (sum, item) =>
       item.kind === "interest" && item.amountCzk !== null
-        ? sum + Math.max(0, item.amountCzk)
+        ? sum + item.amountCzk
         : sum,
     0,
   );
+  const derivedOtherIncome = prepared.reduce(
+    (sum, item) =>
+      item.kind === "income" && item.amountCzk !== null
+        ? sum + item.amountCzk
+        : sum,
+    0,
+  );
+  const derivedFees = prepared.reduce(
+    (sum, item) =>
+      item.kind === "fee" && item.amountCzk !== null
+        ? sum + Math.abs(item.amountCzk)
+        : sum,
+    0,
+  );
+  const derivedRealizedPnl =
+    derivedInterest + derivedOtherIncome - derivedFees;
 
   const overrideCash = finiteOptional(input.walletCash);
   const overrideTotal = finiteOptional(input.currentValue);
@@ -497,7 +521,7 @@ export async function importInvestown(input: InvestownImportInput) {
     cashValue: Math.max(0, walletCash),
     investedValue,
     totalValue,
-    realizedPnl: derivedInterest,
+    realizedPnl: derivedRealizedPnl,
     unrealizedPnl: 0,
     realizedPnlStatus:
       input.sourceFormat === "investown-native" &&
@@ -509,7 +533,7 @@ export async function importInvestown(input: InvestownImportInput) {
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
-    realizedPnlCzk: derivedInterest,
+    realizedPnlCzk: derivedRealizedPnl,
     unrealizedPnlCzk: 0,
     raw: {
       imported: true,
@@ -523,6 +547,9 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedReserved,
       derivedInvested,
       derivedInterest,
+      derivedOtherIncome,
+      derivedFees,
+      derivedRealizedPnl,
       statementRows: prepared.length,
       statementFirstAt: prepared[0]?.occurredIso || null,
       statementLastAt: prepared[prepared.length - 1]?.occurredIso || null,
@@ -708,6 +735,9 @@ export async function importInvestown(input: InvestownImportInput) {
         investedPrincipalCzk: derivedPrincipal,
         reservedOffersCzk: derivedReserved,
         receivedInterestCzk: derivedInterest,
+        otherIncomeCzk: derivedOtherIncome,
+        feesCzk: derivedFees,
+        realizedPnlCzk: derivedRealizedPnl,
         totalValueCzk: derivedWallet + derivedInvested,
         activeProjects: holdings.length,
         allProjects: projects.size,
