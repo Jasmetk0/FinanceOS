@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       accountCurrency?: unknown;
       currentValue?: unknown;
       walletCash?: unknown;
+      currentProfit?: unknown;
       rows?: unknown;
       replaceExisting?: unknown;
       sourceFormat?: unknown;
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
       accountCurrency: String(body.accountCurrency || "CZK"),
       currentValue: optionalNumber(body.currentValue),
       walletCash: optionalNumber(body.walletCash),
+      currentProfit: optionalNumber(body.currentProfit),
       rows,
       replaceExisting: body.replaceExisting !== false,
       sourceFormat,
