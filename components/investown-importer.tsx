@@ -192,6 +192,7 @@ type InvestownStatus = {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  realizedProfitCzk: number;
   transactions: number;
   projects: number;
   activeProjects: number;
@@ -576,6 +577,10 @@ export function InvestownImporter({
               <p className="mt-1 text-xs text-[var(--muted)]">
                 {new Date(initialStatus.updatedAt).toLocaleString("cs-CZ")} ·{" "}
                 {initialStatus.mode}
+                {initialStatus.lastAt
+                  ? " · data do " +
+                    new Date(initialStatus.lastAt).toLocaleDateString("cs-CZ")
+                  : ""}
               </p>
             </div>
             <span
@@ -605,8 +610,8 @@ export function InvestownImporter({
               value={money(initialStatus.investedValueCzk)}
             />
             <Preview
-              label="Přijaté výnosy"
-              value={money(initialStatus.realizedYieldCzk)}
+              label="Realizovaný zisk"
+              value={money(initialStatus.realizedProfitCzk)}
             />
             <Preview
               label="Aktivní projekty"
