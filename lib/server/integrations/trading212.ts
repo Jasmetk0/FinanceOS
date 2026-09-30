@@ -18,6 +18,7 @@ import {
   hasTrading212CardEvidence,
   syncTrading212CardHistory,
 } from "@/lib/server/trading212-card";
+import { syncTrading212DailyHistory } from "@/lib/server/trading212-history";
 
 type JsonObject = Record<string, unknown>;
 
@@ -727,6 +728,19 @@ export async function syncTrading212() {
 
   recordSnapshot(accountIdValue);
 
+  let dailyHistory:
+    | Awaited<ReturnType<typeof syncTrading212DailyHistory>>
+    | { error: string };
+  try {
+    dailyHistory = await syncTrading212DailyHistory(accountIdValue);
+  } catch (error) {
+    // Historical market-data reconstruction is best-effort and must never
+    // turn a successful provider sync into a failed live-account sync.
+    dailyHistory = {
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
   return {
     accountId: accountIdValue,
     holdings: holdings.length,
@@ -735,6 +749,7 @@ export async function syncTrading212() {
     cashTransactions: cashTransactions.length,
     cardSync,
     cardDetected,
+    dailyHistory,
   };
   });
 }
