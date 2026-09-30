@@ -126,6 +126,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       SELECT
         a.id AS account_id,
         a.provider,
+        a.raw_json,
         (
           SELECT MIN(t.occurred_at)
           FROM transactions t
@@ -155,10 +156,27 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : snapshotDate
         : transactionDate || snapshotDate;
 
+    let valueThroughDate: string | null = null;
+    if (String(row.provider) === "investown" && row.raw_json) {
+      try {
+        const raw = JSON.parse(String(row.raw_json)) as Record<string, unknown>;
+        if (
+          raw.importMode === "investown-native" &&
+          raw.balanceMode === "derived-from-full-statement" &&
+          typeof raw.statementLastAt === "string"
+        ) {
+          valueThroughDate = raw.statementLastAt.slice(0, 10);
+        }
+      } catch {
+        // Optional provider coverage metadata must never break analytics.
+      }
+    }
+
     return {
       accountId: String(row.account_id),
       provider: String(row.provider),
       startDate,
+      valueThroughDate,
     };
   });
 
@@ -354,7 +372,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const providerShouldExist = activeAccounts.length > 0;
       const providerComplete =
         providerShouldExist &&
-        activeAccounts.every((item) => latestByAccount.has(item.accountId));
+        activeAccounts.every(
+          (item) =>
+            latestByAccount.has(item.accountId) &&
+            (item.valueThroughDate === null || date <= item.valueThroughDate),
+        );
       const value =
         providerComplete && providerValues.has(provider)
           ? providerValues.get(provider) ?? 0
