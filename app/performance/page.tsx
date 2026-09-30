@@ -1,6 +1,7 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getHistoryData, getPerformanceData } from "@/lib/server/analytics";
 import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
+import { DataFreshnessBadge } from "@/components/data-freshness-badge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -160,19 +161,19 @@ export default function PerformancePage() {
                       className="border-b border-white/6 last:border-0"
                     >
                       <td className="py-4">
-                        <p className="font-medium">{account.name}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{account.name}</p>
+                          <DataFreshnessBadge
+                            freshness={account.dataFreshness}
+                            compact
+                          />
+                        </div>
                         <p className="mt-1 text-xs text-[var(--muted)]">
                           {account.provider} · {account.externalFlowCount} external flows
                           {account.unclassifiedFlowCount
                             ? " · " +
                               account.unclassifiedFlowCount +
                               " unresolved flow(s)"
-                            : ""}
-                          {!account.valueIsCurrent && account.valueThroughDate
-                            ? " · value through " +
-                              new Date(
-                                account.valueThroughDate + "T12:00:00",
-                              ).toLocaleDateString("cs-CZ")
                             : ""}
                         </p>
                       </td>
