@@ -30,6 +30,24 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown realized PnL counts investor compensation and income positively", () => {
+  const investown = source("lib/server/investown.ts");
+  const db = source("lib/server/db.ts");
+
+  assert.ok(investown.includes('"Smluvní pokuta": "interest"'));
+  assert.ok(investown.includes('"Zákonné úroky z prodlení": "interest"'));
+  assert.ok(investown.includes('"Odměna": "income"'));
+  assert.ok(investown.includes("derivedInterest + derivedOtherIncome - derivedFees"));
+  assert.ok(investown.includes("realizedPnl: derivedRealizedPnl"));
+  assert.ok(investown.includes("realizedPnlCzk: derivedRealizedPnl"));
+
+  assert.ok(db.includes("function repairInvestownRealizedPnl"));
+  assert.ok(db.includes("kind = 'interest'"));
+  assert.ok(db.includes("kind = 'income'"));
+  assert.ok(db.includes("kind = 'fee'"));
+  assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
+});
+
 test("performance is blocked by any unresolved investment flow", () => {
   const analytics = source("lib/server/analytics.ts");
   assert.ok(analytics.includes("const portfolioPerformanceComplete = unclassifiedFlowCount === 0"));
