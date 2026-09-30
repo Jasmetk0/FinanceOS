@@ -57,7 +57,7 @@ export default function Home() {
           hint={
             data.summary.unclassifiedCzk
               ? "Provider totals včetně explicitně nezařazené hodnoty"
-              : "Součet aktuálně naceněných účtů"
+              : "Součet posledních doložených hodnot účtů"
           }
         />
         <StatCard
@@ -118,7 +118,10 @@ export default function Home() {
           <PortfolioHistoryChart data={history.chart} compact />
         </SectionCard>
 
-        <SectionCard title="Účty" subtitle="Aktuální hodnota podle zdroje">
+        <SectionCard
+          title="Účty"
+          subtitle="Poslední doložená hodnota podle zdroje"
+        >
           {data.accounts.length ? (
             <div className="space-y-5">
               {data.accounts.map((account) => {
