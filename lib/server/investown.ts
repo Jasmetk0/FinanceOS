@@ -248,10 +248,8 @@ function stableBase(row: InvestownImportRow): string {
     amount: Number(row.amount),
     currency: normalize(row.currency || "CZK").toUpperCase(),
     type: normalize(row.type),
-    description: normalize(row.description),
     loanName: normalize(row.loanName),
     projectName: normalize(row.projectName),
-    projectUrl: normalize(row.projectUrl),
     projectType: normalize(row.projectType),
   });
 
