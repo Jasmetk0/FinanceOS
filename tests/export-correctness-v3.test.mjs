@@ -329,7 +329,7 @@ test("history chart keeps user deposits, rewards and P/L capital distinct", () =
   assert.ok(analytics.includes("capitalAttributedCzk"));
   assert.ok(analytics.includes("totalOwnContribution"));
   assert.ok(analytics.includes("totalExternalRewards"));
-  assert.ok(chart.includes("Vlastní čisté vklady"));
+  assert.ok(chart.includes("Čistý vlastní kapitál"));
   assert.ok(chart.includes("Kapitál pro P/L"));
   assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
   assert.ok(historyPage.includes("Čistý vlastní kapitál"));
