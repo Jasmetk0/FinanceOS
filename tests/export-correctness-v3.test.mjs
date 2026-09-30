@@ -146,11 +146,15 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(repository.includes("'provider', 'verified'"));
   assert.ok(trading212.includes("syncTrading212DailyHistory"));
   assert.ok(trading212.includes("dailyHistory"));
+  assert.ok(trading212.includes("HISTORY_PAGE_BUDGET"));
+  assert.ok(trading212.includes("history_complete:"));
+  assert.ok(trading212.includes("history_cursor:"));
 
   assert.ok(history.includes("Yahoo Finance chart"));
   assert.ok(history.includes("maybeToCzk"));
   assert.ok(history.includes("openingCashResidualCzk"));
   assert.ok(history.includes("quantityMismatchAssets"));
+  assert.ok(history.includes("transactionHistoryComplete"));
   assert.ok(history.includes("source = 'reconstructed'"));
   assert.ok(history.includes("snapshots.source = 'provider'"));
 
@@ -161,6 +165,8 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(detail.includes("Denní rekonstrukce Trading 212"));
   assert.ok(dailyTable.includes("Vklad"));
   assert.ok(dailyTable.includes("Výběr"));
+  assert.ok(dailyTable.includes("Výnosy"));
+  assert.ok(dailyTable.includes("Poplatky"));
   assert.ok(dailyTable.includes("P/L"));
 });
 
