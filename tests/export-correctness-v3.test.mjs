@@ -132,6 +132,29 @@ test("all account surfaces expose provider-aware data freshness", () => {
   );
 });
 
+test("account cards link to rich account detail pages", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const accounts = source("app/accounts/page.tsx");
+  const dashboard = source("app/page.tsx");
+  const detail = source("app/accounts/[id]/page.tsx");
+
+  assert.ok(analytics.includes("export function getAccountDetail"));
+  assert.ok(analytics.includes("WHERE h.account_id = ?"));
+  assert.ok(analytics.includes("WHERE t.account_id = ?"));
+  assert.ok(analytics.includes("transactionKinds"));
+  assert.ok(analytics.includes("sourceMetadata"));
+  assert.ok(analytics.includes("chartPoints"));
+
+  assert.ok(accounts.includes('href={"/accounts/" + encodeURIComponent(account.id)}'));
+  assert.ok(dashboard.includes('href={"/accounts/" + encodeURIComponent(account.id)}'));
+  assert.ok(detail.includes("PortfolioHistoryChart"));
+  assert.ok(detail.includes("DataFreshnessBadge"));
+  assert.ok(detail.includes("TransactionsTable"));
+  assert.ok(detail.includes("Aktuální pozice"));
+  assert.ok(detail.includes("Datové pokrytí"));
+  assert.ok(detail.includes("Struktura transakcí"));
+});
+
 test("performance is blocked by unresolved flows or stale valuations", () => {
   const analytics = source("lib/server/analytics.ts");
   assert.ok(
