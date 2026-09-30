@@ -806,7 +806,12 @@ export async function syncTrading212DailyHistory(
     100,
     Math.abs(num(account.total_value_czk)) * 0.002,
   );
+  const transactionHistoryComplete =
+    getState("history_complete:orders") === "true" &&
+    getState("history_complete:dividends") === "true" &&
+    getState("history_complete:cash") === "true";
   const cashHistoryComplete =
+    transactionHistoryComplete &&
     Math.abs(openingCashResidualCzk) <= cashResidualTolerance;
 
   db.prepare(
@@ -963,6 +968,7 @@ export async function syncTrading212DailyHistory(
     partialDays,
     openingCashResidualCzk,
     cashHistoryComplete,
+    transactionHistoryComplete,
     quantityMismatchCount: quantityMismatchAssets.size,
     unresolvedAssets,
     methodology: "transactions + daily closes + CNB historical FX",
