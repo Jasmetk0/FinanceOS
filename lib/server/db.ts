@@ -501,17 +501,21 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
     const interestCzk = Number(row?.interest_czk) || 0;
     const incomeCzk = Number(row?.income_czk) || 0;
     const feesCzk = Number(row?.fees_czk) || 0;
-    const realizedPnlCzk = interestCzk + incomeCzk - feesCzk;
+    const statementRealizedPnlCzk = interestCzk + incomeCzk - feesCzk;
+    const reportedProfit = Number(raw.providerReportedProfitCzk);
+    const effectiveRealizedPnlCzk = Number.isFinite(reportedProfit)
+      ? reportedProfit
+      : statementRealizedPnlCzk;
 
     update.run(
-      realizedPnlCzk,
-      realizedPnlCzk,
+      effectiveRealizedPnlCzk,
+      effectiveRealizedPnlCzk,
       JSON.stringify({
         ...raw,
         derivedInterest: interestCzk,
         derivedOtherIncome: incomeCzk,
         derivedFees: feesCzk,
-        derivedRealizedPnl: realizedPnlCzk,
+        derivedRealizedPnl: statementRealizedPnlCzk,
       }),
       String(account.id),
     );
