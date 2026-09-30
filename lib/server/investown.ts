@@ -115,8 +115,11 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
     const storedProfit = Number(raw.derivedRealizedPnl);
     if (Number.isFinite(storedProfit)) statementRealizedProfitCzk = storedProfit;
-    const reportedProfit = Number(raw.providerReportedProfitCzk);
-    if (Number.isFinite(reportedProfit)) providerReportedProfitCzk = reportedProfit;
+    const rawReportedProfit = raw.providerReportedProfitCzk;
+    if (rawReportedProfit !== null && rawReportedProfit !== undefined) {
+      const reportedProfit = Number(rawReportedProfit);
+      if (Number.isFinite(reportedProfit)) providerReportedProfitCzk = reportedProfit;
+    }
     if (typeof raw.providerReportedProfitAsOf === "string") {
       profitAsOf = raw.providerReportedProfitAsOf;
     }
@@ -547,12 +550,17 @@ export async function importInvestown(input: InvestownImportInput) {
           string,
           unknown
         >;
-        const existingProfit = Number(existingRaw.providerReportedProfitCzk);
+        const rawExistingProfit = existingRaw.providerReportedProfitCzk;
+        const existingProfit =
+          rawExistingProfit === null || rawExistingProfit === undefined
+            ? null
+            : Number(rawExistingProfit);
         const existingAsOf =
           typeof existingRaw.providerReportedProfitAsOf === "string"
             ? existingRaw.providerReportedProfitAsOf
             : null;
         if (
+          existingProfit !== null &&
           Number.isFinite(existingProfit) &&
           existingAsOf &&
           statementLastAt &&
