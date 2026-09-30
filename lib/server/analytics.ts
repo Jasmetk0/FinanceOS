@@ -1889,7 +1889,9 @@ export function getAccountDetail(accountIdInput: string) {
 
   const snapshotRows = db
     .prepare(`
-      SELECT recorded_at, total_value_czk, source, quality
+      SELECT
+        recorded_at, total_value_czk, cash_value_czk, invested_value_czk,
+        source, quality
       FROM snapshots
       WHERE account_id = ?
         AND COALESCE(quality, 'verified') != 'partial'
@@ -1936,20 +1938,29 @@ export function getAccountDetail(accountIdInput: string) {
     .map((row) => {
       const kind = String(row.kind);
       const category = String(row.category || "");
+      const amount = num(row.amount_czk);
+      const transferValue = num(row.transfer_value_czk);
       return {
         date: String(row.day),
+        depositCzk: kind === "deposit" ? Math.abs(amount) : 0,
+        withdrawalCzk: kind === "withdrawal" ? Math.abs(amount) : 0,
         ownContributionDelta:
           kind === "deposit"
-            ? Math.abs(num(row.amount_czk))
+            ? Math.abs(amount)
             : kind === "withdrawal"
-              ? -Math.abs(num(row.amount_czk))
+              ? -Math.abs(amount)
               : 0,
         rewardDelta:
           kind === "income" && category === "card_cashback"
-            ? num(row.amount_czk)
+            ? amount
             : 0,
-        transferDelta:
-          kind === "transfer" ? num(row.transfer_value_czk) : 0,
+        transferInCzk:
+          kind === "transfer" && transferValue > 0 ? transferValue : 0,
+        transferOutCzk:
+          kind === "transfer" && transferValue < 0
+            ? Math.abs(transferValue)
+            : 0,
+        transferDelta: kind === "transfer" ? transferValue : 0,
       };
     });
 
@@ -1972,11 +1983,54 @@ export function getAccountDetail(accountIdInput: string) {
     ? String(performanceGapRow.first_gap)
     : null;
 
+  const dailyFlowByDate = new Map<
+    string,
+    {
+      depositsCzk: number;
+      withdrawalsCzk: number;
+      rewardsCzk: number;
+      transferInCzk: number;
+      transferOutCzk: number;
+    }
+  >();
+  for (const flow of flowRows) {
+    const current = dailyFlowByDate.get(flow.date) ?? {
+      depositsCzk: 0,
+      withdrawalsCzk: 0,
+      rewardsCzk: 0,
+      transferInCzk: 0,
+      transferOutCzk: 0,
+    };
+    current.depositsCzk += flow.depositCzk;
+    current.withdrawalsCzk += flow.withdrawalCzk;
+    current.rewardsCzk += flow.rewardDelta;
+    current.transferInCzk += flow.transferInCzk;
+    current.transferOutCzk += flow.transferOutCzk;
+    dailyFlowByDate.set(flow.date, current);
+  }
+
   let ownContribution = 0;
   let externalRewards = 0;
   let transferAttribution = 0;
   let flowIndex = 0;
   const chartPoints: PortfolioHistoryPoint[] = [];
+  const dailyHistory: Array<{
+    date: string;
+    valueCzk: number | null;
+    cashCzk: number;
+    investedCzk: number;
+    depositsCzk: number;
+    withdrawalsCzk: number;
+    rewardsCzk: number;
+    transferInCzk: number;
+    transferOutCzk: number;
+    contributedCzk: number;
+    capitalAttributedCzk: number;
+    profitCzk: number | null;
+    returnPct: number | null;
+    source: string;
+    quality: string;
+  }> = [];
 
   for (const row of snapshotRows) {
     const date = String(row.recorded_at).slice(0, 10);
@@ -2013,6 +2067,31 @@ export function getAccountDetail(accountIdInput: string) {
         knownProviders: valuationCovered ? [provider] : [],
         missingProviders: valuationCovered ? [] : [provider],
       },
+    });
+
+    const dayFlow = dailyFlowByDate.get(date) ?? {
+      depositsCzk: 0,
+      withdrawalsCzk: 0,
+      rewardsCzk: 0,
+      transferInCzk: 0,
+      transferOutCzk: 0,
+    };
+    dailyHistory.push({
+      date,
+      valueCzk: metric.valueCzk,
+      cashCzk: num(row.cash_value_czk),
+      investedCzk: num(row.invested_value_czk),
+      depositsCzk: dayFlow.depositsCzk,
+      withdrawalsCzk: dayFlow.withdrawalsCzk,
+      rewardsCzk: dayFlow.rewardsCzk,
+      transferInCzk: dayFlow.transferInCzk,
+      transferOutCzk: dayFlow.transferOutCzk,
+      contributedCzk: metric.contributedCzk,
+      capitalAttributedCzk: metric.capitalAttributedCzk,
+      profitCzk: metric.profitCzk,
+      returnPct: metric.returnPct,
+      source: String(row.source || "provider"),
+      quality: String(row.quality || "verified"),
     });
   }
 
@@ -2069,6 +2148,7 @@ export function getAccountDetail(accountIdInput: string) {
     performance,
     holdings,
     transactions,
+    dailyHistory,
     transactionKinds: kindRows,
     coverage: {
       transactionCount: num(transactionStats?.count),
