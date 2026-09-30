@@ -78,11 +78,16 @@ test("Investown statement history is never carried past source coverage", () => 
   assert.ok(performance.includes("value through"));
 });
 
-test("performance is blocked by any unresolved investment flow", () => {
+test("performance is blocked by unresolved flows or stale valuations", () => {
   const analytics = source("lib/server/analytics.ts");
-  assert.ok(analytics.includes("const portfolioPerformanceComplete = unclassifiedFlowCount === 0"));
+  assert.ok(
+    analytics.includes(
+      "unclassifiedFlowCount === 0 && totals.staleValuationCount === 0",
+    ),
+  );
   assert.ok(analytics.includes("knownUnclassifiedFlowCzk"));
   assert.ok(analytics.includes("accountPerformanceComplete"));
+  assert.ok(analytics.includes("valueIsCurrent"));
 });
 
 test("restore immediately reapplies stored-data repairs", () => {
