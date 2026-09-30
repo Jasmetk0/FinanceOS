@@ -178,6 +178,265 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
     const occurredAt = String(row.occurred_at);
     markConversion.run("fx:" + occurredAt, accountId, occurredAt);
   }
+
+  // Trading 212's coarse history currently exposes both ordinary account
+  // deposits and 212 Card cashback as type=DEPOSIT. When the richer export API
+  // is rate-limited, this used to leave every deposit unresolved and made the
+  // entire contribution history unusable.
+  //
+  // The card feed has a strong provider-generated signature: cashback is paid
+  // daily in small amounts shortly after midnight and, on many days, equals
+  // 1.5% of the previous UTC day's card withdrawals. We only activate this
+  // fallback after observing that signature repeatedly on the same account.
+  // Once established, nightly small DEPOSIT rows are reward capital; the
+  // remaining coarse DEPOSIT rows are ordinary external deposits.
+  const unresolvedDeposits = db
+    .prepare(`
+      SELECT id, account_id, occurred_at, amount_czk, raw_json
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND kind = 'deposit'
+        AND flow_scope = 'unclassified'
+        AND amount_czk IS NOT NULL
+        AND amount_czk > 0
+        AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'
+      ORDER BY occurred_at ASC
+    `)
+    .all();
+
+  const withdrawals = db
+    .prepare(`
+      SELECT account_id, occurred_at, amount_czk
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND kind = 'withdrawal'
+        AND flow_scope = 'external'
+        AND amount_czk IS NOT NULL
+      ORDER BY occurred_at ASC
+    `)
+    .all();
+
+  const accountIds = new Set(
+    unresolvedDeposits.map((row) => String(row.account_id)),
+  );
+
+  const utcDate = (iso: string) => {
+    const parsed = new Date(iso);
+    return Number.isNaN(parsed.getTime())
+      ? null
+      : parsed.toISOString().slice(0, 10);
+  };
+
+  const previousUtcDate = (date: string) => {
+    const parsed = new Date(date + "T00:00:00.000Z");
+    parsed.setUTCDate(parsed.getUTCDate() - 1);
+    return parsed.toISOString().slice(0, 10);
+  };
+
+  const markCashback = db.prepare(`
+    UPDATE transactions
+    SET
+      kind = 'income',
+      flow_scope = 'external',
+      category = 'card_cashback',
+      source_label = 'Trading 212 card cashback · inferred'
+    WHERE id = ?
+  `);
+
+  const markDeposit = db.prepare(`
+    UPDATE transactions
+    SET
+      flow_scope = 'external',
+      category = 'external_deposit',
+      source_label = COALESCE(NULLIF(source_label, ''), 'Trading 212 deposit')
+    WHERE id = ?
+  `);
+
+  const markCardSpend = db.prepare(`
+    UPDATE transactions
+    SET
+      category = 'card_spend:inferred',
+      source_label = 'Trading 212 card · inferred'
+    WHERE provider = 'trading212'
+      AND account_id = ?
+      AND kind = 'withdrawal'
+      AND flow_scope = 'external'
+      AND substr(occurred_at, 1, 10) = ?
+      AND COALESCE(category, '') NOT LIKE 'card_spend:%'
+      AND COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'
+  `);
+
+  for (const accountId of accountIds) {
+    const accountDeposits = unresolvedDeposits.filter(
+      (row) => String(row.account_id) === accountId,
+    );
+    const withdrawalByDate = new Map<string, number>();
+
+    for (const row of withdrawals) {
+      if (String(row.account_id) !== accountId) continue;
+      const date = utcDate(String(row.occurred_at));
+      if (!date) continue;
+      withdrawalByDate.set(
+        date,
+        (withdrawalByDate.get(date) ?? 0) +
+          Math.abs(Number(row.amount_czk) || 0),
+      );
+    }
+
+    const candidatesByDate = new Map<string, typeof accountDeposits>();
+    for (const row of accountDeposits) {
+      const parsed = new Date(String(row.occurred_at));
+      const amount = Number(row.amount_czk);
+      if (
+        Number.isNaN(parsed.getTime()) ||
+        !Number.isFinite(amount) ||
+        amount <= 0 ||
+        amount > 100
+      ) {
+        continue;
+      }
+
+      const hour = parsed.getUTCHours();
+      if (hour !== 1 && hour !== 2) continue;
+      const date = parsed.toISOString().slice(0, 10);
+      const rows = candidatesByDate.get(date) ?? [];
+      rows.push(row);
+      candidatesByDate.set(date, rows);
+    }
+
+    const matchedDates: string[] = [];
+    for (const [date, rows] of candidatesByDate) {
+      const previousWithdrawals =
+        withdrawalByDate.get(previousUtcDate(date)) ?? 0;
+      if (previousWithdrawals <= 0) continue;
+
+      const cashback = rows.reduce(
+        (sum, row) => sum + Number(row.amount_czk || 0),
+        0,
+      );
+      const expected = Math.round(previousWithdrawals * 0.015 * 100) / 100;
+      if (Math.abs(cashback - expected) <= 0.05) {
+        matchedDates.push(date);
+      }
+    }
+
+    // Require repeated exact daily-rate matches before inferring anything.
+    if (matchedDates.length < 3) continue;
+    matchedDates.sort();
+    const firstCardDate = matchedDates[0];
+
+    // An exact 1.5% next-day cashback match proves that the preceding day's
+    // aggregate external outflow was card-eligible spend. Mark only those
+    // proven days as personal card expense; unmatched withdrawals remain
+    // ordinary external outflows until the rich merchant export resolves them.
+    for (const cashbackDate of matchedDates) {
+      markCardSpend.run(accountId, previousUtcDate(cashbackDate));
+    }
+
+    const matchedDateSet = new Set(matchedDates);
+    const cashbackIds = new Set<string>();
+    const ambiguousCardEraIds = new Set<string>();
+
+    for (const [date, rows] of candidatesByDate) {
+      if (matchedDateSet.has(date)) {
+        for (const row of rows) {
+          cashbackIds.add(String(row.id));
+          markCashback.run(String(row.id));
+        }
+        continue;
+      }
+
+      // After card cashback is proven to exist on the account, unmatched
+      // small nightly cash-ins are not safe to call either cashback or an
+      // ordinary bank deposit. Keep them unresolved until the rich export
+      // or another exact provider-history signature identifies them.
+      if (date >= firstCardDate) {
+        for (const row of rows) {
+          ambiguousCardEraIds.add(String(row.id));
+        }
+      }
+    }
+
+    for (const row of accountDeposits) {
+      const id = String(row.id);
+      if (cashbackIds.has(id) || ambiguousCardEraIds.has(id)) continue;
+      markDeposit.run(id);
+    }
+  }
+
+  const cardEvidence = db
+    .prepare(`
+      SELECT 1
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND (
+          category = 'card_cashback'
+          OR category LIKE 'card_spend:%'
+          OR category LIKE 'card_refund:%'
+          OR category = 'card_fee'
+        )
+      LIMIT 1
+    `)
+    .get();
+
+  if (cardEvidence) {
+    const accounts = db
+      .prepare(`
+        SELECT
+          id,
+          cash_value,
+          cash_value_czk,
+          unclassified_value,
+          unclassified_value_czk,
+          raw_json
+        FROM accounts
+        WHERE provider = 'trading212'
+          AND type = 'brokerage'
+          AND unclassified_value_czk > 0
+      `)
+      .all();
+
+    const reconcile = db.prepare(`
+      UPDATE accounts
+      SET
+        cash_value = ?,
+        cash_value_czk = ?,
+        unclassified_value = 0,
+        unclassified_value_czk = 0,
+        reconciliation_difference = 0,
+        reconciliation_status = 'reconciled',
+        raw_json = ?
+      WHERE id = ?
+    `);
+
+    for (const row of accounts) {
+      const spendingPot = Number(row.unclassified_value) || 0;
+      const spendingPotCzk = Number(row.unclassified_value_czk) || 0;
+      const raw = parseJsonObject(row.raw_json);
+      const oldReconciliation = parseJsonObject(
+        raw.financeOsReconciliation,
+      );
+
+      reconcile.run(
+        (Number(row.cash_value) || 0) + spendingPot,
+        (Number(row.cash_value_czk) || 0) + spendingPotCzk,
+        JSON.stringify({
+          ...raw,
+          financeOsReconciliation: {
+            ...oldReconciliation,
+            spendingPot: {
+              value: spendingPot,
+              valueCzk: spendingPotCzk,
+              source: "provider_total_residual",
+              confidence: "confirmed_by_card_cashback_signature",
+            },
+            unclassifiedValue: 0,
+          },
+        }),
+        String(row.id),
+      );
+    }
+  }
 }
 
 function backfillAccountCoverage(db: DatabaseSync) {

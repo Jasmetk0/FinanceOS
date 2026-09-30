@@ -78,7 +78,9 @@ export function buildExport() {
   }, {});
 
   const canonicalEligible = assets.filter((row) =>
-    ["trading212", "kraken", "mintos"].includes(String(row.provider)),
+    ["trading212", "kraken", "mintos", "phantom"].includes(
+      String(row.provider),
+    ),
   );
   const canonicalIdentity = {
     withCanonicalKey: assets.filter((row) => Boolean(row.canonical_key)).length,

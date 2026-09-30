@@ -512,7 +512,8 @@ function reclassifyLegacyKrakenWalletFlows() {
   const db = getDb();
   const rows = db
     .prepare(
-      "SELECT id, kind, currency, note, raw_json FROM transactions " +
+      "SELECT id, kind, currency, note, category, flow_scope, counterparty_ref, raw_json " +
+        "FROM transactions " +
         "WHERE provider = 'kraken' AND external_id LIKE 'ledger:%'",
     )
     .all();
@@ -527,6 +528,33 @@ function reclassifyLegacyKrakenWalletFlows() {
     } catch {
       raw = {};
     }
+
+    const currentCategory = String(row.category || "");
+    const currentCounterparty = String(row.counterparty_ref || "");
+    const phantomMatch = asObject(raw.financeOsPhantomMatch);
+    const ownedWalletLink =
+      currentCategory === "wallet_transfer_out_owned" ||
+      currentCategory === "wallet_transfer_in_owned" ||
+      currentCounterparty.startsWith("phantom:") ||
+      Boolean(phantomMatch.address);
+
+    if (ownedWalletLink) {
+      const direction =
+        currentCategory.includes("_in_") ||
+        stringValue(raw.type).toLowerCase() === "deposit"
+          ? "in"
+          : "out";
+      update.run(
+        "transfer",
+        "internal",
+        direction === "in"
+          ? "wallet_transfer_in_owned"
+          : "wallet_transfer_out_owned",
+        String(row.id),
+      );
+      continue;
+    }
+
     const type = stringValue(raw.type, String(row.kind)).toLowerCase();
     const subtype = stringValue(raw.subtype);
     const currency = String(row.currency);
@@ -604,7 +632,7 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
   const rows = db
     .prepare(
       "SELECT t.id, t.kind, t.occurred_at, t.amount, t.amount_czk, " +
-        "t.quantity, t.fee, t.category, t.flow_scope, a.symbol " +
+        "t.quantity, t.fee, t.category, t.flow_scope, t.transfer_value_czk, a.symbol " +
         "FROM transactions t LEFT JOIN assets a ON a.id = t.asset_id " +
         "WHERE t.provider = 'kraken' AND t.asset_id IS NOT NULL " +
         "ORDER BY t.occurred_at ASC, t.id ASC",
@@ -673,7 +701,7 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
 
     if (
       kind === "transfer" &&
-      scope === "unclassified" &&
+      category.startsWith("wallet_transfer_out_") &&
       quantity < 0
     ) {
       const consumed = consumeLots(lots, Math.abs(quantity));
@@ -687,13 +715,24 @@ function rebuildKrakenTransferBookValuesAndCostBasis() {
 
     if (
       kind === "transfer" &&
-      scope === "unclassified" &&
+      category.startsWith("wallet_transfer_in_") &&
       quantity > 0
     ) {
-      // Until an owned source wallet is linked, the carried cost basis of an
-      // incoming on-chain transfer is unknown.
-      lots.push({ quantity, costCzk: null });
-      incompleteSymbols.add(symbol);
+      const carriedValue =
+        row.transfer_value_czk === null ||
+        row.transfer_value_czk === undefined
+          ? null
+          : Math.abs(numberValue(row.transfer_value_czk, 0));
+      lots.push({
+        quantity,
+        costCzk:
+          scope === "internal" && carriedValue !== null
+            ? carriedValue
+            : null,
+      });
+      if (scope !== "internal" || carriedValue === null) {
+        incompleteSymbols.add(symbol);
+      }
       continue;
     }
 
@@ -1009,14 +1048,19 @@ export async function syncKraken() {
       amountCzk = null;
     }
 
+    const identity = canonicalCryptoIdentity(currency, rawAsset);
     const assetIdValue = upsertAsset({
       provider: "kraken",
       externalId: rawAsset,
-      symbol: currency,
-      name: currency,
+      symbol: identity.canonicalSymbol,
+      name: identity.canonicalSymbol,
       assetClass: isFiat(currency) ? "cash" : "crypto",
       currency,
-      raw: { rawAsset },
+      canonicalKey: isFiat(currency)
+        ? "currency:" + identity.canonicalSymbol
+        : identity.canonicalKey,
+      listingSymbol: identity.listingSymbol,
+      raw: { rawAsset, financeOsIdentity: identity },
     });
 
     upsertTransaction({

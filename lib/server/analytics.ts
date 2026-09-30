@@ -61,6 +61,8 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
 export interface PortfolioHistoryMetric {
   valueCzk: number | null;
   contributedCzk: number;
+  externalRewardsCzk: number;
+  capitalAttributedCzk: number;
   profitCzk: number | null;
   returnPct: number | null;
 }
@@ -81,21 +83,25 @@ export interface PortfolioHistoryPoint {
 function historyMetric(
   valueCzk: number | null,
   contributedCzk: number,
+  externalRewardsCzk: number,
+  capitalAttributedCzk: number,
   performanceComplete = true,
 ): PortfolioHistoryMetric {
   const profitCzk =
     valueCzk === null || !performanceComplete
       ? null
-      : valueCzk - contributedCzk;
+      : valueCzk - capitalAttributedCzk;
 
   return {
     valueCzk,
     contributedCzk,
+    externalRewardsCzk,
+    capitalAttributedCzk,
     profitCzk,
     returnPct:
-      profitCzk === null || contributedCzk <= 0
+      profitCzk === null || capitalAttributedCzk <= 0
         ? null
-        : (profitCzk / contributedCzk) * 100,
+        : (profitCzk / capitalAttributedCzk) * 100,
   };
 }
 
@@ -269,31 +275,30 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     const kind = String(row.kind);
     const category = String(row.category || "");
     const isReward = kind === "income" && category === "card_cashback";
-    const isExternal =
-      kind === "deposit" || kind === "withdrawal" || isReward;
-    const externalDelta =
+    const ownContributionDelta =
       kind === "deposit"
         ? Math.abs(num(row.amount_czk))
         : kind === "withdrawal"
           ? -Math.abs(num(row.amount_czk))
-          : isReward
-            ? num(row.amount_czk)
-            : 0;
-    const providerDelta =
-      isExternal
-        ? externalDelta
-        : num(row.transfer_value_czk);
+          : 0;
+    const rewardDelta = isReward ? num(row.amount_czk) : 0;
+    const transferDelta =
+      kind === "transfer" ? num(row.transfer_value_czk) : 0;
 
     return {
       date: String(row.day),
       provider: String(row.provider),
-      externalDelta,
-      providerDelta,
+      ownContributionDelta,
+      rewardDelta,
+      transferDelta,
     };
   });
 
   const contributionByProvider = new Map<string, number>();
-  let totalExternalContribution = 0;
+  const rewardsByProvider = new Map<string, number>();
+  const transferAttributionByProvider = new Map<string, number>();
+  let totalOwnContribution = 0;
+  let totalExternalRewards = 0;
   const points: PortfolioHistoryPoint[] = [];
   let flowIndex = 0;
 
@@ -303,9 +308,19 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       contributionByProvider.set(
         flow.provider,
         (contributionByProvider.get(flow.provider) ?? 0) +
-          flow.providerDelta,
+          flow.ownContributionDelta,
       );
-      totalExternalContribution += flow.externalDelta;
+      rewardsByProvider.set(
+        flow.provider,
+        (rewardsByProvider.get(flow.provider) ?? 0) + flow.rewardDelta,
+      );
+      transferAttributionByProvider.set(
+        flow.provider,
+        (transferAttributionByProvider.get(flow.provider) ?? 0) +
+          flow.transferDelta,
+      );
+      totalOwnContribution += flow.ownContributionDelta;
+      totalExternalRewards += flow.rewardDelta;
       flowIndex += 1;
     }
 
@@ -347,12 +362,19 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
             ? null
             : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
+      const externalRewards = rewardsByProvider.get(provider) ?? 0;
+      const transferAttribution =
+        transferAttributionByProvider.get(provider) ?? 0;
+      const capitalAttributed =
+        contributed + externalRewards + transferAttribution;
       const providerPerformanceGap = performanceGapByProvider.get(provider);
       const providerPerformanceComplete =
         !providerPerformanceGap || date < providerPerformanceGap;
       providerMetrics[provider] = historyMetric(
         value,
         contributed,
+        externalRewards,
+        capitalAttributed,
         providerPerformanceComplete,
       );
 
@@ -381,7 +403,9 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       // date has a valuation source, total value / P&L / return stay unknown.
       total: historyMetric(
         complete ? totalValue : null,
-        totalExternalContribution,
+        totalOwnContribution,
+        totalExternalRewards,
+        totalOwnContribution + totalExternalRewards,
         !firstPerformanceGap || date < firstPerformanceGap,
       ),
       providers: providerMetrics,
@@ -503,6 +527,8 @@ export function getDashboardData() {
         t.note,
         t.category,
         t.source_label,
+        t.flow_scope,
+        t.transfer_value_czk,
         ac.name AS account_name,
         COALESCE(a.symbol, '') AS symbol
       FROM transactions t
@@ -522,6 +548,11 @@ export function getDashboardData() {
       note: row.note ? String(row.note) : null,
       category: row.category ? String(row.category) : null,
       sourceLabel: row.source_label ? String(row.source_label) : null,
+      flowScope: String(row.flow_scope || "legacy"),
+      transferValueCzk:
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk),
       accountName: String(row.account_name),
       symbol: String(row.symbol || ""),
     }));
@@ -665,6 +696,8 @@ export function getTransactions(limit = 500) {
         t.note,
         t.category,
         t.source_label,
+        t.flow_scope,
+        t.transfer_value_czk,
         ac.name AS account_name,
         COALESCE(a.symbol, '') AS symbol,
         COALESCE(a.name, '') AS asset_name
@@ -690,6 +723,11 @@ export function getTransactions(limit = 500) {
       note: row.note ? String(row.note) : null,
       category: row.category ? String(row.category) : null,
       sourceLabel: row.source_label ? String(row.source_label) : null,
+      flowScope: String(row.flow_scope || "legacy"),
+      transferValueCzk:
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk),
       accountName: String(row.account_name),
       symbol: String(row.symbol || ""),
       assetName: String(row.asset_name || ""),
@@ -1219,6 +1257,8 @@ export function getPerformanceData() {
       currentValueCzk: 0,
       depositsCzk: 0,
       withdrawalsCzk: 0,
+      cardSpendCzk: 0,
+      cardRefundsCzk: 0,
       externalRewardsCzk: 0,
       realizedPnlCzk: 0,
       unrealizedPnlCzk: 0,
@@ -1788,27 +1828,48 @@ export function getHistoryData() {
       SELECT
         substr(t.occurred_at, 1, 10) AS day,
         t.kind,
-        SUM(ABS(t.amount_czk)) AS amount
+        t.category,
+        SUM(
+          CASE
+            WHEN t.kind IN ('deposit', 'withdrawal') THEN ABS(t.amount_czk)
+            ELSE t.amount_czk
+          END
+        ) AS amount
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.amount_czk IS NOT NULL
-        AND t.kind IN ('deposit', 'withdrawal')
         AND (
-          t.flow_scope = 'external'
+          (
+            t.kind IN ('deposit', 'withdrawal')
+            AND (
+              t.flow_scope = 'external'
+              OR (
+                t.flow_scope = 'legacy'
+                AND t.provider IN ('kraken', 'investown', 'mintos')
+              )
+            )
+          )
           OR (
-            t.flow_scope = 'legacy'
-            AND t.provider IN ('kraken', 'investown', 'mintos')
+            t.kind = 'income'
+            AND t.category = 'card_cashback'
+            AND t.flow_scope = 'external'
           )
         )
-      GROUP BY day, t.kind
+      GROUP BY day, t.kind, t.category
       ORDER BY day ASC
     `)
     .all();
 
   const flowByDay = new Map<
     string,
-    { depositsCzk: number; withdrawalsCzk: number }
+    {
+      depositsCzk: number;
+      withdrawalsCzk: number;
+      cardSpendCzk: number;
+      cardRefundsCzk: number;
+      externalRewardsCzk: number;
+    }
   >();
 
   for (const row of flowRows) {
@@ -1816,26 +1877,98 @@ export function getHistoryData() {
     const current = flowByDay.get(day) ?? {
       depositsCzk: 0,
       withdrawalsCzk: 0,
+      cardSpendCzk: 0,
+      cardRefundsCzk: 0,
+      externalRewardsCzk: 0,
     };
-    if (String(row.kind) === "deposit") {
+    const kind = String(row.kind);
+    const category = String(row.category || "");
+    if (kind === "deposit" && category.startsWith("card_refund:")) {
+      current.cardRefundsCzk += num(row.amount);
+    } else if (kind === "deposit") {
       current.depositsCzk += num(row.amount);
-    } else {
+    } else if (kind === "withdrawal" && category.startsWith("card_spend:")) {
+      current.cardSpendCzk += num(row.amount);
+    } else if (kind === "withdrawal") {
       current.withdrawalsCzk += num(row.amount);
+    } else if (kind === "income" && category === "card_cashback") {
+      current.externalRewardsCzk += num(row.amount);
     }
     flowByDay.set(day, current);
   }
 
   let cumulative = 0;
+  let cumulativeExternalRewards = 0;
   const contributionSeries = [...flowByDay.entries()].map(([date, flow]) => {
-    cumulative += flow.depositsCzk - flow.withdrawalsCzk;
+    const netOwnerFlow =
+      flow.depositsCzk -
+      flow.withdrawalsCzk -
+      flow.cardSpendCzk +
+      flow.cardRefundsCzk;
+    cumulative += netOwnerFlow;
+    cumulativeExternalRewards += flow.externalRewardsCzk;
     return {
       date,
       depositsCzk: flow.depositsCzk,
       withdrawalsCzk: flow.withdrawalsCzk,
-      netFlowCzk: flow.depositsCzk - flow.withdrawalsCzk,
+      cardSpendCzk: flow.cardSpendCzk,
+      cardRefundsCzk: flow.cardRefundsCzk,
+      externalRewardsCzk: flow.externalRewardsCzk,
+      netFlowCzk: netOwnerFlow,
+      capitalForPnlCzk: netOwnerFlow + flow.externalRewardsCzk,
       cumulativeNetContributedCzk: cumulative,
+      cumulativeExternalRewardsCzk: cumulativeExternalRewards,
+      cumulativeCapitalForPnlCzk: cumulative + cumulativeExternalRewards,
     };
   });
+
+  const capitalFlowMonths = new Map<
+    string,
+    {
+      month: string;
+      depositsCzk: number;
+      withdrawalsCzk: number;
+      cardSpendCzk: number;
+      cardRefundsCzk: number;
+      externalRewardsCzk: number;
+    }
+  >();
+
+  for (const item of contributionSeries) {
+    const month = item.date.slice(0, 7);
+    const current = capitalFlowMonths.get(month) ?? {
+      month,
+      depositsCzk: 0,
+      withdrawalsCzk: 0,
+      cardSpendCzk: 0,
+      cardRefundsCzk: 0,
+      externalRewardsCzk: 0,
+    };
+    current.depositsCzk += item.depositsCzk;
+    current.withdrawalsCzk += item.withdrawalsCzk;
+    current.cardSpendCzk += item.cardSpendCzk;
+    current.cardRefundsCzk += item.cardRefundsCzk;
+    current.externalRewardsCzk += item.externalRewardsCzk;
+    capitalFlowMonths.set(month, current);
+  }
+
+  const monthlyCapitalFlows = [...capitalFlowMonths.values()]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((item) => ({
+      ...item,
+      netContributedCzk:
+        item.depositsCzk -
+        item.withdrawalsCzk -
+        item.cardSpendCzk +
+        item.cardRefundsCzk,
+      netCardSpendCzk: item.cardSpendCzk - item.cardRefundsCzk,
+      capitalForPnlCzk:
+        item.depositsCzk -
+        item.withdrawalsCzk -
+        item.cardSpendCzk +
+        item.cardRefundsCzk +
+        item.externalRewardsCzk,
+    }));
 
   const coverage = db
     .prepare(`
@@ -1905,12 +2038,51 @@ export function getHistoryData() {
     (sum, item) => sum + item.withdrawalsCzk,
     0,
   );
+  const cardSpendCzk = contributionSeries.reduce(
+    (sum, item) => sum + item.cardSpendCzk,
+    0,
+  );
+  const cardRefundsCzk = contributionSeries.reduce(
+    (sum, item) => sum + item.cardRefundsCzk,
+    0,
+  );
+  const externalRewardsCzk = contributionSeries.reduce(
+    (sum, item) => sum + item.externalRewardsCzk,
+    0,
+  );
+
+  const unresolvedHistory = db
+    .prepare(`
+      SELECT
+        SUM(
+          CASE
+            WHEN t.kind IN ('deposit', 'withdrawal') THEN 1
+            ELSE 0
+          END
+        ) AS cash_count,
+        SUM(
+          CASE
+            WHEN t.kind IN ('deposit', 'withdrawal')
+              AND t.amount_czk IS NOT NULL
+            THEN ABS(t.amount_czk)
+            ELSE 0
+          END
+        ) AS cash_value_czk,
+        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count
+      FROM transactions t
+      JOIN accounts a ON a.id = t.account_id
+      WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND t.flow_scope = 'unclassified'
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+    `)
+    .get();
 
   const interactiveChart = getPortfolioHistoryChartData(db);
 
   return {
     snapshots: snapshotRows,
     contributions: contributionSeries,
+    monthlyCapitalFlows,
     chart: interactiveChart,
     coverage,
     summary: {
@@ -1919,7 +2091,24 @@ export function getHistoryData() {
       latestSnapshot,
       depositsCzk,
       withdrawalsCzk,
-      netContributedCzk: depositsCzk - withdrawalsCzk,
+      cardSpendCzk,
+      cardRefundsCzk,
+      netCardSpendCzk: cardSpendCzk - cardRefundsCzk,
+      externalRewardsCzk,
+      netContributedCzk:
+        depositsCzk -
+        withdrawalsCzk -
+        cardSpendCzk +
+        cardRefundsCzk,
+      capitalForPnlCzk:
+        depositsCzk -
+        withdrawalsCzk -
+        cardSpendCzk +
+        cardRefundsCzk +
+        externalRewardsCzk,
+      unresolvedCashFlowCount: num(unresolvedHistory?.cash_count),
+      unresolvedCashFlowCzk: num(unresolvedHistory?.cash_value_czk),
+      unresolvedWalletTransferCount: num(unresolvedHistory?.transfer_count),
     },
   };
 }

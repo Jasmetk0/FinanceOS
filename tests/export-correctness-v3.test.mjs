@@ -50,7 +50,7 @@ test("export exposes remaining legacy-flow debt", () => {
 });
 
 
-test("Trading 212 card enrichment uses official CSV export state instead of guessing cashback", () => {
+test("Trading 212 card enrichment keeps official CSV as the merchant-detail authority", () => {
   const card = source("lib/server/trading212-card.ts");
   assert.ok(card.includes("/equity/history/exports"));
   assert.ok(card.includes('"card debit"'));
@@ -177,4 +177,215 @@ test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent
   assert.ok(card.includes('.get("cash:" + id)'));
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
+});
+
+
+test("Trading 212 deposit fallback requires repeated provider cashback signature", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(db.includes("matchedDates.length < 3"));
+  assert.ok(db.includes("previousWithdrawals * 0.015"));
+  assert.ok(db.includes("kind = 'income'"));
+  assert.ok(db.includes("category = 'card_cashback'"));
+  assert.ok(db.includes("category = 'external_deposit'"));
+  assert.ok(db.includes("ambiguousCardEraIds"));
+  assert.ok(db.includes("date >= firstCardDate"));
+  assert.ok(
+    db.includes("Trading 212 card cashback · inferred"),
+  );
+});
+
+test("confirmed Trading 212 card evidence reconciles residual cash as Spending Pot", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(
+    db.includes(
+      'confidence: "confirmed_by_card_cashback_signature"',
+    ),
+  );
+  assert.ok(db.includes("unclassified_value_czk = 0"));
+  assert.ok(db.includes("reconciliation_status = 'reconciled'"));
+});
+
+test("Trading 212 rich export backs off 429 rate limits for a full day", () => {
+  const card = source("lib/server/trading212-card.ts");
+  assert.ok(
+    card.includes(
+      "const RATE_LIMIT_BACKOFF_MS = 24 * 60 * 60 * 1000",
+    ),
+  );
+  assert.ok(card.includes('message.includes("(429)")'));
+  assert.ok(card.includes('message.includes("TooManyRequests")'));
+  assert.ok(card.includes("retryDelayMs(message)"));
+});
+
+test("Phantom is a watch-only live provider using public Solana address only", () => {
+  const domain = source("lib/domain.ts");
+  const connections = source("app/api/connections/route.ts");
+  const manager = source("components/connections-manager.tsx");
+  const sync = source("lib/server/sync.ts");
+  const phantom = source("lib/server/integrations/phantom.ts");
+
+  assert.ok(domain.includes('| "phantom"'));
+  assert.ok(connections.includes("validatePhantom"));
+  assert.ok(connections.includes('"solana-mainnet"'));
+  assert.ok(manager.includes("Veřejná Solana adresa"));
+  assert.ok(manager.includes("seed phrase"));
+  assert.ok(sync.includes('case "phantom"'));
+  assert.ok(phantom.includes('"getBalance"'));
+  assert.ok(phantom.includes('"getTokenAccountsByOwner"'));
+  assert.ok(phantom.includes("TOKEN_2022_PROGRAM"));
+});
+
+test("Phantom and Kraken wallet transfers are linked in both directions", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(phantom.includes("wallet_transfer_out_unclassified"));
+  assert.ok(phantom.includes("wallet_transfer_in_unclassified"));
+  assert.ok(phantom.includes('"to_phantom" | "from_phantom"'));
+  assert.ok(phantom.includes("candidate.quantity > 0"));
+  assert.ok(phantom.includes("candidate.quantity < 0"));
+  assert.ok(phantom.includes('"Phantom → Kraken"'));
+  assert.ok(phantom.includes('"Kraken → Phantom"'));
+});
+
+test("Kraken ledger asset upserts preserve canonical identity", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const ledgerStart = kraken.indexOf("for (const [ledgerId, ledger] of ledgers)");
+  const ledgerEnd = kraken.indexOf("reclassifyLegacyKrakenWalletFlows", ledgerStart);
+  const ledgerBlock = kraken.slice(ledgerStart, ledgerEnd);
+  assert.ok(ledgerStart >= 0);
+  assert.ok(ledgerEnd > ledgerStart);
+  assert.ok(ledgerBlock.includes("canonicalCryptoIdentity(currency, rawAsset)"));
+  assert.ok(ledgerBlock.includes("canonicalKey:"));
+  assert.ok(ledgerBlock.includes("listingSymbol: identity.listingSymbol"));
+});
+
+test("exports include Phantom identity and coverage without exposing wallet address", () => {
+  const exportSource = source("lib/server/export.ts");
+  const aiContext = source("lib/server/ai-context.ts");
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(exportSource.includes('"phantom"'));
+  assert.ok(aiContext.includes("getPhantomStatus"));
+  assert.ok(aiContext.includes("phantom,"));
+  assert.ok(phantom.includes("unpricedTokenCount"));
+  assert.equal(phantom.includes("return {\n    address,"), false);
+});
+
+
+test("Phantom sync never overwrites canonical identity or pretends PnL is available", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  assert.ok(
+    (phantom.match(/realizedPnlStatus: "unavailable"/g) || []).length >= 2,
+  );
+  assert.ok(
+    (phantom.match(/unrealizedPnlStatus: "unavailable"/g) || []).length >= 2,
+  );
+  const linkStart = phantom.indexOf("function linkKrakenTransfers");
+  const syncStart = phantom.indexOf("export async function syncPhantom", linkStart);
+  const linkBlock = phantom.slice(linkStart, syncStart);
+  assert.ok(linkBlock.includes("canonicalCryptoIdentity(symbol, symbol)"));
+  assert.ok(linkBlock.includes("canonicalKey: identity.canonicalKey"));
+});
+
+
+test("T212 fallback marks only cashback-proven withdrawal days as card spend", () => {
+  const db = source("lib/server/db.ts");
+  assert.ok(db.includes("category = 'card_spend:inferred'"));
+  assert.ok(db.includes("for (const cashbackDate of matchedDates)"));
+  assert.ok(
+    db.includes("markCardSpend.run(accountId, previousUtcDate(cashbackDate))"),
+  );
+  assert.ok(
+    db.includes("COALESCE(raw_json, '') NOT LIKE '%financeOsCardExport%'"),
+  );
+});
+
+test("T212 UI distinguishes validated fallback from merchant-rich export", () => {
+  const card = source("lib/server/trading212-card.ts");
+  const cashFlow = source("app/cash-flow/page.tsx");
+  const connections = source("app/connections/page.tsx");
+  assert.ok(card.includes('"validated_public_history"'));
+  assert.ok(card.includes("inferredCashbackCount"));
+  assert.ok(cashFlow.includes("provider-history fallbacku"));
+  assert.ok(connections.includes("Ověřený fallback z cash historie"));
+});
+
+
+test("Phantom chain scan skips Kraken transfers already linked by destination metadata", () => {
+  const phantom = source("lib/server/integrations/phantom.ts");
+  const matcherStart = phantom.indexOf("async function matchKrakenTransfersFromChain");
+  const matcherEnd = phantom.indexOf("function phantomAssetExternalId", matcherStart);
+  const matcher = phantom.slice(matcherStart, matcherEnd);
+  assert.ok(matcher.includes("unlinkedKrakenTransfers().filter"));
+  assert.ok(matcher.includes("!matchesAddress(item.counterpartyRef, address)"));
+  assert.ok(matcher.includes("!matchesAddress(destinationFromRaw(item.rawJson), address)"));
+});
+
+
+test("history chart keeps user deposits, rewards and P/L capital distinct", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const chart = source("components/portfolio-history-chart.tsx");
+  const historyPage = source("app/history/page.tsx");
+
+  assert.ok(analytics.includes("externalRewardsCzk"));
+  assert.ok(analytics.includes("capitalAttributedCzk"));
+  assert.ok(analytics.includes("totalOwnContribution"));
+  assert.ok(analytics.includes("totalExternalRewards"));
+  assert.ok(chart.includes("Čistý vlastní kapitál"));
+  assert.ok(chart.includes("Kapitál pro P/L"));
+  assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
+  assert.ok(historyPage.includes("Čistý vlastní kapitál"));
+});
+
+
+test("transaction history exposes flow scope and capital audit filters", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const table = source("components/transactions-table.tsx");
+
+  assert.ok(analytics.includes("t.flow_scope"));
+  assert.ok(analytics.includes("t.transfer_value_czk"));
+  assert.ok(table.includes('flow === "own_capital"'));
+  assert.ok(table.includes('flow === "rewards"'));
+  assert.ok(table.includes('flow === "internal"'));
+  assert.ok(table.includes('flow === "unresolved"'));
+  assert.ok(table.includes("transferValueCzk"));
+});
+
+test("History page exposes unresolved flow gaps instead of folding them into deposits", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+  assert.ok(analytics.includes("unresolvedCashFlowCount"));
+  assert.ok(analytics.includes("unresolvedWalletTransferCount"));
+  assert.ok(history.includes("Část historie ještě není bezpečně klasifikovaná"));
+});
+
+
+test("Kraken resync preserves owned Phantom links and wallet lot movements", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  assert.ok(kraken.includes("ownedWalletLink"));
+  assert.ok(kraken.includes('currentCounterparty.startsWith("phantom:")'));
+  assert.ok(kraken.includes('"wallet_transfer_out_owned"'));
+  assert.ok(kraken.includes('"wallet_transfer_in_owned"'));
+  assert.ok(kraken.includes('category.startsWith("wallet_transfer_out_")'));
+  assert.ok(kraken.includes('category.startsWith("wallet_transfer_in_")'));
+  assert.ok(kraken.includes("t.transfer_value_czk"));
+});
+
+test("Connections shows privacy-safe Phantom valuation and Kraken-link coverage", () => {
+  const page = source("app/connections/page.tsx");
+  assert.ok(page.includes("getPhantomStatus"));
+  assert.ok(page.includes("Phantom watch-only coverage"));
+  assert.ok(page.includes("matchedKrakenTransfers"));
+  assert.ok(page.includes("unpricedTokenCount"));
+  assert.equal(page.includes("phantomStatus.address"), false);
+});
+
+
+test("History separates 212 Card spend and refunds from ordinary withdrawals", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+  assert.ok(analytics.includes("cardSpendCzk"));
+  assert.ok(analytics.includes("cardRefundsCzk"));
+  assert.ok(analytics.includes('category.startsWith("card_spend:")'));
+  assert.ok(analytics.includes('category.startsWith("card_refund:")'));
+  assert.ok(history.includes("Čistá útrata 212 Card"));
+  assert.ok(history.includes("Card refundy"));
 });

@@ -7,6 +7,7 @@ import {
 } from "@/lib/server/repository";
 import { syncTrading212 } from "@/lib/server/integrations/trading212";
 import { syncKraken } from "@/lib/server/integrations/kraken";
+import { syncPhantom } from "@/lib/server/integrations/phantom";
 
 export interface SyncResult {
   provider: ProviderId;
@@ -39,6 +40,9 @@ async function performSync(provider: ProviderId): Promise<SyncResult> {
       case "kraken":
         detail = await syncKraken();
         break;
+      case "phantom":
+        detail = await syncPhantom();
+        break;
       default:
         throw new Error(
           `Provider ${provider} does not support automatic sync yet.`,
@@ -69,8 +73,12 @@ export async function syncAll(): Promise<SyncResult[]> {
   const providers = listConnections()
     .map((connection) => connection.provider)
     .filter(
-      (provider): provider is Extract<ProviderId, "trading212" | "kraken"> =>
-        provider === "trading212" || provider === "kraken",
+      (
+        provider,
+      ): provider is Extract<ProviderId, "trading212" | "kraken" | "phantom"> =>
+        provider === "trading212" ||
+        provider === "kraken" ||
+        provider === "phantom",
     );
 
   const results: SyncResult[] = [];

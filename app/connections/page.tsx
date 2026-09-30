@@ -6,6 +6,7 @@ import { InvestownImporter } from "@/components/investown-importer";
 import { listConnections } from "@/lib/server/repository";
 import { getInvestownImportStatus } from "@/lib/server/investown";
 import { getTrading212CardStatus } from "@/lib/server/trading212-card";
+import { getPhantomStatus } from "@/lib/server/integrations/phantom";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export default function ConnectionsPage() {
   const investownStatus = getInvestownImportStatus();
   const mintosStatus = getMintosImportStatus();
   const trading212Card = getTrading212CardStatus();
+  const phantomStatus = getPhantomStatus();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -33,10 +35,80 @@ export default function ConnectionsPage() {
         <ConnectionsManager initialConnections={connections} />
       </div>
 
+      {phantomStatus.connected ? (
+        <div className="mt-4">
+          <SectionCard
+            title="Phantom watch-only coverage"
+            subtitle="Kontrola toho, co FinanceOS skutečně načetl z veřejné Solana adresy"
+          >
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Status</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {phantomStatus.status}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Známá hodnota</p>
+                <p className="mt-2 font-mono text-sm font-semibold">
+                  {phantomStatus.valueCzk === null
+                    ? "—"
+                    : phantomStatus.valueCzk.toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 0,
+                      }) + " Kč"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Valuation</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {phantomStatus.valuationStatus || "čeká na první sync"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {phantomStatus.unpricedTokenCount.toLocaleString("cs-CZ")}{" "}
+                  tokenů bez ceny
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Kraken ↔ Phantom</p>
+                <p className="mt-2 font-mono text-sm font-semibold">
+                  {phantomStatus.matchedKrakenTransfers.toLocaleString("cs-CZ")}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {phantomStatus.matchedKrakenTransfersWithBookValue.toLocaleString(
+                    "cs-CZ",
+                  )}{" "}
+                  s carried book value
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Chain scan</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {phantomStatus.chainHistoryMatch.historyCompleteToOldestTransfer
+                    ? "Pokryto"
+                    : "Částečné"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {phantomStatus.chainHistoryMatch.signaturesScanned.toLocaleString(
+                    "cs-CZ",
+                  )}{" "}
+                  relevantních signatures
+                </p>
+              </div>
+            </div>
+            {phantomStatus.lastError || phantomStatus.chainHistoryMatch.error ? (
+              <p className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+                {phantomStatus.lastError ||
+                  phantomStatus.chainHistoryMatch.error}
+              </p>
+            ) : null}
+          </SectionCard>
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <SectionCard
           title="Trading 212 Card & Spending Pot"
-          subtitle="Automatická klasifikace karty přes Trading 212 history export"
+          subtitle="Automatická klasifikace z provider historie + bohatšího Trading 212 exportu"
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
@@ -59,6 +131,15 @@ export default function ConnectionsPage() {
               <p className="text-xs text-[var(--muted)]">Card rows</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.spendCount.toLocaleString("cs-CZ")}
+              </p>
+              <p className="mt-1 text-[10px] text-[var(--muted)]">
+                {trading212Card.classificationSource === "rich_export"
+                  ? "Merchant export"
+                  : trading212Card.classificationSource === "validated_public_history"
+                    ? "Ověřený fallback z cash historie"
+                    : trading212Card.classificationSource === "mixed"
+                      ? "Merchant export + ověřený fallback"
+                      : "Bez card evidence"}
               </p>
             </div>
             <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
@@ -88,9 +169,12 @@ export default function ConnectionsPage() {
           </div>
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
             Veřejný endpoint /history/transactions vrací jen základní pohyb
-            WITHDRAW/DEPOSIT bez obchodníka. FinanceOS proto automaticky používá
-            oficiální CSV export API jako enrichment vrstvu. Z něj získá Card
-            debit, Spending cashback, Merchant name a Merchant category.
+            WITHDRAW/DEPOSIT bez obchodníka. Když bohatší export funguje,
+            FinanceOS z něj doplní Card debit, cashback, Merchant name a Merchant
+            category. Pokud je export rate-limitovaný, účetní klasifikaci
+            nezablokuje: cashback a card spend označí jen tam, kde se v provider
+            historii opakovaně potvrdí přesný cashbackový vzorec. Merchant názvy
+            se v fallback režimu nevymýšlí.
             {trading212Card.lastError
               ? " Poslední chyba: " +
                 trading212Card.lastError +
@@ -116,7 +200,9 @@ export default function ConnectionsPage() {
         <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--muted)]">
           U Trading 212 nepovoluj oprávnění k obchodování. U Kraken stačí query
           oprávnění pro funds, closed orders/trades a ledger. Nikdy nepovoluj
-          withdrawals. FinanceOS secrets z API neposílá zpět do prohlížeče.
+          withdrawals. Phantom je připojen pouze watch-only přes veřejnou Solana
+          adresu — seed phrase ani private key do FinanceOS nikdy nezadávej.
+          FinanceOS secrets z API neposílá zpět do prohlížeče.
         </p>
       </div>
     </main>

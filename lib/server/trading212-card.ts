@@ -42,6 +42,13 @@ const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 60 * 1000;
+const RATE_LIMIT_BACKOFF_MS = 24 * 60 * 60 * 1000;
+
+function retryDelayMs(message: string) {
+  return message.includes("(429)") || message.includes("TooManyRequests")
+    ? RATE_LIMIT_BACKOFF_MS
+    : ERROR_BACKOFF_MS;
+}
 
 function baseUrl(environment: string) {
   return environment === "demo"
@@ -860,7 +867,7 @@ export async function syncTrading212CardHistory(input: {
     setState(LAST_ERROR_KEY, message);
     setState(
       RETRY_AFTER_KEY,
-      new Date(Date.now() + ERROR_BACKOFF_MS).toISOString(),
+      new Date(Date.now() + retryDelayMs(message)).toISOString(),
     );
     return {
       status: "error" as const,
@@ -913,6 +920,18 @@ export function getTrading212CardStatus() {
         SUM(CASE WHEN category = 'card_cashback' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS spend_count,
         SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
+        SUM(
+          CASE
+            WHEN category = 'card_cashback'
+              AND source_label LIKE '%· inferred'
+            THEN 1 ELSE 0
+          END
+        ) AS inferred_cashback_count,
+        SUM(
+          CASE
+            WHEN external_id LIKE 'card-export:%' THEN 1 ELSE 0
+          END
+        ) AS rich_export_row_count,
         SUM(
           CASE
             WHEN flow_scope = 'unclassified' AND kind = 'deposit' THEN 1
@@ -1012,7 +1031,10 @@ export function getTrading212CardStatus() {
       FROM transactions
       WHERE provider = 'trading212'
         AND (
-          category LIKE 'card_spend:%'
+          (
+            category LIKE 'card_spend:%'
+            AND category != 'card_spend:inferred'
+          )
           OR category LIKE 'card_refund:%'
         )
       GROUP BY merchant
@@ -1040,6 +1062,16 @@ export function getTrading212CardStatus() {
   const refundsCzk = Number(stats?.refunds) || 0;
   const cashbackCzk = Number(stats?.cashback) || 0;
   const netSpendCzk = Math.max(0, spendCzk - refundsCzk);
+  const inferredCashbackCount = Number(stats?.inferred_cashback_count) || 0;
+  const richExportRowCount = Number(stats?.rich_export_row_count) || 0;
+  const classificationSource =
+    richExportRowCount > 0 && inferredCashbackCount > 0
+      ? "mixed"
+      : richExportRowCount > 0
+        ? "rich_export"
+        : inferredCashbackCount > 0
+          ? "validated_public_history"
+          : "none";
 
   return {
     detected: hasTrading212CardEvidence(),
@@ -1052,6 +1084,9 @@ export function getTrading212CardStatus() {
       netSpendCzk > 0 ? (cashbackCzk / netSpendCzk) * 100 : null,
     spendCount: Number(stats?.spend_count) || 0,
     cashbackCount: Number(stats?.cashback_count) || 0,
+    inferredCashbackCount,
+    richExportRowCount,
+    classificationSource,
     unresolvedCashInCount: Number(stats?.unresolved_cash_in_count) || 0,
     unresolvedCashInCzk: Number(stats?.unresolved_cash_in_czk) || 0,
     enrichmentOnlyCount: Number(stats?.enrichment_only_count) || 0,

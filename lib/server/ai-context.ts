@@ -10,6 +10,7 @@ import {
 import { reconstructPricedHoldingsHistory } from "@/lib/server/historical-prices";
 import { getInvestownImportStatus } from "@/lib/server/investown";
 import { getTrading212CardStatus } from "@/lib/server/trading212-card";
+import { getPhantomStatus } from "@/lib/server/integrations/phantom";
 
 export function buildAiContext() {
   const dashboard = getDashboardData();
@@ -22,6 +23,7 @@ export function buildAiContext() {
   const reconstructedHistory = reconstructPricedHoldingsHistory();
   const investown = getInvestownImportStatus();
   const trading212Card = getTrading212CardStatus();
+  const phantom = getPhantomStatus();
 
   return {
     schema: "financeos-ai-context-v1",
@@ -50,6 +52,7 @@ export function buildAiContext() {
     providerCoverage: {
       investown,
       trading212Card,
+      phantom,
     },
     historicalMarketData: {
       priceCoverage: reconstructedHistory.assetCoverage,
@@ -66,6 +69,7 @@ export function buildAiContext() {
       "Historical mark-to-market values before the first FinanceOS snapshot may be incomplete.",
       "Performance metrics depend on provider/import coverage of deposits and withdrawals.",
       "Kraken asset-level cost basis can be incomplete when assets were transferred into the account.",
+      "Phantom is watch-only and current valuation can be partial for unsupported Solana token mints.",
       "Investown history is reconstructed from the imported statement and is only as complete as that export.",
     ],
   };
