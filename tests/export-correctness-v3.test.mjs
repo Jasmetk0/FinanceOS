@@ -356,3 +356,24 @@ test("History page exposes unresolved flow gaps instead of folding them into dep
   assert.ok(analytics.includes("unresolvedWalletTransferCount"));
   assert.ok(history.includes("Část historie ještě není bezpečně klasifikovaná"));
 });
+
+
+test("Kraken resync preserves owned Phantom links and wallet lot movements", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  assert.ok(kraken.includes("ownedWalletLink"));
+  assert.ok(kraken.includes('currentCounterparty.startsWith("phantom:")'));
+  assert.ok(kraken.includes('"wallet_transfer_out_owned"'));
+  assert.ok(kraken.includes('"wallet_transfer_in_owned"'));
+  assert.ok(kraken.includes('category.startsWith("wallet_transfer_out_")'));
+  assert.ok(kraken.includes('category.startsWith("wallet_transfer_in_")'));
+  assert.ok(kraken.includes("t.transfer_value_czk"));
+});
+
+test("Connections shows privacy-safe Phantom valuation and Kraken-link coverage", () => {
+  const page = source("app/connections/page.tsx");
+  assert.ok(page.includes("getPhantomStatus"));
+  assert.ok(page.includes("Phantom watch-only coverage"));
+  assert.ok(page.includes("matchedKrakenTransfers"));
+  assert.ok(page.includes("unpricedTokenCount"));
+  assert.equal(page.includes("phantomStatus.address"), false);
+});
