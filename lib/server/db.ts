@@ -502,10 +502,15 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
     const incomeCzk = Number(row?.income_czk) || 0;
     const feesCzk = Number(row?.fees_czk) || 0;
     const statementRealizedPnlCzk = interestCzk + incomeCzk - feesCzk;
-    const reportedProfit = Number(raw.providerReportedProfitCzk);
-    const effectiveRealizedPnlCzk = Number.isFinite(reportedProfit)
-      ? reportedProfit
-      : statementRealizedPnlCzk;
+    const rawReportedProfit = raw.providerReportedProfitCzk;
+    const reportedProfit =
+      rawReportedProfit === null || rawReportedProfit === undefined
+        ? null
+        : Number(rawReportedProfit);
+    const effectiveRealizedPnlCzk =
+      reportedProfit !== null && Number.isFinite(reportedProfit)
+        ? reportedProfit
+        : statementRealizedPnlCzk;
 
     update.run(
       effectiveRealizedPnlCzk,
