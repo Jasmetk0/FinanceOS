@@ -14,6 +14,8 @@ export type PortfolioChartMetric = "value" | "profit" | "return" | "contribution
 export interface PortfolioChartMetricData {
   valueCzk: number | null;
   contributedCzk: number;
+  externalRewardsCzk: number;
+  capitalAttributedCzk: number;
   profitCzk: number | null;
   returnPct: number | null;
 }
@@ -82,8 +84,8 @@ function metricValue(
 
 function metricLabel(metric: PortfolioChartMetric) {
   if (metric === "value") return "Hodnota portfolia";
-  if (metric === "profit") return "Zisk / ztráta vůči vkladům";
-  if (metric === "return") return "Výnos vůči čistým vkladům";
+  if (metric === "profit") return "Zisk / ztráta po externím kapitálu";
+  if (metric === "return") return "Výnos vůči kapitálu pro P/L";
   return "Čisté vklady";
 }
 
@@ -363,6 +365,11 @@ export function PortfolioHistoryChart({
     firstPoint && lastPoint
       ? lastPoint.total.contributedCzk - firstPoint.total.contributedCzk
       : 0;
+  const periodExternalRewards =
+    firstPoint && lastPoint
+      ? lastPoint.total.externalRewardsCzk -
+        firstPoint.total.externalRewardsCzk
+      : 0;
   const periodProfitChange =
     firstPoint?.total.profitCzk !== null &&
     firstPoint?.total.profitCzk !== undefined &&
@@ -590,13 +597,13 @@ export function PortfolioHistoryChart({
               checked={showContributions}
               onChange={(event) => setShowContributions(event.target.checked)}
             />
-            Vklady jako baseline
+            Vlastní vklady jako baseline
           </label>
         ) : null}
       </div>
 
       {!compact && lastPoint ? (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <MiniStat
             label="Hodnota na konci"
             value={formatValue(lastPoint.total.valueCzk, "value")}
@@ -606,19 +613,34 @@ export function PortfolioHistoryChart({
             value={formatValue(lastPoint.total.contributedCzk, "contributions")}
           />
           <MiniStat
+            label="Externí odměny celkem"
+            value={formatCurrency(lastPoint.total.externalRewardsCzk)}
+            positive={lastPoint.total.externalRewardsCzk > 0}
+          />
+          <MiniStat
             label="Zisk / ztráta celkem"
             value={formatValue(lastPoint.total.profitCzk, "profit")}
             positive={(lastPoint.total.profitCzk ?? 0) >= 0}
+            hint={
+              "Kapitál pro P/L: " +
+              formatCurrency(lastPoint.total.capitalAttributedCzk)
+            }
           />
           <MiniStat
             label="Změna P/L v období"
             value={formatValue(periodProfitChange, "profit")}
             positive={(periodProfitChange ?? 0) >= 0}
             hint={
-              periodNetContribution
-                ? "Čisté vklady v období: " +
-                  formatCurrency(periodNetContribution)
-                : undefined
+              [
+                periodNetContribution
+                  ? "Vklady: " + formatCurrency(periodNetContribution)
+                  : "",
+                periodExternalRewards
+                  ? "odměny: " + formatCurrency(periodExternalRewards)
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" · ") || undefined
             }
           />
         </div>
@@ -652,7 +674,14 @@ export function PortfolioHistoryChart({
               />
             ))}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
-              Vklady: {formatCurrency(hoverPoint.total.contributedCzk)}
+              Vlastní čisté vklady:{" "}
+              {formatCurrency(hoverPoint.total.contributedCzk)}
+              <br />
+              Externí odměny:{" "}
+              {formatCurrency(hoverPoint.total.externalRewardsCzk)}
+              <br />
+              Kapitál pro P/L:{" "}
+              {formatCurrency(hoverPoint.total.capitalAttributedCzk)}
               <br />
               P/L: {formatValue(hoverPoint.total.profitCzk, "profit")}
               {!hoverPoint.coverage.complete ? (
