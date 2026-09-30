@@ -1925,6 +1925,11 @@ export function getAccountDetail(accountIdInput: string) {
                 AND category = 'card_cashback'
                 AND flow_scope = 'external'
               )
+              OR kind IN ('dividend', 'interest', 'fee')
+              OR (
+                kind = 'income'
+                AND COALESCE(category, '') != 'card_cashback'
+              )
             )
           )
           OR (
@@ -1954,6 +1959,13 @@ export function getAccountDetail(accountIdInput: string) {
           kind === "income" && category === "card_cashback"
             ? amount
             : 0,
+        investmentIncomeCzk:
+          kind === "dividend" ||
+          kind === "interest" ||
+          (kind === "income" && category !== "card_cashback")
+            ? amount
+            : 0,
+        feesCzk: kind === "fee" ? Math.abs(amount) : 0,
         transferInCzk:
           kind === "transfer" && transferValue > 0 ? transferValue : 0,
         transferOutCzk:
@@ -1989,6 +2001,8 @@ export function getAccountDetail(accountIdInput: string) {
       depositsCzk: number;
       withdrawalsCzk: number;
       rewardsCzk: number;
+      investmentIncomeCzk: number;
+      feesCzk: number;
       transferInCzk: number;
       transferOutCzk: number;
     }
@@ -1998,12 +2012,16 @@ export function getAccountDetail(accountIdInput: string) {
       depositsCzk: 0,
       withdrawalsCzk: 0,
       rewardsCzk: 0,
+      investmentIncomeCzk: 0,
+      feesCzk: 0,
       transferInCzk: 0,
       transferOutCzk: 0,
     };
     current.depositsCzk += flow.depositCzk;
     current.withdrawalsCzk += flow.withdrawalCzk;
     current.rewardsCzk += flow.rewardDelta;
+    current.investmentIncomeCzk += flow.investmentIncomeCzk;
+    current.feesCzk += flow.feesCzk;
     current.transferInCzk += flow.transferInCzk;
     current.transferOutCzk += flow.transferOutCzk;
     dailyFlowByDate.set(flow.date, current);
@@ -2022,6 +2040,8 @@ export function getAccountDetail(accountIdInput: string) {
     depositsCzk: number;
     withdrawalsCzk: number;
     rewardsCzk: number;
+    investmentIncomeCzk: number;
+    feesCzk: number;
     transferInCzk: number;
     transferOutCzk: number;
     contributedCzk: number;
@@ -2073,6 +2093,8 @@ export function getAccountDetail(accountIdInput: string) {
       depositsCzk: 0,
       withdrawalsCzk: 0,
       rewardsCzk: 0,
+      investmentIncomeCzk: 0,
+      feesCzk: 0,
       transferInCzk: 0,
       transferOutCzk: 0,
     };
@@ -2084,6 +2106,8 @@ export function getAccountDetail(accountIdInput: string) {
       depositsCzk: dayFlow.depositsCzk,
       withdrawalsCzk: dayFlow.withdrawalsCzk,
       rewardsCzk: dayFlow.rewardsCzk,
+      investmentIncomeCzk: dayFlow.investmentIncomeCzk,
+      feesCzk: dayFlow.feesCzk,
       transferInCzk: dayFlow.transferInCzk,
       transferOutCzk: dayFlow.transferOutCzk,
       contributedCzk: metric.contributedCzk,
