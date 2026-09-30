@@ -86,7 +86,7 @@ function metricLabel(metric: PortfolioChartMetric) {
   if (metric === "value") return "Hodnota portfolia";
   if (metric === "profit") return "Zisk / ztráta po externím kapitálu";
   if (metric === "return") return "Výnos vůči kapitálu pro P/L";
-  return "Čisté vklady";
+  return "Čistý vlastní kapitál";
 }
 
 function formatCurrency(value: number) {
@@ -434,7 +434,7 @@ export function PortfolioHistoryChart({
               ["value", "Hodnota"],
               ["profit", "Zisk / ztráta"],
               ["return", "Výnos %"],
-              ["contributions", "Čisté vklady"],
+              ["contributions", "Vlastní kapitál"],
             ] as Array<[PortfolioChartMetric, string]>
           ).map(([value, label]) => (
             <button
@@ -597,7 +597,7 @@ export function PortfolioHistoryChart({
               checked={showContributions}
               onChange={(event) => setShowContributions(event.target.checked)}
             />
-            Vlastní vklady jako baseline
+            Vlastní kapitál jako baseline
           </label>
         ) : null}
       </div>
@@ -609,7 +609,7 @@ export function PortfolioHistoryChart({
             value={formatValue(lastPoint.total.valueCzk, "value")}
           />
           <MiniStat
-            label="Čisté vklady celkem"
+            label="Čistý vlastní kapitál"
             value={formatValue(lastPoint.total.contributedCzk, "contributions")}
           />
           <MiniStat
