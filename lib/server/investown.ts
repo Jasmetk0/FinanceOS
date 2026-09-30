@@ -235,18 +235,24 @@ function classifyInvestown(row: InvestownImportRow): TransactionKind {
 function stableBase(row: InvestownImportRow): string {
   if (row.externalId?.trim()) return "external:" + row.externalId.trim();
 
+  const parsedDate = new Date(row.occurredAt);
+  const occurredAt = Number.isNaN(parsedDate.getTime())
+    ? normalize(row.occurredAt)
+    : parsedDate.toISOString();
+
+  // Identity is based on the economic transaction, not export formatting.
+  // sourceDate/timezone are deliberately excluded so an overlapping export
+  // with different date formatting still deduplicates correctly.
   const payload = JSON.stringify({
-    occurredAt: row.occurredAt,
-    sourceDate: row.sourceDate || "",
-    timezone: row.timezone || "",
-    amount: row.amount,
-    currency: row.currency || "CZK",
-    type: row.type || "",
-    description: row.description || "",
-    loanName: row.loanName || "",
-    projectName: row.projectName || "",
-    projectUrl: row.projectUrl || "",
-    projectType: row.projectType || "",
+    occurredAt,
+    amount: Number(row.amount),
+    currency: normalize(row.currency || "CZK").toUpperCase(),
+    type: normalize(row.type),
+    description: normalize(row.description),
+    loanName: normalize(row.loanName),
+    projectName: normalize(row.projectName),
+    projectUrl: normalize(row.projectUrl),
+    projectType: normalize(row.projectType),
   });
 
   return "hash:" + crypto.createHash("sha256").update(payload).digest("hex").slice(0, 40);
@@ -713,14 +719,14 @@ export async function importInvestown(input: InvestownImportInput) {
     },
   });
 
-  if (hardReplace) {
-    db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
-    db.prepare("DELETE FROM assets WHERE provider = 'investown'").run();
-  }
-  // Holdings and statement snapshots are always derived from the complete
-  // cumulative transaction set below, so rebuilding them is safe and removes
-  // any stale synthetic snapshots created by older FinanceOS versions.
+  // We loaded the cumulative history before opening the write transaction.
+  // Rebuild Investown's derived storage atomically from that canonical set.
+  // This keeps old history, removes duplicates/legacy IDs and lets improved
+  // classification be applied to already-known rows.
+  db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
+  db.prepare("DELETE FROM holdings WHERE account_id = ?").run(accountId);
   db.prepare("DELETE FROM snapshots WHERE account_id = ?").run(accountId);
+  db.prepare("DELETE FROM assets WHERE provider = 'investown'").run();
 
   const assetIds = new Map<string, string>();
   for (const project of projects.values()) {
