@@ -139,7 +139,12 @@ export default function Home() {
                     <div className="flex items-center justify-between gap-4">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-medium">{account.name}</p>
+                          <Link
+                            href={"/accounts/" + encodeURIComponent(account.id)}
+                            className="font-medium transition hover:text-[var(--accent)]"
+                          >
+                            {account.name}
+                          </Link>
                           <DataFreshnessBadge
                             freshness={account.dataFreshness}
                             compact
