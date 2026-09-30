@@ -132,6 +132,38 @@ test("all account surfaces expose provider-aware data freshness", () => {
   );
 });
 
+test("Trading 212 sync reconstructs provenance-aware daily history", () => {
+  const db = source("lib/server/db.ts");
+  const repository = source("lib/server/repository.ts");
+  const trading212 = source("lib/server/integrations/trading212.ts");
+  const history = source("lib/server/trading212-history.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const detail = source("app/accounts/[id]/page.tsx");
+  const dailyTable = source("components/account-daily-history-table.tsx");
+
+  assert.ok(db.includes("source TEXT NOT NULL DEFAULT 'provider'"));
+  assert.ok(db.includes("quality TEXT NOT NULL DEFAULT 'verified'"));
+  assert.ok(repository.includes("'provider', 'verified'"));
+  assert.ok(trading212.includes("syncTrading212DailyHistory"));
+  assert.ok(trading212.includes("dailyHistory"));
+
+  assert.ok(history.includes("Yahoo Finance chart"));
+  assert.ok(history.includes("maybeToCzk"));
+  assert.ok(history.includes("openingCashResidualCzk"));
+  assert.ok(history.includes("quantityMismatchAssets"));
+  assert.ok(history.includes("source = 'reconstructed'"));
+  assert.ok(history.includes("snapshots.source = 'provider'"));
+
+  assert.ok(analytics.includes("COALESCE(s.quality, 'verified') != 'partial'"));
+  assert.ok(analytics.includes("dailyHistory"));
+  assert.ok(analytics.includes("reconstructedSnapshotCount"));
+  assert.ok(detail.includes("Denní historie účtu"));
+  assert.ok(detail.includes("Denní rekonstrukce Trading 212"));
+  assert.ok(dailyTable.includes("Vklad"));
+  assert.ok(dailyTable.includes("Výběr"));
+  assert.ok(dailyTable.includes("P/L"));
+});
+
 test("account cards link to rich account detail pages", () => {
   const analytics = source("lib/server/analytics.ts");
   const accounts = source("app/accounts/page.tsx");
