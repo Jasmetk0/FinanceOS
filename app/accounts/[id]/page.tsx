@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { DataFreshnessBadge } from "@/components/data-freshness-badge";
+import { AccountDailyHistoryTable } from "@/components/account-daily-history-table";
 import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
 import { TransactionsTable } from "@/components/transactions-table";
 import { Pill, SectionCard, StatCard } from "@/components/ui";
@@ -170,6 +171,17 @@ export default async function AccountDetailPage({
         </SectionCard>
       </section>
 
+      {detail.dailyHistory.length ? (
+        <section className="mt-4">
+          <SectionCard
+            title="Denní historie účtu"
+            subtitle="Každý známý den: hodnota, cash, investice, vklady, výběry, kapitál, P/L a výnos"
+          >
+            <AccountDailyHistoryTable rows={detail.dailyHistory} />
+          </SectionCard>
+        </section>
+      ) : null}
+
       <section className="mt-4 grid gap-4 xl:grid-cols-2">
         <SectionCard title="Datové pokrytí" subtitle="Jak moc tomuto účtu můžeme věřit">
           <dl className="grid gap-4 text-sm sm:grid-cols-2">
@@ -242,6 +254,64 @@ export default async function AccountDetailPage({
             <p className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
               Neznámé typy transakcí: {detail.sourceMetadata.unknownTypes.join(", ")}
             </p>
+          ) : null}
+
+          {detail.provider === "trading212" &&
+          detail.sourceMetadata.historicalReconstruction ? (
+            <div className="mt-5 border-t border-white/7 pt-4">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
+                Denní rekonstrukce Trading 212
+              </p>
+              <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-2">
+                <div>
+                  <dt className="text-[var(--muted)]">Kompletní dny</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .reconstructedDays ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--muted)]">Neúplné dny</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .partialDays ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--muted)]">Cenově pokryté assety</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .assetsResolved ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                    {" / "}
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .assetsTotal ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-[var(--muted)]">Čeká na další sync</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {Number(
+                      detail.sourceMetadata.historicalReconstruction
+                        .assetsPending ?? 0,
+                    ).toLocaleString("cs-CZ")}
+                    {" assetů"}
+                  </dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+                Historické body jsou rekonstruované z transakcí, denních close
+                cen a historických kurzů ČNB. Skutečné snapshoty načtené přímo
+                z Trading 212 mají vždy přednost.
+              </p>
+            </div>
           ) : null}
         </SectionCard>
 
