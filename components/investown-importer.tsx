@@ -835,8 +835,17 @@ export function InvestownImporter({
                 name="currentProfit"
                 type="number"
                 step="0.01"
-                defaultValue={initialStatus?.providerReportedProfitCzk ?? ""}
-                placeholder="Aktuální celkový zisk"
+                placeholder={
+                  initialStatus?.providerReportedProfitCzk !== null &&
+                  initialStatus?.providerReportedProfitCzk !== undefined
+                    ? "Aktuálně " +
+                      initialStatus.providerReportedProfitCzk.toLocaleString(
+                        "cs-CZ",
+                        { maximumFractionDigits: 2 },
+                      ) +
+                      " Kč · prázdné = zachovat, dokud je CSV starší"
+                    : "Aktuální celkový zisk"
+                }
                 className={inputClass}
               />
             </Field>
