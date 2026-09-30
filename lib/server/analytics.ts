@@ -1868,8 +1868,6 @@ export function getHistoryData() {
       withdrawalsCzk: number;
       cardSpendCzk: number;
       cardRefundsCzk: number;
-      cardSpendCzk: number;
-      cardRefundsCzk: number;
       externalRewardsCzk: number;
     }
   >();
@@ -1930,6 +1928,8 @@ export function getHistoryData() {
       month: string;
       depositsCzk: number;
       withdrawalsCzk: number;
+      cardSpendCzk: number;
+      cardRefundsCzk: number;
       externalRewardsCzk: number;
     }
   >();
@@ -1940,6 +1940,8 @@ export function getHistoryData() {
       month,
       depositsCzk: 0,
       withdrawalsCzk: 0,
+      cardSpendCzk: 0,
+      cardRefundsCzk: 0,
       externalRewardsCzk: 0,
     };
     current.depositsCzk += item.depositsCzk;
