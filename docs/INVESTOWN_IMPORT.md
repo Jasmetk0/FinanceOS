@@ -70,6 +70,14 @@ A current-value and wallet override remains available for partial statements.
 When those fields are left blank, the native statement is treated as the source
 of truth.
 
+A native CSV only proves account value and P/L through the newest transaction
+contained in that statement. FinanceOS therefore does not create a synthetic
+"today" snapshot from older Investown data and does not carry the last statement
+valuation forward on the historical chart. If another provider has newer
+snapshots, Investown becomes unavailable after its own coverage date instead of
+being silently treated as unchanged. Current portfolio profit/XIRR is also withheld
+when an Investown statement-derived valuation does not reach the current date.
+
 ## Re-import behavior
 
 A new complete Investown statement replaces the previous Investown statement in

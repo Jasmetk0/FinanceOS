@@ -126,6 +126,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       SELECT
         a.id AS account_id,
         a.provider,
+        a.raw_json,
         (
           SELECT MIN(t.occurred_at)
           FROM transactions t
@@ -155,10 +156,27 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : snapshotDate
         : transactionDate || snapshotDate;
 
+    let valueThroughDate: string | null = null;
+    if (String(row.provider) === "investown" && row.raw_json) {
+      try {
+        const raw = JSON.parse(String(row.raw_json)) as Record<string, unknown>;
+        if (
+          raw.importMode === "investown-native" &&
+          raw.balanceMode === "derived-from-full-statement" &&
+          typeof raw.statementLastAt === "string"
+        ) {
+          valueThroughDate = raw.statementLastAt.slice(0, 10);
+        }
+      } catch {
+        // Optional provider coverage metadata must never break analytics.
+      }
+    }
+
     return {
       accountId: String(row.account_id),
       provider: String(row.provider),
       startDate,
+      valueThroughDate,
     };
   });
 
@@ -354,7 +372,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const providerShouldExist = activeAccounts.length > 0;
       const providerComplete =
         providerShouldExist &&
-        activeAccounts.every((item) => latestByAccount.has(item.accountId));
+        activeAccounts.every(
+          (item) =>
+            latestByAccount.has(item.accountId) &&
+            (item.valueThroughDate === null || date <= item.valueThroughDate),
+        );
       const value =
         providerComplete && providerValues.has(provider)
           ? providerValues.get(provider) ?? 0
@@ -1062,7 +1084,7 @@ export function getPerformanceData() {
       SELECT
         id, provider, name, type, total_value_czk,
         realized_pnl_czk, unrealized_pnl_czk,
-        realized_pnl_status, unrealized_pnl_status
+        realized_pnl_status, unrealized_pnl_status, raw_json
       FROM accounts
       WHERE type IN ('brokerage', 'crypto', 'p2p')
       ORDER BY total_value_czk DESC
@@ -1176,7 +1198,25 @@ export function getPerformanceData() {
     }
 
     const currentValue = num(account.total_value_czk);
-    if (currentValue > 0) {
+    let valueThroughDate: string | null = null;
+    if (String(account.provider) === "investown" && account.raw_json) {
+      try {
+        const raw = JSON.parse(String(account.raw_json)) as Record<string, unknown>;
+        if (
+          raw.importMode === "investown-native" &&
+          raw.balanceMode === "derived-from-full-statement" &&
+          typeof raw.statementLastAt === "string"
+        ) {
+          valueThroughDate = raw.statementLastAt.slice(0, 10);
+        }
+      } catch {
+        // Optional source coverage metadata must not break analytics.
+      }
+    }
+    const today = now.toISOString().slice(0, 10);
+    const valueIsCurrent =
+      valueThroughDate === null || valueThroughDate >= today;
+    if (currentValue > 0 && valueIsCurrent) {
       flows.push({ date: now, amount: currentValue });
     }
 
@@ -1191,16 +1231,18 @@ export function getPerformanceData() {
       unresolvedAccountFlowRow?.known_value_czk,
     );
     const accountPerformanceComplete = unclassifiedFlowCount === 0;
-    const estimatedProfit = accountPerformanceComplete
-      ? currentValue - performanceExternalCapital
-      : null;
+    const estimatedProfit =
+      accountPerformanceComplete && valueIsCurrent
+        ? currentValue - performanceExternalCapital
+        : null;
     const simpleReturn =
       accountPerformanceComplete &&
       estimatedProfit !== null &&
       performanceExternalCapital > 0
         ? (estimatedProfit / performanceExternalCapital) * 100
         : null;
-    const xirr = accountPerformanceComplete ? solveXirr(flows) : null;
+    const xirr =
+      accountPerformanceComplete && valueIsCurrent ? solveXirr(flows) : null;
 
     return {
       id,
@@ -1216,6 +1258,8 @@ export function getPerformanceData() {
       netContributedCzk: netContributed,
       performanceExternalCapitalCzk: performanceExternalCapital,
       estimatedProfitCzk: estimatedProfit,
+      valueThroughDate,
+      valueIsCurrent,
       simpleReturnPct: simpleReturn,
       xirrPct: xirr === null ? null : xirr * 100,
       realizedPnlCzk: pnlValue(
@@ -1241,6 +1285,7 @@ export function getPerformanceData() {
       acc.depositsCzk += account.depositsCzk;
       acc.withdrawalsCzk += account.withdrawalsCzk;
       acc.externalRewardsCzk += account.externalRewardsCzk;
+      if (!account.valueIsCurrent) acc.staleValuationCount += 1;
       if (account.realizedPnlCzk === null) {
         acc.realizedPnlUnknown += 1;
       } else {
@@ -1264,6 +1309,7 @@ export function getPerformanceData() {
       unrealizedPnlCzk: 0,
       realizedPnlUnknown: 0,
       unrealizedPnlUnknown: 0,
+      staleValuationCount: 0,
     },
   );
 
@@ -1309,7 +1355,8 @@ export function getPerformanceData() {
   const unlinkedWalletBookValueOutCzk = num(
     portfolioGap?.known_wallet_book_value_out,
   );
-  const portfolioPerformanceComplete = unclassifiedFlowCount === 0;
+  const portfolioPerformanceComplete =
+    unclassifiedFlowCount === 0 && totals.staleValuationCount === 0;
 
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
@@ -1389,6 +1436,7 @@ export function getPerformanceData() {
       performanceStatus: portfolioPerformanceComplete ? "complete" : "partial",
       unclassifiedFlowCount,
       knownUnclassifiedFlowCzk,
+      staleValuationCount: totals.staleValuationCount,
       unlinkedWalletTransferCount,
       unlinkedWalletBookValueOutCzk,
     },

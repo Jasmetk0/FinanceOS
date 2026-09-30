@@ -507,6 +507,9 @@ export function InvestownImporter({
           };
           coverage: {
             unknownTypes: string[];
+            lastAt: string | null;
+            previousLastAt: string | null;
+            advanced: boolean;
           };
         };
         error?: string;
@@ -524,6 +527,14 @@ export function InvestownImporter({
           payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
           " aktivních projektů · hodnota " +
           money(payload.result.effective.totalValueCzk) +
+          (payload.result.coverage.lastAt
+            ? " · poslední transakce " +
+              new Date(payload.result.coverage.lastAt).toLocaleString("cs-CZ")
+            : "") +
+          (!payload.result.coverage.advanced &&
+          payload.result.coverage.previousLastAt !== null
+            ? " · POZOR: tento výpis neobsahuje žádné novější transakce než předchozí import."
+            : "") +
           (unknown.length
             ? " · Neznámé typy: " + unknown.join(", ")
             : " · Všechny typy transakcí rozpoznány."),
@@ -578,8 +589,8 @@ export function InvestownImporter({
                 {new Date(initialStatus.updatedAt).toLocaleString("cs-CZ")} ·{" "}
                 {initialStatus.mode}
                 {initialStatus.lastAt
-                  ? " · data do " +
-                    new Date(initialStatus.lastAt).toLocaleDateString("cs-CZ")
+                  ? " · poslední transakce " +
+                    new Date(initialStatus.lastAt).toLocaleString("cs-CZ")
                   : ""}
               </p>
             </div>
@@ -598,7 +609,7 @@ export function InvestownImporter({
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <Preview
-              label="Hodnota"
+              label="Hodnota z výpisu"
               value={money(initialStatus.currentValueCzk)}
             />
             <Preview
@@ -610,7 +621,7 @@ export function InvestownImporter({
               value={money(initialStatus.investedValueCzk)}
             />
             <Preview
-              label="Realizovaný zisk"
+              label="Zisk z výpisu"
               value={money(initialStatus.realizedProfitCzk)}
             />
             <Preview
@@ -622,6 +633,19 @@ export function InvestownImporter({
               value={initialStatus.transactions.toLocaleString("cs-CZ")}
             />
           </div>
+
+          {initialStatus.lastAt ? (
+            <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+              FinanceOS počítá Investown přesně jen z transakcí obsažených ve
+              výpisu. Historickou hodnotu ani P/L po{" "}
+              <strong className="text-[var(--text)]">
+                {new Date(initialStatus.lastAt).toLocaleString("cs-CZ")}
+              </strong>{" "}
+              automaticky nedopočítává, protože by tím vyráběl neexistující
+              data. Novější výnos se objeví automaticky až v datovém zdroji,
+              který ho skutečně obsahuje.
+            </p>
+          ) : null}
 
           <details className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3">
             <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">
@@ -757,7 +781,7 @@ export function InvestownImporter({
         ) : null}
 
         <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
-          <p className="text-sm font-medium">Current balance override</p>
+          <p className="text-sm font-medium">Override jen pro neúplný výpis</p>
           <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
             U kompletního Investown CSV nech obě hodnoty prázdné. FinanceOS
             dopočítá peněženku, nesplacenou jistinu i celkovou hodnotu sám.

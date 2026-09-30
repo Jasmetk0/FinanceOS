@@ -510,6 +510,25 @@ export async function importInvestown(input: InvestownImportInput) {
   // transaction. The import itself is atomic: a failed row cannot leave a
   // half-replaced Investown portfolio behind.
   const db = getDb();
+  const statementLastAt = prepared[prepared.length - 1]?.occurredIso || null;
+  let previousStatementLastAt: string | null = null;
+  if (input.sourceFormat === "investown-native") {
+    const previous = db
+      .prepare(
+        "SELECT raw_json FROM accounts WHERE provider = 'investown' AND external_id = 'main' LIMIT 1",
+      )
+      .get();
+    if (previous?.raw_json) {
+      try {
+        const raw = JSON.parse(String(previous.raw_json)) as Record<string, unknown>;
+        if (typeof raw.statementLastAt === "string") {
+          previousStatementLastAt = raw.statementLastAt;
+        }
+      } catch {
+        // Invalid legacy metadata must never block a fresh import.
+      }
+    }
+  }
   db.exec("BEGIN IMMEDIATE;");
   try {
     const accountId = upsertAccount({
@@ -552,7 +571,7 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedRealizedPnl,
       statementRows: prepared.length,
       statementFirstAt: prepared[0]?.occurredIso || null,
-      statementLastAt: prepared[prepared.length - 1]?.occurredIso || null,
+      statementLastAt,
     },
   });
 
@@ -709,17 +728,20 @@ export async function importInvestown(input: InvestownImportInput) {
       insertSnapshot.run(accountId, date, snapshot.total, snapshot.cash, snapshot.invested);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    // Always make today's snapshot match the effective current account value.
-    // This also lets a manual balance override correct an incomplete statement
-    // whose newest row happens to be dated today.
-    insertSnapshot.run(
-      accountId,
-      today,
-      totalValueCzk,
-      cashValueCzk,
-      investedValueCzk,
-    );
+    // A native statement only proves values through its own newest row.
+    // Do not manufacture a "today" snapshot from older statement data: that
+    // would make stale Investown history look current. A manual current-balance
+    // override is explicitly point-in-time, so only that case may add today.
+    if (overrideCash !== null || overrideTotal !== null) {
+      const today = new Date().toISOString().slice(0, 10);
+      insertSnapshot.run(
+        accountId,
+        today,
+        totalValueCzk,
+        cashValueCzk,
+        investedValueCzk,
+      );
+    }
   } else {
     recordSnapshot(accountId);
   }
@@ -749,7 +771,12 @@ export async function importInvestown(input: InvestownImportInput) {
       },
       coverage: {
         firstAt: prepared[0]?.occurredIso || null,
-        lastAt: prepared[prepared.length - 1]?.occurredIso || null,
+        lastAt: statementLastAt,
+        previousLastAt: previousStatementLastAt,
+        advanced:
+          previousStatementLastAt === null ||
+          (statementLastAt !== null &&
+            statementLastAt > previousStatementLastAt),
         typeCounts: Object.fromEntries(
           [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
         ),

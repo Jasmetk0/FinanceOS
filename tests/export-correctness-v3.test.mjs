@@ -48,11 +48,48 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
-test("performance is blocked by any unresolved investment flow", () => {
+test("Investown statement history is never carried past source coverage", () => {
+  const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
-  assert.ok(analytics.includes("const portfolioPerformanceComplete = unclassifiedFlowCount === 0"));
+  const performance = source("app/performance/page.tsx");
+
+  assert.ok(
+    investown.includes(
+      "A native statement only proves values through its own newest row",
+    ),
+  );
+  assert.ok(
+    investown.includes("if (overrideCash !== null || overrideTotal !== null)"),
+  );
+  assert.equal(
+    investown.includes("Always make today's snapshot match"),
+    false,
+  );
+
+  assert.ok(investown.includes("previousStatementLastAt"));
+  assert.ok(investown.includes("previousLastAt: previousStatementLastAt"));
+  assert.ok(analytics.includes("valueThroughDate"));
+  assert.ok(analytics.includes("date <= item.valueThroughDate"));
+  assert.ok(analytics.includes("const valueIsCurrent"));
+  assert.ok(
+    analytics.includes(
+      "unclassifiedFlowCount === 0 && totals.staleValuationCount === 0",
+    ),
+  );
+  assert.ok(performance.includes("nemá hodnotu"));
+  assert.ok(performance.includes("value through"));
+});
+
+test("performance is blocked by unresolved flows or stale valuations", () => {
+  const analytics = source("lib/server/analytics.ts");
+  assert.ok(
+    analytics.includes(
+      "unclassifiedFlowCount === 0 && totals.staleValuationCount === 0",
+    ),
+  );
   assert.ok(analytics.includes("knownUnclassifiedFlowCzk"));
   assert.ok(analytics.includes("accountPerformanceComplete"));
+  assert.ok(analytics.includes("valueIsCurrent"));
 });
 
 test("restore immediately reapplies stored-data repairs", () => {
