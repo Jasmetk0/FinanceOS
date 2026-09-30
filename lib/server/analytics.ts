@@ -161,8 +161,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     if (row.raw_json) {
       try {
         const raw = JSON.parse(String(row.raw_json)) as Record<string, unknown>;
-        const reported = Number(raw.providerReportedProfitCzk);
-        if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+        const rawReportedProfit = raw.providerReportedProfitCzk;
+        if (rawReportedProfit !== null && rawReportedProfit !== undefined) {
+          const reported = Number(rawReportedProfit);
+          if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+        }
         if (typeof raw.providerReportedProfitAsOf === "string") {
           providerReportedProfitAsOf = raw.providerReportedProfitAsOf;
         }
@@ -1272,8 +1275,11 @@ export function getPerformanceData() {
     if (String(account.provider) === "investown" && account.raw_json) {
       try {
         const raw = JSON.parse(String(account.raw_json)) as Record<string, unknown>;
-        const reported = Number(raw.providerReportedProfitCzk);
-        if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+        const rawReportedProfit = raw.providerReportedProfitCzk;
+        if (rawReportedProfit !== null && rawReportedProfit !== undefined) {
+          const reported = Number(rawReportedProfit);
+          if (Number.isFinite(reported)) providerReportedProfitCzk = reported;
+        }
       } catch {
         // Optional provider metadata must not block performance analytics.
       }
