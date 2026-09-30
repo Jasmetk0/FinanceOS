@@ -1742,6 +1742,366 @@ export function getInsightsData() {
 }
 
 
+
+export function getAccountDetail(accountIdInput: string) {
+  const db = getDb();
+  const accountId = accountIdInput.trim();
+
+  const account = db
+    .prepare(`
+      SELECT
+        id, provider, external_id, name, type, currency,
+        cash_value_czk, invested_value_czk, total_value_czk,
+        realized_pnl_czk, unrealized_pnl_czk,
+        realized_pnl_status, unrealized_pnl_status,
+        unclassified_value_czk, reconciliation_difference,
+        reconciliation_status, raw_json, updated_at
+      FROM accounts
+      WHERE id = ?
+      LIMIT 1
+    `)
+    .get(accountId);
+
+  if (!account) return null;
+
+  const provider = String(account.provider);
+  const freshness = accountDataFreshness(account);
+  const performance = getPerformanceData().accounts.find(
+    (item) => item.id === accountId,
+  ) ?? null;
+
+  const holdings = db
+    .prepare(`
+      SELECT
+        h.id, h.asset_id, h.quantity, h.average_price, h.current_price,
+        h.currency, h.market_value, h.market_value_czk,
+        h.unrealized_pnl, h.unrealized_pnl_czk,
+        a.symbol, a.name, a.asset_class
+      FROM holdings h
+      JOIN assets a ON a.id = h.asset_id
+      WHERE h.account_id = ?
+      ORDER BY h.market_value_czk DESC, a.symbol ASC
+    `)
+    .all(accountId)
+    .map((row) => ({
+      id: String(row.id),
+      assetId: String(row.asset_id),
+      symbol: String(row.symbol),
+      name: String(row.name),
+      assetClass: String(row.asset_class),
+      quantity: num(row.quantity),
+      averagePrice:
+        row.average_price === null ? null : num(row.average_price),
+      currentPrice:
+        row.current_price === null ? null : num(row.current_price),
+      currency: String(row.currency),
+      marketValue: num(row.market_value),
+      marketValueCzk: num(row.market_value_czk),
+      unrealizedPnl:
+        row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
+      unrealizedPnlCzk:
+        row.unrealized_pnl_czk === null
+          ? null
+          : num(row.unrealized_pnl_czk),
+    }));
+
+  const transactions = db
+    .prepare(`
+      SELECT
+        t.id, t.provider, t.external_id, t.kind, t.occurred_at,
+        t.currency, t.amount, t.amount_czk, t.quantity, t.price, t.fee,
+        t.note, t.category, t.source_label, t.flow_scope,
+        t.transfer_value_czk,
+        COALESCE(a.symbol, '') AS symbol,
+        COALESCE(a.name, '') AS asset_name
+      FROM transactions t
+      LEFT JOIN assets a ON a.id = t.asset_id
+      WHERE t.account_id = ?
+      ORDER BY t.occurred_at DESC
+      LIMIT 1000
+    `)
+    .all(accountId)
+    .map((row) => ({
+      id: String(row.id),
+      provider: String(row.provider),
+      externalId: String(row.external_id),
+      kind: String(row.kind),
+      occurredAt: String(row.occurred_at),
+      currency: String(row.currency),
+      amount: num(row.amount),
+      amountCzk: row.amount_czk === null ? null : num(row.amount_czk),
+      quantity: row.quantity === null ? null : num(row.quantity),
+      price: row.price === null ? null : num(row.price),
+      fee: row.fee === null ? null : num(row.fee),
+      note: row.note ? String(row.note) : null,
+      category: row.category ? String(row.category) : null,
+      sourceLabel: row.source_label ? String(row.source_label) : null,
+      flowScope: String(row.flow_scope || "legacy"),
+      transferValueCzk:
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk),
+      accountName: String(account.name),
+      symbol: String(row.symbol || ""),
+      assetName: String(row.asset_name || ""),
+    }));
+
+  const transactionStats = db
+    .prepare(`
+      SELECT
+        COUNT(*) AS count,
+        MIN(occurred_at) AS first_at,
+        MAX(occurred_at) AS last_at
+      FROM transactions
+      WHERE account_id = ?
+    `)
+    .get(accountId);
+
+  const snapshotStats = db
+    .prepare(`
+      SELECT
+        COUNT(*) AS count,
+        MIN(recorded_at) AS first_at,
+        MAX(recorded_at) AS last_at
+      FROM snapshots
+      WHERE account_id = ?
+    `)
+    .get(accountId);
+
+  const kindRows = db
+    .prepare(`
+      SELECT kind, COUNT(*) AS count
+      FROM transactions
+      WHERE account_id = ?
+      GROUP BY kind
+      ORDER BY count DESC, kind ASC
+    `)
+    .all(accountId)
+    .map((row) => ({
+      kind: String(row.kind),
+      count: num(row.count),
+    }));
+
+  const snapshotRows = db
+    .prepare(`
+      SELECT recorded_at, total_value_czk
+      FROM snapshots
+      WHERE account_id = ?
+      ORDER BY recorded_at ASC
+    `)
+    .all(accountId);
+
+  const flowRows = db
+    .prepare(`
+      SELECT
+        substr(occurred_at, 1, 10) AS day,
+        kind, category, flow_scope, amount_czk, transfer_value_czk
+      FROM transactions
+      WHERE account_id = ?
+        AND (
+          (
+            amount_czk IS NOT NULL
+            AND (
+              (
+                kind IN ('deposit', 'withdrawal')
+                AND (
+                  flow_scope = 'external'
+                  OR (
+                    flow_scope = 'legacy'
+                    AND provider IN ('kraken', 'investown', 'mintos')
+                  )
+                )
+              )
+              OR (
+                kind = 'income'
+                AND category = 'card_cashback'
+                AND flow_scope = 'external'
+              )
+            )
+          )
+          OR (
+            kind = 'transfer'
+            AND transfer_value_czk IS NOT NULL
+          )
+        )
+      ORDER BY day ASC, occurred_at ASC
+    `)
+    .all(accountId)
+    .map((row) => {
+      const kind = String(row.kind);
+      const category = String(row.category || "");
+      return {
+        date: String(row.day),
+        ownContributionDelta:
+          kind === "deposit"
+            ? Math.abs(num(row.amount_czk))
+            : kind === "withdrawal"
+              ? -Math.abs(num(row.amount_czk))
+              : 0,
+        rewardDelta:
+          kind === "income" && category === "card_cashback"
+            ? num(row.amount_czk)
+            : 0,
+        transferDelta:
+          kind === "transfer" ? num(row.transfer_value_czk) : 0,
+      };
+    });
+
+  const performanceGapRow = db
+    .prepare(`
+      SELECT MIN(substr(occurred_at, 1, 10)) AS first_gap
+      FROM transactions
+      WHERE account_id = ?
+        AND flow_scope = 'unclassified'
+        AND kind IN ('deposit', 'withdrawal', 'transfer')
+    `)
+    .get(accountId);
+  const firstPerformanceGap = performanceGapRow?.first_gap
+    ? String(performanceGapRow.first_gap)
+    : null;
+
+  let ownContribution = 0;
+  let externalRewards = 0;
+  let transferAttribution = 0;
+  let flowIndex = 0;
+  const chartPoints: PortfolioHistoryPoint[] = [];
+
+  for (const row of snapshotRows) {
+    const date = String(row.recorded_at).slice(0, 10);
+    while (flowIndex < flowRows.length && flowRows[flowIndex].date <= date) {
+      const flow = flowRows[flowIndex];
+      ownContribution += flow.ownContributionDelta;
+      externalRewards += flow.rewardDelta;
+      transferAttribution += flow.transferDelta;
+      flowIndex += 1;
+    }
+
+    const valuationCovered =
+      freshness.status === "manual" ||
+      freshness.coverageThrough === null ||
+      date <= freshness.coverageThrough;
+    const performanceComplete =
+      !firstPerformanceGap || date < firstPerformanceGap;
+    const capitalAttributed =
+      ownContribution + externalRewards + transferAttribution;
+    const metric = historyMetric(
+      valuationCovered ? num(row.total_value_czk) : null,
+      ownContribution,
+      externalRewards,
+      capitalAttributed,
+      performanceComplete,
+    );
+
+    chartPoints.push({
+      date,
+      total: metric,
+      providers: { [provider]: metric },
+      coverage: {
+        complete: valuationCovered,
+        knownProviders: valuationCovered ? [provider] : [],
+        missingProviders: valuationCovered ? [] : [provider],
+      },
+    });
+  }
+
+  const completeChartPoints = chartPoints.filter(
+    (point) => point.coverage.complete,
+  );
+  const chartCoverageStatus: "complete" | "partial" | "insufficient" =
+    completeChartPoints.length === chartPoints.length && chartPoints.length > 0
+      ? "complete"
+      : completeChartPoints.length > 0
+        ? "partial"
+        : "insufficient";
+
+  const raw = parseRawObject(account.raw_json);
+  const unknownTypes = Array.isArray(raw.unknownTypes)
+    ? raw.unknownTypes.map(String)
+    : [];
+  const statementRows =
+    raw.statementRows === null || raw.statementRows === undefined
+      ? null
+      : num(raw.statementRows);
+
+  return {
+    id: String(account.id),
+    provider,
+    externalId: String(account.external_id),
+    name: String(account.name),
+    type: String(account.type),
+    currency: String(account.currency),
+    cashValueCzk: num(account.cash_value_czk),
+    investedValueCzk: num(account.invested_value_czk),
+    totalValueCzk: num(account.total_value_czk),
+    realizedPnlCzk: pnlValue(
+      account.realized_pnl_czk,
+      account.realized_pnl_status,
+    ),
+    unrealizedPnlCzk: pnlValue(
+      account.unrealized_pnl_czk,
+      account.unrealized_pnl_status,
+    ),
+    realizedPnlStatus: String(account.realized_pnl_status || "unknown"),
+    unrealizedPnlStatus: String(account.unrealized_pnl_status || "unknown"),
+    unclassifiedValueCzk: num(account.unclassified_value_czk),
+    reconciliationDifferenceCzk: num(account.reconciliation_difference),
+    reconciliationStatus: String(account.reconciliation_status || "unknown"),
+    updatedAt: String(account.updated_at),
+    dataFreshness: freshness,
+    performance,
+    holdings,
+    transactions,
+    transactionKinds: kindRows,
+    coverage: {
+      transactionCount: num(transactionStats?.count),
+      firstTransactionAt: transactionStats?.first_at
+        ? String(transactionStats.first_at)
+        : null,
+      lastTransactionAt: transactionStats?.last_at
+        ? String(transactionStats.last_at)
+        : null,
+      snapshotCount: num(snapshotStats?.count),
+      firstSnapshotAt: snapshotStats?.first_at
+        ? String(snapshotStats.first_at)
+        : null,
+      lastSnapshotAt: snapshotStats?.last_at
+        ? String(snapshotStats.last_at)
+        : null,
+      holdingCount: holdings.length,
+    },
+    sourceMetadata: {
+      importMode:
+        typeof raw.importMode === "string" ? raw.importMode : null,
+      balanceMode:
+        typeof raw.balanceMode === "string" ? raw.balanceMode : null,
+      statementRows,
+      lifetimeComplete:
+        typeof raw.lifetimeComplete === "boolean"
+          ? raw.lifetimeComplete
+          : null,
+      continuityOk:
+        typeof raw.continuityOk === "boolean" ? raw.continuityOk : null,
+      costBasisStatus:
+        typeof raw.costBasisStatus === "string"
+          ? raw.costBasisStatus
+          : null,
+      unknownTypes,
+    },
+    chart: {
+      providers: [provider],
+      points: chartPoints,
+      coverage: {
+        completePointCount: completeChartPoints.length,
+        totalPointCount: chartPoints.length,
+        firstCompleteDate: completeChartPoints[0]?.date ?? null,
+        latestCompleteDate: completeChartPoints.at(-1)?.date ?? null,
+        status: chartCoverageStatus,
+      },
+    },
+  };
+}
+
+
 export function getAssetDetail(symbolInput: string) {
   const db = getDb();
   const symbol = symbolInput.trim().toUpperCase();
