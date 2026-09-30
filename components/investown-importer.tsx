@@ -484,7 +484,9 @@ export function InvestownImporter({
           currentValue: optionalNumber(data.get("currentValue")),
           walletCash: optionalNumber(data.get("walletCash")),
           rows,
-          replaceExisting: true,
+          // Investown imports are cumulative by default. Previously imported
+          // transactions stay in FinanceOS and overlapping rows are deduplicated.
+          replaceExisting: false,
           sourceFormat: nativeFormat ? "investown-native" : "mapped",
         }),
       });
@@ -492,6 +494,9 @@ export function InvestownImporter({
       const payload = (await response.json()) as {
         result?: {
           imported: number;
+          newTransactions: number;
+          matchedTransactions: number;
+          storedTransactions: number;
           skipped: number;
           derived: {
             walletCashCzk: number;
@@ -521,8 +526,14 @@ export function InvestownImporter({
 
       const unknown = payload.result.coverage.unknownTypes;
       setMessage(
-        "Hotovo · " +
+        "Hotovo · soubor " +
           payload.result.imported.toLocaleString("cs-CZ") +
+          " řádků · " +
+          payload.result.newTransactions.toLocaleString("cs-CZ") +
+          " nových · " +
+          payload.result.matchedTransactions.toLocaleString("cs-CZ") +
+          " už známých · celkem uloženo " +
+          payload.result.storedTransactions.toLocaleString("cs-CZ") +
           " transakcí · " +
           payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
           " aktivních projektů · hodnota " +
@@ -835,9 +846,10 @@ export function InvestownImporter({
       </form>
 
       <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-        Nový kompletní výpis nahradí předchozí Investown import a znovu
-        rekonstruuje portfolio i historii. Tím se po opakovaném importu
-        nehromadí staré nebo duplicitní záznamy.
+        Historii stačí nahrát jednou. Další Investown soubory se přidávají k
+        už uloženým transakcím, překryv se automaticky deduplikuje a FinanceOS
+        vždy z celé známé historie znovu rekonstruuje portfolio i denní
+        snapshoty. Novější soubor tedy může obsahovat jen nové období.
       </p>
     </article>
   );
