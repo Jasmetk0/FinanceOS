@@ -193,6 +193,9 @@ type InvestownStatus = {
   investedValueCzk: number;
   realizedYieldCzk: number;
   realizedProfitCzk: number;
+  statementRealizedProfitCzk: number;
+  providerReportedProfitCzk: number | null;
+  profitAsOf: string | null;
   transactions: number;
   projects: number;
   activeProjects: number;
@@ -483,6 +486,7 @@ export function InvestownImporter({
           accountCurrency,
           currentValue: optionalNumber(data.get("currentValue")),
           walletCash: optionalNumber(data.get("walletCash")),
+          currentProfit: optionalNumber(data.get("currentProfit")),
           rows,
           replaceExisting: true,
           sourceFormat: nativeFormat ? "investown-native" : "mapped",
@@ -504,6 +508,9 @@ export function InvestownImporter({
             walletCashCzk: number;
             investedValueCzk: number;
             totalValueCzk: number;
+            realizedProfitCzk: number;
+            profitSource: "statement" | "provider-reported";
+            providerReportedProfitAsOf: string | null;
           };
           coverage: {
             unknownTypes: string[];
@@ -524,6 +531,11 @@ export function InvestownImporter({
           payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
           " aktivních projektů · hodnota " +
           money(payload.result.effective.totalValueCzk) +
+          " · zisk " +
+          money(payload.result.effective.realizedProfitCzk) +
+          (payload.result.effective.profitSource === "provider-reported"
+            ? " (podle Investown aplikace)"
+            : " (podle CSV)") +
           (unknown.length
             ? " · Neznámé typy: " + unknown.join(", ")
             : " · Všechny typy transakcí rozpoznány."),
@@ -610,7 +622,7 @@ export function InvestownImporter({
               value={money(initialStatus.investedValueCzk)}
             />
             <Preview
-              label="Realizovaný zisk"
+              label="Aktuální zisk"
               value={money(initialStatus.realizedProfitCzk)}
             />
             <Preview
@@ -622,6 +634,30 @@ export function InvestownImporter({
               value={initialStatus.transactions.toLocaleString("cs-CZ")}
             />
           </div>
+
+          {initialStatus.providerReportedProfitCzk !== null ? (
+            <p className="mt-3 rounded-xl border border-[var(--accent)]/15 bg-[var(--accent)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+              Aktuální zisk podle Investown aplikace:{" "}
+              <strong className="text-[var(--text)]">
+                {money(initialStatus.providerReportedProfitCzk)}
+              </strong>
+              {" · "}z transakčního CSV:{" "}
+              <strong className="text-[var(--text)]">
+                {money(initialStatus.statementRealizedProfitCzk)}
+              </strong>
+              {" · "}rozdíl:{" "}
+              <strong className="text-[var(--text)]">
+                {money(
+                  initialStatus.providerReportedProfitCzk -
+                    initialStatus.statementRealizedProfitCzk,
+                )}
+              </strong>
+              {initialStatus.profitAsOf
+                ? " · stav aplikace k " +
+                  new Date(initialStatus.profitAsOf).toLocaleString("cs-CZ")
+                : ""}
+            </p>
+          ) : null}
 
           <details className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3">
             <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">
@@ -757,13 +793,15 @@ export function InvestownImporter({
         ) : null}
 
         <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
-          <p className="text-sm font-medium">Current balance override</p>
+          <p className="text-sm font-medium">Aktuální hodnoty z Investown aplikace</p>
           <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-            U kompletního Investown CSV nech obě hodnoty prázdné. FinanceOS
-            dopočítá peněženku, nesplacenou jistinu i celkovou hodnotu sám.
-            Override použij jen u neúplného výpisu.
+            Kompletní CSV zůstává autoritou pro historické transakce. Pokud ale
+            Investown aplikace ukazuje vyšší aktuální „celkový zisk“ než export,
+            zadej ho sem. FinanceOS pak použije tento bod pro dnešní P/L a
+            zároveň zachová přesný CSV audit. Hodnotu a peněženku vyplňuj jen u
+            neúplného výpisu.
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Account currency">
               <input
                 name="accountCurrency"
@@ -789,6 +827,16 @@ export function InvestownImporter({
                 step="0.01"
                 min="0"
                 placeholder="Auto from statement"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Zisk v Investown aplikaci (optional)">
+              <input
+                name="currentProfit"
+                type="number"
+                step="0.01"
+                defaultValue={initialStatus?.providerReportedProfitCzk ?? ""}
+                placeholder="Aktuální celkový zisk"
                 className={inputClass}
               />
             </Field>
