@@ -48,6 +48,36 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("Investown statement history is never carried past source coverage", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const performance = source("app/performance/page.tsx");
+
+  assert.ok(
+    investown.includes(
+      "A native statement only proves values through its own newest row",
+    ),
+  );
+  assert.ok(
+    investown.includes("if (overrideCash !== null || overrideTotal !== null)"),
+  );
+  assert.equal(
+    investown.includes("Always make today's snapshot match"),
+    false,
+  );
+
+  assert.ok(analytics.includes("valueThroughDate"));
+  assert.ok(analytics.includes("date <= item.valueThroughDate"));
+  assert.ok(analytics.includes("const valueIsCurrent"));
+  assert.ok(
+    analytics.includes(
+      "unclassifiedFlowCount === 0 && totals.staleValuationCount === 0",
+    ),
+  );
+  assert.ok(performance.includes("nemá hodnotu"));
+  assert.ok(performance.includes("value through"));
+});
+
 test("performance is blocked by any unresolved investment flow", () => {
   const analytics = source("lib/server/analytics.ts");
   assert.ok(analytics.includes("const portfolioPerformanceComplete = unclassifiedFlowCount === 0"));
