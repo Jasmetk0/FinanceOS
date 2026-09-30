@@ -44,6 +44,13 @@ Unknown future Investown transaction types are preserved, classified as an
 adjustment, and surfaced by the importer and Diagnostics instead of being silently
 misclassified.
 
+Realized Investown P&L is calculated from signed `interest` and `income`
+transactions minus provider fees. Principal movements, deposits, withdrawals,
+secondary-market reservations and their releases are P&L-neutral. In particular,
+`Smluvní pokuta` and `Zákonné úroky z prodlení` are compensation paid to the
+investor and therefore increase realized profit when their statement amount is
+positive.
+
 ## Portfolio reconstruction
 
 For a complete statement from account inception, FinanceOS reconstructs:
@@ -53,6 +60,7 @@ For a complete statement from account inception, FinanceOS reconstructs:
 - pending secondary-market reservations,
 - total Investown value,
 - received investment yield,
+- realized Investown profit from investment yield, compensation, referral/other income, net of provider fees,
 - active project holdings,
 - historical daily Investown account value.
 
