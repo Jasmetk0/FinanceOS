@@ -1953,7 +1953,13 @@ export function getAccountDetail(accountIdInput: string) {
       FROM transactions
       WHERE account_id = ?
         AND flow_scope = 'unclassified'
-        AND kind IN ('deposit', 'withdrawal', 'transfer')
+        AND (
+          kind IN ('deposit', 'withdrawal')
+          OR (
+            kind = 'transfer'
+            AND transfer_value_czk IS NULL
+          )
+        )
     `)
     .get(accountId);
   const firstPerformanceGap = performanceGapRow?.first_gap
@@ -2015,9 +2021,15 @@ export function getAccountDetail(accountIdInput: string) {
         : "insufficient";
 
   const raw = parseRawObject(account.raw_json);
+  const rawCoverage =
+    raw.coverage && typeof raw.coverage === "object"
+      ? (raw.coverage as Record<string, unknown>)
+      : {};
   const unknownTypes = Array.isArray(raw.unknownTypes)
     ? raw.unknownTypes.map(String)
-    : [];
+    : Array.isArray(rawCoverage.unknownTypes)
+      ? rawCoverage.unknownTypes.map(String)
+      : [];
   const statementRows =
     raw.statementRows === null || raw.statementRows === undefined
       ? null
