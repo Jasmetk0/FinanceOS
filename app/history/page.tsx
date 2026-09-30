@@ -32,22 +32,28 @@ export default function HistoryPage() {
         </p>
       </div>
 
-      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
-          label="Známé čisté vklady"
+          label="Známý čistý vlastní kapitál"
           value={data.summary.netContributedCzk}
           format="currency"
-          hint="Vklady mínus výběry investičních účtů"
+          hint="Vklady − výběry − card spend + refundy"
         />
         <StatCard
-          label="Celkové vklady"
+          label="Běžné vklady"
           value={data.summary.depositsCzk}
           format="currency"
         />
         <StatCard
-          label="Celkové výběry"
+          label="Běžné výběry"
           value={data.summary.withdrawalsCzk}
           format="currency"
+        />
+        <StatCard
+          label="Čistá útrata 212 Card"
+          value={data.summary.netCardSpendCzk}
+          format="currency"
+          hint="Card spend mínus refundy"
         />
         <StatCard
           label="Externí odměny"
@@ -100,13 +106,15 @@ export default function HistoryPage() {
         >
           {data.monthlyCapitalFlows.length ? (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] border-collapse text-left">
+              <table className="w-full min-w-[1180px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                     <th className="pb-3 font-medium">Měsíc</th>
-                    <th className="pb-3 text-right font-medium">Vklady</th>
-                    <th className="pb-3 text-right font-medium">Výběry</th>
-                    <th className="pb-3 text-right font-medium">Čisté vlastní vklady</th>
+                    <th className="pb-3 text-right font-medium">Běžné vklady</th>
+                    <th className="pb-3 text-right font-medium">Běžné výběry</th>
+                    <th className="pb-3 text-right font-medium">Card spend</th>
+                    <th className="pb-3 text-right font-medium">Card refundy</th>
+                    <th className="pb-3 text-right font-medium">Čistý vlastní kapitál</th>
                     <th className="pb-3 text-right font-medium">Externí odměny</th>
                     <th className="pb-3 text-right font-medium">Kapitál pro P/L</th>
                   </tr>
@@ -126,6 +134,18 @@ export default function HistoryPage() {
                       </td>
                       <td className="py-3 text-right font-mono text-sm">
                         {item.withdrawalsCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.cardSpendCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </td>
+                      <td className="py-3 text-right font-mono text-sm">
+                        {item.cardRefundsCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 2,
                         })}{" "}
                         Kč
@@ -159,9 +179,10 @@ export default function HistoryPage() {
             </p>
           )}
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-            „Čisté vlastní vklady“ = tvoje vklady mínus výběry. „Kapitál pro
-            P/L“ k nim přidává externí odměny, aby cashback nezvyšoval vykázaný
-            investiční výnos.
+            „Čistý vlastní kapitál“ = běžné vklady − běžné výběry − card spend
+            + refundy. Card spend je oddělený, takže se už netváří jako bankovní
+            výběr. „Kapitál pro P/L“ navíc přidává externí odměny, aby cashback
+            nezvyšoval vykázaný investiční výnos.
           </p>
         </SectionCard>
       </div>
