@@ -306,6 +306,15 @@ export default async function AccountDetailPage({
                   </dd>
                 </div>
                 <div>
+                  <dt className="text-[var(--muted)]">Historie API</dt>
+                  <dd className="mt-1 font-mono text-sm">
+                    {detail.sourceMetadata.historicalReconstruction
+                      .transactionHistoryComplete === true
+                      ? "kompletní"
+                      : "doplňuje se"}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-[var(--muted)]">Quantity nesoulady</dt>
                   <dd className="mt-1 font-mono text-sm">
                     {Number(
