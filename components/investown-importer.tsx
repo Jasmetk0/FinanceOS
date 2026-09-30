@@ -507,6 +507,9 @@ export function InvestownImporter({
           };
           coverage: {
             unknownTypes: string[];
+            lastAt: string | null;
+            previousLastAt: string | null;
+            advanced: boolean;
           };
         };
         error?: string;
@@ -524,6 +527,14 @@ export function InvestownImporter({
           payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
           " aktivních projektů · hodnota " +
           money(payload.result.effective.totalValueCzk) +
+          (payload.result.coverage.lastAt
+            ? " · poslední transakce " +
+              new Date(payload.result.coverage.lastAt).toLocaleString("cs-CZ")
+            : "") +
+          (!payload.result.coverage.advanced &&
+          payload.result.coverage.previousLastAt !== null
+            ? " · POZOR: tento výpis neobsahuje žádné novější transakce než předchozí import."
+            : "") +
           (unknown.length
             ? " · Neznámé typy: " + unknown.join(", ")
             : " · Všechny typy transakcí rozpoznány."),
