@@ -18,6 +18,8 @@ export interface TransactionTableRow {
   note: string | null;
   category: string | null;
   sourceLabel: string | null;
+  flowScope: string;
+  transferValueCzk: number | null;
   accountName: string;
   symbol: string;
   assetName: string;
@@ -32,6 +34,7 @@ export function TransactionsTable({
   const [search, setSearch] = useState("");
   const [provider, setProvider] = useState("all");
   const [kind, setKind] = useState("all");
+  const [flow, setFlow] = useState("all");
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const providers = useMemo(
@@ -50,6 +53,18 @@ export function TransactionsTable({
     return transactions.filter((tx) => {
       if (provider !== "all" && tx.provider !== provider) return false;
       if (kind !== "all" && tx.kind !== kind) return false;
+      if (
+        flow === "own_capital" &&
+        !(
+          tx.flowScope === "external" &&
+          (tx.kind === "deposit" || tx.kind === "withdrawal")
+        )
+      ) {
+        return false;
+      }
+      if (flow === "rewards" && tx.category !== "card_cashback") return false;
+      if (flow === "internal" && tx.flowScope !== "internal") return false;
+      if (flow === "unresolved" && tx.flowScope !== "unclassified") return false;
       if (!needle) return true;
 
       return [
@@ -65,7 +80,7 @@ export function TransactionsTable({
         .filter(Boolean)
         .some((value) => String(value).toLowerCase().includes(needle));
     });
-  }, [transactions, search, provider, kind]);
+  }, [transactions, search, provider, kind, flow]);
 
   async function deleteManual(id: string) {
     if (!window.confirm("Smazat tento ručně zadaný záznam?")) return;
@@ -91,7 +106,7 @@ export function TransactionsTable({
 
   return (
     <div>
-      <div className="mb-4 grid gap-2 md:grid-cols-[minmax(220px,1fr)_180px_180px_auto]">
+      <div className="mb-4 grid gap-2 md:grid-cols-[minmax(220px,1fr)_170px_160px_190px_auto]">
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
@@ -122,12 +137,24 @@ export function TransactionsTable({
             </option>
           ))}
         </select>
+        <select
+          value={flow}
+          onChange={(event) => setFlow(event.target.value)}
+          className="rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+        >
+          <option value="all">All flow scopes</option>
+          <option value="own_capital">Vklady / výběry</option>
+          <option value="rewards">Externí odměny</option>
+          <option value="internal">Interní přesuny</option>
+          <option value="unresolved">Nevyřešené toky</option>
+        </select>
         <button
           type="button"
           onClick={() => {
             setSearch("");
             setProvider("all");
             setKind("all");
+            setFlow("all");
           }}
           className="rounded-xl border border-white/9 px-3 py-2.5 text-sm text-[var(--muted)] hover:text-white"
         >
@@ -142,7 +169,7 @@ export function TransactionsTable({
 
       {filtered.length ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1180px] border-collapse text-left">
+          <table className="w-full min-w-[1280px] border-collapse text-left">
             <thead>
               <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                 <th className="pb-3 font-medium">Date</th>
@@ -150,6 +177,7 @@ export function TransactionsTable({
                 <th className="pb-3 font-medium">Account</th>
                 <th className="pb-3 font-medium">Type</th>
                 <th className="pb-3 font-medium">Category / Source</th>
+                <th className="pb-3 font-medium">Flow</th>
                 <th className="pb-3 text-right font-medium">Quantity</th>
                 <th className="pb-3 text-right font-medium">Amount</th>
                 <th className="pb-3 text-right font-medium">Actions</th>
@@ -190,6 +218,11 @@ export function TransactionsTable({
                       </p>
                     ) : null}
                   </td>
+                  <td className="py-4 text-sm">
+                    <span className="rounded-full border border-white/8 bg-white/[0.025] px-2 py-1 text-[10px] uppercase text-[var(--muted)]">
+                      {tx.flowScope}
+                    </span>
+                  </td>
                   <td className="py-4 text-right font-mono text-sm">
                     {tx.quantity === null
                       ? "—"
@@ -203,6 +236,15 @@ export function TransactionsTable({
                       : tx.amountCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 2,
                         }) + " Kč"}
+                    {tx.transferValueCzk !== null ? (
+                      <p className="mt-1 text-[10px] text-[var(--muted)]">
+                        carried{" "}
+                        {tx.transferValueCzk.toLocaleString("cs-CZ", {
+                          maximumFractionDigits: 2,
+                        })}{" "}
+                        Kč
+                      </p>
+                    ) : null}
                   </td>
                   <td className="py-4 text-right">
                     {tx.provider === "manual" ? (
