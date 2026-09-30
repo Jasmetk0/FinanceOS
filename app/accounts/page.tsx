@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Pill, SectionCard } from "@/components/ui";
 import { getAccounts } from "@/lib/server/analytics";
 import { ManualBalancesManager } from "@/components/manual-balances-manager";
@@ -28,9 +29,10 @@ export default function AccountsPage() {
           {accounts.length ? (
             <div className="grid gap-3 lg:grid-cols-2">
               {accounts.map((account) => (
-                <article
+                <Link
                   key={account.id}
-                  className="rounded-2xl border border-white/7 bg-white/[0.025] p-5"
+                  href={"/accounts/" + encodeURIComponent(account.id)}
+                  className="block rounded-2xl border border-white/7 bg-white/[0.025] p-5 transition hover:border-[var(--accent)]/25 hover:bg-white/[0.04]"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -81,7 +83,7 @@ export default function AccountsPage() {
                         ).toLocaleDateString("cs-CZ")
                       : ""}
                   </p>
-                </article>
+                </Link>
               ))}
             </div>
           ) : (
