@@ -333,18 +333,34 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
       markCardSpend.run(accountId, previousUtcDate(cashbackDate));
     }
 
+    const matchedDateSet = new Set(matchedDates);
     const cashbackIds = new Set<string>();
+    const ambiguousCardEraIds = new Set<string>();
+
     for (const [date, rows] of candidatesByDate) {
-      if (date < firstCardDate) continue;
-      for (const row of rows) {
-        cashbackIds.add(String(row.id));
-        markCashback.run(String(row.id));
+      if (matchedDateSet.has(date)) {
+        for (const row of rows) {
+          cashbackIds.add(String(row.id));
+          markCashback.run(String(row.id));
+        }
+        continue;
+      }
+
+      // After card cashback is proven to exist on the account, unmatched
+      // small nightly cash-ins are not safe to call either cashback or an
+      // ordinary bank deposit. Keep them unresolved until the rich export
+      // or another exact provider-history signature identifies them.
+      if (date >= firstCardDate) {
+        for (const row of rows) {
+          ambiguousCardEraIds.add(String(row.id));
+        }
       }
     }
 
     for (const row of accountDeposits) {
-      if (cashbackIds.has(String(row.id))) continue;
-      markDeposit.run(String(row.id));
+      const id = String(row.id);
+      if (cashbackIds.has(id) || ambiguousCardEraIds.has(id)) continue;
+      markDeposit.run(id);
     }
   }
 
