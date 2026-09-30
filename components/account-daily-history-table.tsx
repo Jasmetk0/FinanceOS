@@ -10,6 +10,8 @@ export interface AccountDailyHistoryRow {
   depositsCzk: number;
   withdrawalsCzk: number;
   rewardsCzk: number;
+  investmentIncomeCzk: number;
+  feesCzk: number;
   transferInCzk: number;
   transferOutCzk: number;
   contributedCzk: number;
@@ -94,7 +96,7 @@ export function AccountDailyHistoryTable({
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[1320px] border-collapse text-left">
+        <table className="w-full min-w-[1540px] border-collapse text-left">
           <thead>
             <tr className="border-b border-white/8 text-xs uppercase tracking-[0.11em] text-[var(--muted)]">
               <th className="pb-3 font-medium">Datum</th>
@@ -103,6 +105,8 @@ export function AccountDailyHistoryTable({
               <th className="pb-3 text-right font-medium">Investováno</th>
               <th className="pb-3 text-right font-medium">Vklad</th>
               <th className="pb-3 text-right font-medium">Výběr</th>
+              <th className="pb-3 text-right font-medium">Výnosy</th>
+              <th className="pb-3 text-right font-medium">Poplatky</th>
               <th className="pb-3 text-right font-medium">Kapitál</th>
               <th className="pb-3 text-right font-medium">P/L</th>
               <th className="pb-3 text-right font-medium">Výnos</th>
@@ -132,6 +136,12 @@ export function AccountDailyHistoryTable({
                 </td>
                 <td className="py-3 text-right font-mono text-sm">
                   {flow(row.withdrawalsCzk)}
+                </td>
+                <td className="py-3 text-right font-mono text-sm">
+                  {flow(row.investmentIncomeCzk)}
+                </td>
+                <td className="py-3 text-right font-mono text-sm">
+                  {flow(row.feesCzk)}
                 </td>
                 <td className="py-3 text-right font-mono text-sm">
                   {money(row.capitalAttributedCzk)}
