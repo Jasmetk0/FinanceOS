@@ -709,17 +709,20 @@ export async function importInvestown(input: InvestownImportInput) {
       insertSnapshot.run(accountId, date, snapshot.total, snapshot.cash, snapshot.invested);
     }
 
-    const today = new Date().toISOString().slice(0, 10);
-    // Always make today's snapshot match the effective current account value.
-    // This also lets a manual balance override correct an incomplete statement
-    // whose newest row happens to be dated today.
-    insertSnapshot.run(
-      accountId,
-      today,
-      totalValueCzk,
-      cashValueCzk,
-      investedValueCzk,
-    );
+    // A native statement only proves values through its own newest row.
+    // Do not manufacture a "today" snapshot from older statement data: that
+    // would make stale Investown history look current. A manual current-balance
+    // override is explicitly point-in-time, so only that case may add today.
+    if (overrideCash !== null || overrideTotal !== null) {
+      const today = new Date().toISOString().slice(0, 10);
+      insertSnapshot.run(
+        accountId,
+        today,
+        totalValueCzk,
+        cashValueCzk,
+        investedValueCzk,
+      );
+    }
   } else {
     recordSnapshot(accountId);
   }
