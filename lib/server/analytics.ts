@@ -696,6 +696,8 @@ export function getTransactions(limit = 500) {
         t.note,
         t.category,
         t.source_label,
+        t.flow_scope,
+        t.transfer_value_czk,
         ac.name AS account_name,
         COALESCE(a.symbol, '') AS symbol,
         COALESCE(a.name, '') AS asset_name
@@ -721,6 +723,11 @@ export function getTransactions(limit = 500) {
       note: row.note ? String(row.note) : null,
       category: row.category ? String(row.category) : null,
       sourceLabel: row.source_label ? String(row.source_label) : null,
+      flowScope: String(row.flow_scope || "legacy"),
+      transferValueCzk:
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk),
       accountName: String(row.account_name),
       symbol: String(row.symbol || ""),
       assetName: String(row.asset_name || ""),
