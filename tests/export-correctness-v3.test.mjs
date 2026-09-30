@@ -48,6 +48,26 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("Investown imports are cumulative and deduplicated", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("const hardReplace = input.replaceExisting === true"));
+  assert.ok(investown.includes("existingPrepared"));
+  assert.ok(investown.includes("incomingByBase"));
+  assert.ok(investown.includes("newTransactions"));
+  assert.ok(investown.includes("matchedTransactions"));
+  assert.ok(investown.includes("prepared.push(...incoming)"));
+  assert.ok(
+    investown.includes(
+      'db.prepare("DELETE FROM transactions WHERE provider = \'investown\'").run()',
+    ),
+  );
+  assert.ok(importer.includes("replaceExisting: false"));
+  assert.ok(importer.includes("už známých"));
+  assert.ok(importer.includes("Historii stačí nahrát jednou"));
+});
+
 test("Investown statement history is never carried past source coverage", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
