@@ -235,18 +235,22 @@ function classifyInvestown(row: InvestownImportRow): TransactionKind {
 function stableBase(row: InvestownImportRow): string {
   if (row.externalId?.trim()) return "external:" + row.externalId.trim();
 
+  const parsedDate = new Date(row.occurredAt);
+  const occurredAt = Number.isNaN(parsedDate.getTime())
+    ? normalize(row.occurredAt)
+    : parsedDate.toISOString();
+
+  // Identity is based on the economic transaction, not export formatting.
+  // sourceDate/timezone are deliberately excluded so an overlapping export
+  // with different date formatting still deduplicates correctly.
   const payload = JSON.stringify({
-    occurredAt: row.occurredAt,
-    sourceDate: row.sourceDate || "",
-    timezone: row.timezone || "",
-    amount: row.amount,
-    currency: row.currency || "CZK",
-    type: row.type || "",
-    description: row.description || "",
-    loanName: row.loanName || "",
-    projectName: row.projectName || "",
-    projectUrl: row.projectUrl || "",
-    projectType: row.projectType || "",
+    occurredAt,
+    amount: Number(row.amount),
+    currency: normalize(row.currency || "CZK").toUpperCase(),
+    type: normalize(row.type),
+    loanName: normalize(row.loanName),
+    projectName: normalize(row.projectName),
+    projectType: normalize(row.projectType),
   });
 
   return "hash:" + crypto.createHash("sha256").update(payload).digest("hex").slice(0, 40);
@@ -293,6 +297,75 @@ function statementDate(row: InvestownImportRow, occurredIso: string) {
   return match?.[1] || occurredIso.slice(0, 10);
 }
 
+type PreparedInvestownRow = {
+  row: InvestownImportRow;
+  amount: number;
+  currency: string;
+  occurredIso: string;
+  amountCzk: number | null;
+  kind: TransactionKind;
+  principalDelta: number;
+  reservationDelta: number;
+};
+
+function readStoredInvestownRow(
+  stored: Record<string, unknown>,
+): PreparedInvestownRow | null {
+  let raw: Record<string, unknown> = {};
+  try {
+    raw = stored.raw_json
+      ? (JSON.parse(String(stored.raw_json)) as Record<string, unknown>)
+      : {};
+  } catch {
+    raw = {};
+  }
+
+  const amount = Number(stored.amount);
+  const occurredIso = String(stored.occurred_at || "");
+  const currency = String(stored.currency || "CZK").toUpperCase();
+  if (!Number.isFinite(amount) || !occurredIso || !currency) return null;
+
+  const row: InvestownImportRow = {
+    externalId:
+      typeof raw.externalId === "string" ? raw.externalId : undefined,
+    occurredAt:
+      typeof raw.occurredAt === "string" ? raw.occurredAt : occurredIso,
+    sourceDate:
+      typeof raw.sourceDate === "string" ? raw.sourceDate : occurredIso,
+    timezone:
+      typeof raw.timezone === "string" ? raw.timezone : undefined,
+    amount:
+      Number.isFinite(Number(raw.amount)) ? Number(raw.amount) : amount,
+    currency:
+      typeof raw.currency === "string" ? raw.currency : currency,
+    type: typeof raw.type === "string" ? raw.type : String(stored.category || ""),
+    description:
+      typeof raw.description === "string" ? raw.description : undefined,
+    loanName:
+      typeof raw.loanName === "string" ? raw.loanName : undefined,
+    projectName:
+      typeof raw.projectName === "string" ? raw.projectName : undefined,
+    projectUrl:
+      typeof raw.projectUrl === "string" ? raw.projectUrl : undefined,
+    projectType:
+      typeof raw.projectType === "string" ? raw.projectType : undefined,
+  };
+
+  return {
+    row,
+    amount,
+    currency,
+    occurredIso,
+    amountCzk:
+      stored.amount_czk === null || stored.amount_czk === undefined
+        ? null
+        : Number(stored.amount_czk),
+    kind: classifyInvestown(row),
+    principalDelta: principalDelta(row),
+    reservationDelta: reservationDelta(row),
+  };
+}
+
 export async function importInvestown(input: InvestownImportInput) {
   const accountCurrency = input.accountCurrency?.trim().toUpperCase() || "CZK";
 
@@ -302,16 +375,7 @@ export async function importInvestown(input: InvestownImportInput) {
     throw new Error("A single Investown import is limited to 50,000 rows.");
   }
 
-  const prepared: Array<{
-    row: InvestownImportRow;
-    amount: number;
-    currency: string;
-    occurredIso: string;
-    amountCzk: number | null;
-    kind: TransactionKind;
-    principalDelta: number;
-    reservationDelta: number;
-  }> = [];
+  const incomingPrepared: PreparedInvestownRow[] = [];
 
   const typeCounts = new Map<string, number>();
   const unknownTypes = new Set<string>();
@@ -338,7 +402,7 @@ export async function importInvestown(input: InvestownImportInput) {
       unknownTypes.add(type);
     }
 
-    prepared.push({
+    incomingPrepared.push({
       row,
       amount,
       currency,
@@ -350,23 +414,99 @@ export async function importInvestown(input: InvestownImportInput) {
     });
   }
 
-  if (!prepared.length) throw new Error("No valid Investown rows were found.");
+  if (!incomingPrepared.length) {
+    throw new Error("No valid Investown rows were found.");
+  }
 
   if (
     input.sourceFormat === "investown-native" &&
-    prepared.length !== input.rows.length
+    incomingPrepared.length !== input.rows.length
   ) {
     throw new Error(
       "Native Investown CSV contains " +
-        String(input.rows.length - prepared.length) +
+        String(input.rows.length - incomingPrepared.length) +
         " row(s) that could not be parsed. Nothing was imported.",
     );
   }
 
-  prepared.sort(
+  incomingPrepared.sort(
     (a, b) =>
       new Date(a.occurredIso).getTime() - new Date(b.occurredIso).getTime(),
   );
+
+  const db = getDb();
+  const hardReplace = input.replaceExisting === true;
+  const existingPrepared = hardReplace
+    ? []
+    : db
+        .prepare(
+          "SELECT occurred_at, currency, amount, amount_czk, category, raw_json " +
+            "FROM transactions WHERE provider = 'investown' ORDER BY occurred_at ASC, external_id ASC",
+        )
+        .all()
+        .map((row) => readStoredInvestownRow(row))
+        .filter((row): row is PreparedInvestownRow => row !== null);
+
+  const existingByBase = new Map<string, PreparedInvestownRow[]>();
+  for (const item of existingPrepared) {
+    const base = stableBase(item.row);
+    const group = existingByBase.get(base) ?? [];
+    group.push(item);
+    existingByBase.set(base, group);
+  }
+
+  const incomingByBase = new Map<string, PreparedInvestownRow[]>();
+  for (const item of incomingPrepared) {
+    const base = stableBase(item.row);
+    const group = incomingByBase.get(base) ?? [];
+    group.push(item);
+    incomingByBase.set(base, group);
+  }
+
+  const prepared: PreparedInvestownRow[] = [];
+  let newTransactions = 0;
+  let matchedTransactions = 0;
+  const allBases = new Set([
+    ...existingByBase.keys(),
+    ...incomingByBase.keys(),
+  ]);
+
+  for (const base of allBases) {
+    const existing = existingByBase.get(base) ?? [];
+    const incoming = incomingByBase.get(base) ?? [];
+    const overlap = Math.min(existing.length, incoming.length);
+    matchedTransactions += overlap;
+    newTransactions += Math.max(0, incoming.length - existing.length);
+
+    // New import data wins for overlapping rows so improved classification or
+    // normalization is applied without duplicating the transaction. If the
+    // stored history contains more indistinguishable copies, keep the remainder.
+    prepared.push(...incoming);
+    if (existing.length > incoming.length) {
+      prepared.push(...existing.slice(incoming.length));
+    }
+  }
+
+  prepared.sort(
+    (a, b) =>
+      new Date(a.occurredIso).getTime() - new Date(b.occurredIso).getTime() ||
+      stableBase(a.row).localeCompare(stableBase(b.row)),
+  );
+
+  // Coverage/type diagnostics describe the cumulative Investown history, not
+  // just the newest file.
+  typeCounts.clear();
+  unknownTypes.clear();
+  for (const item of prepared) {
+    const type = normalize(item.row.type) || "Unknown";
+    typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
+    if (
+      !EXACT_TYPE_MAP[type] &&
+      (input.sourceFormat === "investown-native" || item.kind === "adjustment")
+    ) {
+      unknownTypes.add(type);
+    }
+  }
 
   const projects = new Map<string, {
     externalId: string;
@@ -509,7 +649,6 @@ export async function importInvestown(input: InvestownImportInput) {
   // All asynchronous currency work is complete before opening the SQLite
   // transaction. The import itself is atomic: a failed row cannot leave a
   // half-replaced Investown portfolio behind.
-  const db = getDb();
   const statementLastAt = prepared[prepared.length - 1]?.occurredIso || null;
   let previousStatementLastAt: string | null = null;
   if (input.sourceFormat === "investown-native") {
@@ -570,18 +709,22 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedFees,
       derivedRealizedPnl,
       statementRows: prepared.length,
+      lastImportRows: incomingPrepared.length,
+      lastImportNewTransactions: newTransactions,
+      lastImportMatchedTransactions: matchedTransactions,
       statementFirstAt: prepared[0]?.occurredIso || null,
       statementLastAt,
     },
   });
 
-    const replaceExisting = input.replaceExisting !== false;
-  if (replaceExisting) {
-    db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
-    db.prepare("DELETE FROM holdings WHERE account_id = ?").run(accountId);
-    db.prepare("DELETE FROM snapshots WHERE account_id = ?").run(accountId);
-    db.prepare("DELETE FROM assets WHERE provider = 'investown'").run();
-  }
+  // We loaded the cumulative history before opening the write transaction.
+  // Rebuild Investown's derived storage atomically from that canonical set.
+  // This keeps old history, removes duplicates/legacy IDs and lets improved
+  // classification be applied to already-known rows.
+  db.prepare("DELETE FROM transactions WHERE provider = 'investown'").run();
+  db.prepare("DELETE FROM holdings WHERE account_id = ?").run(accountId);
+  db.prepare("DELETE FROM snapshots WHERE account_id = ?").run(accountId);
+  db.prepare("DELETE FROM assets WHERE provider = 'investown'").run();
 
   const assetIds = new Map<string, string>();
   for (const project of projects.values()) {
@@ -607,7 +750,7 @@ export async function importInvestown(input: InvestownImportInput) {
   }
 
   const duplicateOrdinals = new Map<string, number>();
-  let imported = 0;
+  let storedTransactions = 0;
 
   for (const item of prepared) {
     const row = item.row;
@@ -653,7 +796,7 @@ export async function importInvestown(input: InvestownImportInput) {
         financeOsReservationDelta: item.reservationDelta,
       },
     });
-    imported += 1;
+    storedTransactions += 1;
   }
 
   const holdings = [...projects.values()]
@@ -691,7 +834,7 @@ export async function importInvestown(input: InvestownImportInput) {
 
   replaceHoldings(accountId, holdings);
 
-  if (replaceExisting && input.sourceFormat === "investown-native") {
+  if (input.sourceFormat === "investown-native") {
     let runningWallet = 0;
     let runningPrincipal = 0;
     let runningReserved = 0;
@@ -748,8 +891,11 @@ export async function importInvestown(input: InvestownImportInput) {
 
     const result = {
       accountId,
-      imported,
-      skipped: input.rows.length - prepared.length,
+      imported: incomingPrepared.length,
+      newTransactions,
+      matchedTransactions,
+      storedTransactions,
+      skipped: input.rows.length - incomingPrepared.length,
       totalRows: input.rows.length,
       sourceFormat: input.sourceFormat || "mapped",
       derived: {
