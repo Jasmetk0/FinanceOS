@@ -48,6 +48,27 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("Investown current app profit can override only the current PnL point", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const importer = source("components/investown-importer.tsx");
+  const route = source("app/api/import/investown/route.ts");
+  const db = source("lib/server/db.ts");
+
+  assert.ok(investown.includes("currentProfit?: number | null"));
+  assert.ok(investown.includes("providerReportedProfitCzk"));
+  assert.ok(investown.includes("providerReportedProfitAsOf"));
+  assert.ok(investown.includes("providerReportedProfitCzk ?? derivedRealizedPnl"));
+  assert.ok(route.includes("currentProfit: optionalNumber(body.currentProfit)"));
+  assert.ok(importer.includes('name="currentProfit"'));
+  assert.ok(importer.includes("z transakčního CSV"));
+
+  assert.ok(analytics.includes("providerProfitOverrides"));
+  assert.ok(analytics.includes("currentProfitOverrideDelta"));
+  assert.ok(analytics.includes('"provider-reported"'));
+  assert.ok(db.includes("effectiveRealizedPnlCzk"));
+});
+
 test("performance is blocked by any unresolved investment flow", () => {
   const analytics = source("lib/server/analytics.ts");
   assert.ok(analytics.includes("const portfolioPerformanceComplete = unclassifiedFlowCount === 0"));
