@@ -184,7 +184,19 @@ async function resolveYahooSymbol(asset: PriceAsset): Promise<string | null> {
     if (typeof parsed.symbol === "string" && parsed.symbol) {
       return parsed.symbol;
     }
-    if (parsed.unresolved === true) return null;
+    if (parsed.unresolved === true) {
+      const attemptedAt =
+        typeof parsed.attemptedAt === "string"
+          ? new Date(parsed.attemptedAt).getTime()
+          : 0;
+      // A temporary market-data outage must not permanently blacklist an asset.
+      if (
+        Number.isFinite(attemptedAt) &&
+        Date.now() - attemptedAt < 24 * 60 * 60 * 1000
+      ) {
+        return null;
+      }
+    }
   }
 
   if (
@@ -627,6 +639,24 @@ export async function syncTrading212DailyHistory(
     })
     .map((asset) => asset.symbol);
   const resolvedAssets = assets.length - unresolvedAssets.length;
+  const assetsPending = assets.filter((asset) => {
+    const coverage = db
+      .prepare(`
+        SELECT MIN(price_date) AS first_date, MAX(price_date) AS last_date
+        FROM asset_prices
+        WHERE asset_id = ?
+          AND close_czk IS NOT NULL
+      `)
+      .get(asset.id);
+    const first = coverage?.first_date ? String(coverage.first_date) : null;
+    const last = coverage?.last_date ? String(coverage.last_date) : null;
+    return (
+      !first ||
+      first > asset.firstTradeDate ||
+      !last ||
+      last < addDays(today, -1)
+    );
+  }).length;
 
   const quantityRows = db
     .prepare(`
@@ -926,7 +956,7 @@ export async function syncTrading212DailyHistory(
     assetsTotal: assets.length,
     assetsAttempted: attempted.length,
     assetsResolved: resolvedAssets,
-    assetsPending: Math.max(0, needsPriceRefresh.length - attempted.length),
+    assetsPending,
     pricesImported,
     snapshotsWritten,
     reconstructedDays,
@@ -955,7 +985,7 @@ export async function syncTrading212DailyHistory(
     assetsTotal: assets.length,
     assetsAttempted: attempted.length,
     assetsResolved: resolvedAssets,
-    assetsPending: Math.max(0, needsPriceRefresh.length - attempted.length),
+    assetsPending,
     pricesImported,
     snapshotsWritten,
     reconstructedDays,
