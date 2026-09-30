@@ -29,6 +29,7 @@ export interface InvestownImportInput {
   accountCurrency?: string;
   currentValue?: number | null;
   walletCash?: number | null;
+  currentProfit?: number | null;
   rows: InvestownImportRow[];
   replaceExisting?: boolean;
   sourceFormat?: "investown-native" | "mapped";
@@ -42,6 +43,9 @@ export interface InvestownImportStatus {
   investedValueCzk: number;
   realizedYieldCzk: number;
   realizedProfitCzk: number;
+  statementRealizedProfitCzk: number;
+  providerReportedProfitCzk: number | null;
+  profitAsOf: string | null;
   transactions: number;
   projects: number;
   activeProjects: number;
@@ -99,7 +103,9 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
 
   let mode = "unknown";
   let realizedYieldCzk = Number(account.realized_pnl_czk) || 0;
-  let realizedProfitCzk = Number(account.realized_pnl_czk) || 0;
+  let statementRealizedProfitCzk = Number(account.realized_pnl_czk) || 0;
+  let providerReportedProfitCzk: number | null = null;
+  let profitAsOf: string | null = null;
   try {
     const raw = account.raw_json
       ? (JSON.parse(String(account.raw_json)) as Record<string, unknown>)
@@ -108,7 +114,12 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     const storedYield = Number(raw.derivedInterest);
     if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
     const storedProfit = Number(raw.derivedRealizedPnl);
-    if (Number.isFinite(storedProfit)) realizedProfitCzk = storedProfit;
+    if (Number.isFinite(storedProfit)) statementRealizedProfitCzk = storedProfit;
+    const reportedProfit = Number(raw.providerReportedProfitCzk);
+    if (Number.isFinite(reportedProfit)) providerReportedProfitCzk = reportedProfit;
+    if (typeof raw.providerReportedProfitAsOf === "string") {
+      profitAsOf = raw.providerReportedProfitAsOf;
+    }
   } catch {
     mode = "invalid metadata";
   }
@@ -120,7 +131,11 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     walletCashCzk: Number(account.cash_value_czk) || 0,
     investedValueCzk: Number(account.invested_value_czk) || 0,
     realizedYieldCzk,
-    realizedProfitCzk,
+    realizedProfitCzk:
+      providerReportedProfitCzk ?? statementRealizedProfitCzk,
+    statementRealizedProfitCzk,
+    providerReportedProfitCzk,
+    profitAsOf,
     transactions: Number(transactionStats?.count) || 0,
     projects: Number(projectStats?.count) || 0,
     activeProjects: Number(activeStats?.count) || 0,
@@ -471,6 +486,7 @@ export async function importInvestown(input: InvestownImportInput) {
 
   const overrideCash = finiteOptional(input.walletCash);
   const overrideTotal = finiteOptional(input.currentValue);
+  const requestedProfitOverride = finiteOptional(input.currentProfit);
 
   if (
     input.sourceFormat === "investown-native" &&
@@ -510,6 +526,50 @@ export async function importInvestown(input: InvestownImportInput) {
   // transaction. The import itself is atomic: a failed row cannot leave a
   // half-replaced Investown portfolio behind.
   const db = getDb();
+
+  const statementLastAt = prepared[prepared.length - 1]?.occurredIso || null;
+  let providerReportedProfitCzk = requestedProfitOverride;
+  let providerReportedProfitAsOf =
+    requestedProfitOverride === null ? null : new Date().toISOString();
+
+  // A current-profit override is a provider-reported point-in-time value,
+  // independent from the transaction statement. Preserve it across a re-import
+  // only while the newly imported statement still ends before that override.
+  if (providerReportedProfitCzk === null) {
+    const existingAccount = db
+      .prepare(
+        "SELECT raw_json FROM accounts WHERE provider = 'investown' AND external_id = 'main' LIMIT 1",
+      )
+      .get();
+    if (existingAccount?.raw_json) {
+      try {
+        const existingRaw = JSON.parse(String(existingAccount.raw_json)) as Record<
+          string,
+          unknown
+        >;
+        const existingProfit = Number(existingRaw.providerReportedProfitCzk);
+        const existingAsOf =
+          typeof existingRaw.providerReportedProfitAsOf === "string"
+            ? existingRaw.providerReportedProfitAsOf
+            : null;
+        if (
+          Number.isFinite(existingProfit) &&
+          existingAsOf &&
+          statementLastAt &&
+          statementLastAt < existingAsOf
+        ) {
+          providerReportedProfitCzk = existingProfit;
+          providerReportedProfitAsOf = existingAsOf;
+        }
+      } catch {
+        // Invalid legacy metadata should never block a fresh statement import.
+      }
+    }
+  }
+
+  const effectiveRealizedPnl =
+    providerReportedProfitCzk ?? derivedRealizedPnl;
+
   db.exec("BEGIN IMMEDIATE;");
   try {
     const accountId = upsertAccount({
@@ -521,7 +581,7 @@ export async function importInvestown(input: InvestownImportInput) {
     cashValue: Math.max(0, walletCash),
     investedValue,
     totalValue,
-    realizedPnl: derivedRealizedPnl,
+    realizedPnl: effectiveRealizedPnl,
     unrealizedPnl: 0,
     realizedPnlStatus:
       input.sourceFormat === "investown-native" &&
@@ -533,7 +593,7 @@ export async function importInvestown(input: InvestownImportInput) {
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
-    realizedPnlCzk: derivedRealizedPnl,
+    realizedPnlCzk: effectiveRealizedPnl,
     unrealizedPnlCzk: 0,
     raw: {
       imported: true,
@@ -550,6 +610,8 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedOtherIncome,
       derivedFees,
       derivedRealizedPnl,
+      providerReportedProfitCzk,
+      providerReportedProfitAsOf,
       statementRows: prepared.length,
       statementFirstAt: prepared[0]?.occurredIso || null,
       statementLastAt: prepared[prepared.length - 1]?.occurredIso || null,
@@ -746,6 +808,12 @@ export async function importInvestown(input: InvestownImportInput) {
         walletCashCzk: cashValueCzk,
         investedValueCzk,
         totalValueCzk,
+        realizedProfitCzk: effectiveRealizedPnl,
+        profitSource:
+          providerReportedProfitCzk === null
+            ? "statement"
+            : "provider-reported",
+        providerReportedProfitAsOf,
       },
       coverage: {
         firstAt: prepared[0]?.occurredIso || null,
