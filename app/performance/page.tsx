@@ -92,23 +92,32 @@ export default function PerformancePage() {
           <p className="text-sm font-semibold text-[var(--warning)]">
             Celkový výkon je dočasně neúplný
           </p>
-          <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
-            FinanceOS má {data.totals.unclassifiedFlowCount} investiční
-            cash-flow záznam{data.totals.unclassifiedFlowCount === 1 ? "" : "ů"},
-            u kterých zatím nelze bezpečně určit, zda jde o externí vklad/výběr
-            nebo přesun uvnitř tvého majetku. Proto nezobrazuje celkový odhad
-            zisku ani XIRR jako přesné číslo. Známá hodnota těchto toků je
-            přibližně{" "}
-            {data.totals.knownUnclassifiedFlowCzk.toLocaleString("cs-CZ", {
-              maximumFractionDigits: 0,
-            })}{" "}
-            Kč.
-            {data.totals.unlinkedWalletTransferCount
-              ? " Z toho " +
-                data.totals.unlinkedWalletTransferCount +
-                " záznamů jsou nepropojené on-chain převody."
-              : ""}
-          </p>
+          {data.totals.staleValuationCount ? (
+            <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
+              {data.totals.staleValuationCount} investiční účet
+              {data.totals.staleValuationCount === 1 ? "" : "ů"} nemá hodnotu
+              doloženou až k dnešku. FinanceOS proto nepřenáší poslední známou
+              hodnotu do současnosti a nevymýšlí aktuální zisk ani XIRR.
+            </p>
+          ) : (
+            <p className="mt-2 max-w-5xl text-xs leading-5 text-[var(--muted)]">
+              FinanceOS má {data.totals.unclassifiedFlowCount} investiční
+              cash-flow záznam{data.totals.unclassifiedFlowCount === 1 ? "" : "ů"},
+              u kterých zatím nelze bezpečně určit, zda jde o externí vklad/výběr
+              nebo přesun uvnitř tvého majetku. Proto nezobrazuje celkový odhad
+              zisku ani XIRR jako přesné číslo. Známá hodnota těchto toků je
+              přibližně{" "}
+              {data.totals.knownUnclassifiedFlowCzk.toLocaleString("cs-CZ", {
+                maximumFractionDigits: 0,
+              })}{" "}
+              Kč.
+              {data.totals.unlinkedWalletTransferCount
+                ? " Z toho " +
+                  data.totals.unlinkedWalletTransferCount +
+                  " záznamů jsou nepropojené on-chain převody."
+                : ""}
+            </p>
+          )}
         </div>
       ) : null}
 
@@ -158,6 +167,12 @@ export default function PerformancePage() {
                             ? " · " +
                               account.unclassifiedFlowCount +
                               " unresolved flow(s)"
+                            : ""}
+                          {!account.valueIsCurrent && account.valueThroughDate
+                            ? " · value through " +
+                              new Date(
+                                account.valueThroughDate + "T12:00:00",
+                              ).toLocaleDateString("cs-CZ")
                             : ""}
                         </p>
                       </td>
