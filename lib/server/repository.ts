@@ -410,12 +410,18 @@ export function recordSnapshot(accountIdValue: string) {
   const date = new Date().toISOString().slice(0, 10);
   getDb()
     .prepare(`
-      INSERT INTO snapshots(account_id, recorded_at, total_value_czk, cash_value_czk, invested_value_czk)
-      VALUES(?, ?, ?, ?, ?)
+      INSERT INTO snapshots(
+        account_id, recorded_at, total_value_czk, cash_value_czk,
+        invested_value_czk, source, quality, raw_json
+      )
+      VALUES(?, ?, ?, ?, ?, 'provider', 'verified', ?)
       ON CONFLICT(account_id, recorded_at) DO UPDATE SET
         total_value_czk = excluded.total_value_czk,
         cash_value_czk = excluded.cash_value_czk,
-        invested_value_czk = excluded.invested_value_czk
+        invested_value_czk = excluded.invested_value_czk,
+        source = 'provider',
+        quality = 'verified',
+        raw_json = excluded.raw_json
     `)
     .run(
       accountIdValue,
@@ -423,6 +429,10 @@ export function recordSnapshot(accountIdValue: string) {
       Number(account.total_value_czk),
       Number(account.cash_value_czk),
       Number(account.invested_value_czk),
+      JSON.stringify({
+        source: "provider-current",
+        capturedAt: new Date().toISOString(),
+      }),
     );
 }
 

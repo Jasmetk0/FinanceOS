@@ -18,6 +18,7 @@ import {
   hasTrading212CardEvidence,
   syncTrading212CardHistory,
 } from "@/lib/server/trading212-card";
+import { syncTrading212DailyHistory } from "@/lib/server/trading212-history";
 
 type JsonObject = Record<string, unknown>;
 
@@ -105,6 +106,39 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const HISTORY_PAGE_BUDGET = 8;
+
+function getHistorySyncState(key: string): string | null {
+  const row = getDb()
+    .prepare(
+      "SELECT value FROM provider_sync_state WHERE provider = 'trading212' AND key = ?",
+    )
+    .get(key);
+  return row?.value === null || row?.value === undefined
+    ? null
+    : String(row.value);
+}
+
+function setHistorySyncState(key: string, value: string) {
+  getDb()
+    .prepare(`
+      INSERT INTO provider_sync_state(provider, key, value, updated_at)
+      VALUES('trading212', ?, ?, ?)
+      ON CONFLICT(provider, key) DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `)
+    .run(key, value, new Date().toISOString());
+}
+
+function deleteHistorySyncState(key: string) {
+  getDb()
+    .prepare(
+      "DELETE FROM provider_sync_state WHERE provider = 'trading212' AND key = ?",
+    )
+    .run(key);
+}
+
 function historyExternalKey(prefix: string, item: JsonObject): string {
   const nestedOrder = asObject(item.order);
   const nestedFill = asObject(item.fill);
@@ -134,9 +168,17 @@ async function fetchPaginated(
   credentials: Trading212Credentials,
   initialPath: string,
   stopWhenKnownPrefix?: string,
+  historyKey?: string,
 ): Promise<JsonObject[]> {
   const all: JsonObject[] = [];
-  let path: string | null = initialPath;
+  const completeKey = historyKey ? "history_complete:" + historyKey : null;
+  const cursorKey = historyKey ? "history_cursor:" + historyKey : null;
+  const fullBackfillComplete =
+    completeKey !== null && getHistorySyncState(completeKey) === "true";
+  let path: string | null =
+    !fullBackfillComplete && cursorKey
+      ? getHistorySyncState(cursorKey) || initialPath
+      : initialPath;
   let page = 0;
 
   while (path) {
@@ -155,23 +197,50 @@ async function fetchPaginated(
       ? result.items.map((item: unknown) => asObject(item))
       : [];
 
-    if (stopWhenKnownPrefix && items.length > 0) {
+    // Only use the fast known-page stop after at least one complete traversal.
+    // Before that, persist the provider cursor and progressively walk all the
+    // way to account inception across normal syncs.
+    if (fullBackfillComplete && stopWhenKnownPrefix && items.length > 0) {
       const ids: string[] = items.map((item: JsonObject) =>
         historyExternalKey(stopWhenKnownPrefix, item),
       );
       const known = ids.filter((id: string) =>
         getDb()
-          .prepare("SELECT 1 FROM transactions WHERE provider = 'trading212' AND external_id = ?")
+          .prepare(
+            "SELECT 1 FROM transactions WHERE provider = 'trading212' AND external_id = ?",
+          )
           .get(id),
       );
       if (known.length === ids.length) break;
     }
 
     all.push(...items);
-    path = typeof result.nextPagePath === "string" && result.nextPagePath
-      ? result.nextPagePath
-      : null;
+    const nextPath =
+      typeof result.nextPagePath === "string" && result.nextPagePath
+        ? result.nextPagePath
+        : null;
     page += 1;
+
+    if (!nextPath) {
+      if (!fullBackfillComplete && completeKey && cursorKey) {
+        setHistorySyncState(completeKey, "true");
+        deleteHistorySyncState(cursorKey);
+      }
+      path = null;
+      continue;
+    }
+
+    if (
+      !fullBackfillComplete &&
+      cursorKey &&
+      page >= HISTORY_PAGE_BUDGET
+    ) {
+      setHistorySyncState(cursorKey, nextPath);
+      path = null;
+      continue;
+    }
+
+    path = nextPath;
   }
 
   return all;
@@ -416,17 +485,20 @@ export async function syncTrading212() {
       credentials,
       "/equity/history/orders?limit=50",
       "order",
+      "orders",
     ),
     fetchPaginated(
       environment,
       credentials,
       "/equity/history/dividends?limit=50",
       "dividend",
+      "dividends",
     ),
     fetchPaginated(
       environment,
       credentials,
       "/equity/history/transactions?limit=50",
+      "cash",
       "cash",
     ),
   ]);
@@ -727,6 +799,19 @@ export async function syncTrading212() {
 
   recordSnapshot(accountIdValue);
 
+  let dailyHistory:
+    | Awaited<ReturnType<typeof syncTrading212DailyHistory>>
+    | { error: string };
+  try {
+    dailyHistory = await syncTrading212DailyHistory(accountIdValue);
+  } catch (error) {
+    // Historical market-data reconstruction is best-effort and must never
+    // turn a successful provider sync into a failed live-account sync.
+    dailyHistory = {
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
   return {
     accountId: accountIdValue,
     holdings: holdings.length,
@@ -735,6 +820,15 @@ export async function syncTrading212() {
     cashTransactions: cashTransactions.length,
     cardSync,
     cardDetected,
+    historyBackfill: {
+      ordersComplete:
+        getHistorySyncState("history_complete:orders") === "true",
+      dividendsComplete:
+        getHistorySyncState("history_complete:dividends") === "true",
+      cashComplete:
+        getHistorySyncState("history_complete:cash") === "true",
+    },
+    dailyHistory,
   };
   });
 }

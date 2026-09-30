@@ -688,6 +688,9 @@ function initialize(db: DatabaseSync) {
       total_value_czk REAL NOT NULL,
       cash_value_czk REAL NOT NULL,
       invested_value_czk REAL NOT NULL,
+      source TEXT NOT NULL DEFAULT 'provider',
+      quality TEXT NOT NULL DEFAULT 'verified',
+      raw_json TEXT,
       UNIQUE(account_id, recorded_at)
     );
 
@@ -812,6 +815,20 @@ function initialize(db: DatabaseSync) {
   }
   if (!hasColumn(db, "transactions", "transfer_value_czk")) {
     db.exec("ALTER TABLE transactions ADD COLUMN transfer_value_czk REAL;");
+  }
+
+  if (!hasColumn(db, "snapshots", "source")) {
+    db.exec(
+      "ALTER TABLE snapshots ADD COLUMN source TEXT NOT NULL DEFAULT 'provider';",
+    );
+  }
+  if (!hasColumn(db, "snapshots", "quality")) {
+    db.exec(
+      "ALTER TABLE snapshots ADD COLUMN quality TEXT NOT NULL DEFAULT 'verified';",
+    );
+  }
+  if (!hasColumn(db, "snapshots", "raw_json")) {
+    db.exec("ALTER TABLE snapshots ADD COLUMN raw_json TEXT;");
   }
 
   db.exec(
