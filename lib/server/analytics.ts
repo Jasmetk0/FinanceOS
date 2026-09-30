@@ -156,6 +156,7 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
     .prepare(`
       SELECT account_id, recorded_at, total_value_czk
       FROM snapshots
+      WHERE COALESCE(quality, 'verified') != 'partial'
       ORDER BY recorded_at ASC, account_id ASC
     `)
     .all();
@@ -254,6 +255,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       FROM snapshots s
       JOIN accounts a ON a.id = s.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
+        AND COALESCE(s.quality, 'verified') != 'partial'
       ORDER BY s.recorded_at ASC, s.account_id ASC
     `)
     .all();
@@ -1862,7 +1864,10 @@ export function getAccountDetail(accountIdInput: string) {
       SELECT
         COUNT(*) AS count,
         MIN(recorded_at) AS first_at,
-        MAX(recorded_at) AS last_at
+        MAX(recorded_at) AS last_at,
+        SUM(CASE WHEN source = 'provider' THEN 1 ELSE 0 END) AS provider_count,
+        SUM(CASE WHEN source = 'reconstructed' AND quality = 'reconstructed' THEN 1 ELSE 0 END) AS reconstructed_count,
+        SUM(CASE WHEN quality = 'partial' THEN 1 ELSE 0 END) AS partial_count
       FROM snapshots
       WHERE account_id = ?
     `)
@@ -1884,9 +1889,10 @@ export function getAccountDetail(accountIdInput: string) {
 
   const snapshotRows = db
     .prepare(`
-      SELECT recorded_at, total_value_czk
+      SELECT recorded_at, total_value_czk, source, quality
       FROM snapshots
       WHERE account_id = ?
+        AND COALESCE(quality, 'verified') != 'partial'
       ORDER BY recorded_at ASC
     `)
     .all(accountId);
@@ -2073,6 +2079,9 @@ export function getAccountDetail(accountIdInput: string) {
         ? String(transactionStats.last_at)
         : null,
       snapshotCount: num(snapshotStats?.count),
+      providerSnapshotCount: num(snapshotStats?.provider_count),
+      reconstructedSnapshotCount: num(snapshotStats?.reconstructed_count),
+      partialSnapshotCount: num(snapshotStats?.partial_count),
       firstSnapshotAt: snapshotStats?.first_at
         ? String(snapshotStats.first_at)
         : null,
@@ -2098,6 +2107,11 @@ export function getAccountDetail(accountIdInput: string) {
           ? raw.costBasisStatus
           : null,
       unknownTypes,
+      historicalReconstruction:
+        raw.financeOsHistoricalReconstruction &&
+        typeof raw.financeOsHistoricalReconstruction === "object"
+          ? (raw.financeOsHistoricalReconstruction as Record<string, unknown>)
+          : null,
     },
     chart: {
       providers: [provider],
