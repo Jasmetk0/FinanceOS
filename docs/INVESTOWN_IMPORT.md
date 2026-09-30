@@ -70,6 +70,14 @@ A current-value and wallet override remains available for partial statements.
 When those fields are left blank, the native statement is treated as the source
 of truth.
 
+Investown can show a newer current "total profit" than the newest transaction
+contained in the exported CSV. FinanceOS therefore also supports an optional
+provider-reported current-profit override. The CSV remains the audit source for
+historical transactions and historical P&L; the provider-reported value is used
+only as the current Investown profit point. FinanceOS stores both values and shows
+their difference. A stored current-profit override survives repeated imports only
+while the newly imported statement still ends before the override timestamp.
+
 ## Re-import behavior
 
 A new complete Investown statement replaces the previous Investown statement in
