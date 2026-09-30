@@ -97,7 +97,7 @@ test("Investown statement history is never carried past source coverage", () => 
     ),
   );
   assert.ok(performance.includes("nemá hodnotu"));
-  assert.ok(performance.includes("value through"));
+  assert.ok(performance.includes("DataFreshnessBadge"));
 });
 
 test("all account surfaces expose provider-aware data freshness", () => {
