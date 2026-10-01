@@ -47,6 +47,10 @@ next-env.d.ts
 *.csv
 *.xls
 *.xlsx
+*.pdf
+*.txt
+*.zip
+*.bak
 *.log
 *.key
 *.p12
@@ -54,3 +58,6 @@ next-env.d.ts
 financeos-export-*.json
 *-statement.csv
 
+/data/
+/backups/
+/exports/
