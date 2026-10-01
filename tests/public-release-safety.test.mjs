@@ -5,8 +5,8 @@ import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 
 const FORBIDDEN_EXTENSIONS = new Set([
-  ".csv", ".xls", ".xlsx", ".db", ".sqlite", ".sqlite3",
-  ".log", ".pem", ".key", ".p12", ".pfx",
+  ".csv", ".xls", ".xlsx", ".pdf", ".txt", ".zip", ".bak",
+  ".db", ".sqlite", ".sqlite3", ".log", ".pem", ".key", ".p12", ".pfx",
 ]);
 
 const FORBIDDEN_BASENAME_PATTERNS = [
@@ -36,6 +36,7 @@ test("repository does not track obvious personal finance exports or secrets", ()
     const normalized = file.replaceAll("\\", "/");
     const basename = normalized.split("/").at(-1) || normalized;
     return (
+      /^(?:data|backups|exports)\//i.test(normalized) ||
       FORBIDDEN_EXTENSIONS.has(extname(basename).toLowerCase()) ||
       FORBIDDEN_BASENAME_PATTERNS.some((pattern) => pattern.test(basename))
     );
