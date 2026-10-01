@@ -39,3 +39,25 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local financial data and secrets
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.xls
+*.xlsx
+*.pdf
+*.txt
+*.zip
+*.bak
+*.log
+*.key
+*.p12
+*.pfx
+financeos-export-*.json
+*-statement.csv
+
+/data/
+/backups/
+/exports/

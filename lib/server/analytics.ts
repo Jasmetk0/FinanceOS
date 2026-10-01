@@ -250,12 +250,12 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
         s.recorded_at,
         s.account_id,
         s.total_value_czk,
+        s.quality AS snapshot_quality,
         a.provider,
         a.type
       FROM snapshots s
       JOIN accounts a ON a.id = s.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
-        AND COALESCE(s.quality, 'verified') != 'partial'
       ORDER BY s.recorded_at ASC, s.account_id ASC
     `)
     .all();
@@ -396,7 +396,12 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   >();
   const snapshotsByDate = new Map<
     string,
-    Array<{ accountId: string; provider: string; valueCzk: number }>
+    Array<{
+      accountId: string;
+      provider: string;
+      valueCzk: number;
+      partial: boolean;
+    }>
   >();
 
   for (const row of snapshotRows) {
@@ -408,6 +413,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       accountId: String(row.account_id),
       provider,
       valueCzk: num(row.total_value_czk),
+      partial: String(row.snapshot_quality || "verified") === "partial",
     });
     snapshotsByDate.set(date, list);
   }
@@ -470,6 +476,15 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     }
 
     for (const item of snapshotsByDate.get(date) ?? []) {
+      if (item.partial) {
+        // A partial snapshot is an explicit coverage gap, not a date that can
+        // be skipped. Remove the account until a later complete snapshot
+        // arrives so the SVG path breaks instead of drawing a fake straight
+        // interpolation across an unknown historical interval.
+        latestByAccount.delete(item.accountId);
+        continue;
+      }
+
       latestByAccount.set(item.accountId, {
         provider: item.provider,
         valueCzk: item.valueCzk,
