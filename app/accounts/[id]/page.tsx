@@ -55,6 +55,7 @@ export default async function AccountDetailPage({
   const performance = detail.performance;
   const isStale = detail.dataFreshness.status === "stale";
   const apiReadCoverage = objectRecord(detail.sourceMetadata.apiReadCoverage);
+  const syncState = objectRecord(detail.sourceMetadata.trading212SyncState);
   const exportInventory = objectRecord(
     detail.sourceMetadata.fullExportActionInventory,
   );
@@ -119,19 +120,32 @@ export default async function AccountDetailPage({
           hint={detail.holdings.length.toLocaleString("cs-CZ") + " aktuálních pozic"}
         />
         <StatCard
-          label="Odhad zisku"
-          value={performance?.estimatedProfitCzk ?? null}
+          label={
+            performance?.estimatedProfitCzk !== null &&
+            performance?.estimatedProfitCzk !== undefined
+              ? "Odhad zisku"
+              : "P/L pozic"
+          }
+          value={
+            performance?.estimatedProfitCzk ??
+            (detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
+              ? detail.realizedPnlCzk + detail.unrealizedPnlCzk
+              : null)
+          }
           format="currency"
           hint={
-            performance?.estimatedProfitCzk === null || !performance
-              ? "Nedostatek aktuálních / úplných cash-flow dat"
-              : "Simple return " + pct(performance.simpleReturnPct)
+            performance?.estimatedProfitCzk !== null &&
+            performance?.estimatedProfitCzk !== undefined
+              ? "Simple return " + pct(performance.simpleReturnPct)
+              : "Provider P/L pozic; celkový zisk čeká na úplné cash-flow"
           }
           positive={
-            performance?.estimatedProfitCzk === null ||
-            performance?.estimatedProfitCzk === undefined
-              ? undefined
-              : performance.estimatedProfitCzk >= 0
+            performance?.estimatedProfitCzk !== null &&
+            performance?.estimatedProfitCzk !== undefined
+              ? performance.estimatedProfitCzk >= 0
+              : detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
+                ? detail.realizedPnlCzk + detail.unrealizedPnlCzk >= 0
+                : undefined
           }
         />
       </section>
@@ -272,13 +286,13 @@ export default async function AccountDetailPage({
             </p>
           ) : null}
 
-          {detail.provider === "trading212" &&
-          Object.keys(apiReadCoverage).length ? (
+          {detail.provider === "trading212" ? (
             <div className="mt-5 border-t border-white/7 pt-4">
               <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
                 Trading 212 API pokrytí
               </p>
-              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+              {Object.keys(apiReadCoverage).length ? (
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
                 {Object.entries(apiReadCoverage).map(([name, rawStatus]) => {
                   const status = objectRecord(rawStatus);
                   const ok = status.ok === true;
@@ -300,7 +314,43 @@ export default async function AccountDetailPage({
                     </div>
                   );
                 })}
+                </div>
+              ) : (
+                <p className="mt-3 text-xs text-[var(--warning)]">
+                  API coverage zatím není uložené. Proveď synchronizaci Trading 212.
+                </p>
+              )}
+
+              <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
+                <div className="rounded-xl border border-white/7 px-3 py-2">
+                  <span className="text-[var(--muted)]">Full export</span>
+                  <span className="ml-2 font-mono">
+                    {syncState.card_export_pending
+                      ? "čeká / generuje se"
+                      : syncState.card_export_last_error
+                        ? "chyba"
+                        : syncState.card_export_last_refresh
+                          ? "zpracován"
+                          : "zatím nevyžádán"}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-white/7 px-3 py-2">
+                  <span className="text-[var(--muted)]">History cursory</span>
+                  <span className="ml-2 font-mono">
+                    {syncState["history_complete:orders"] === "true" &&
+                    syncState["history_complete:dividends"] === "true" &&
+                    syncState["history_complete:cash"] === "true"
+                      ? "kompletní"
+                      : "doplňují se"}
+                  </span>
+                </div>
               </div>
+
+              {syncState.card_export_last_error ? (
+                <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--warning)]">
+                  Full export chyba: {String(syncState.card_export_last_error)}
+                </p>
+              ) : null}
 
               {exportActions.length ? (
                 <div className="mt-4">
