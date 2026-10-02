@@ -838,12 +838,41 @@ export async function importInvestown(input: InvestownImportInput) {
     let runningWallet = 0;
     let runningPrincipal = 0;
     let runningReserved = 0;
-    const snapshots = new Map<string, { cash: number; invested: number; total: number }>();
+    let runningRealizedPnl = 0;
+    let runningInterest = 0;
+    let runningOtherIncome = 0;
+    let runningFees = 0;
+    const snapshots = new Map<
+      string,
+      {
+        cash: number;
+        invested: number;
+        total: number;
+        realizedPnl: number;
+        interest: number;
+        otherIncome: number;
+        fees: number;
+      }
+    >();
 
     for (const item of prepared) {
-      runningWallet += item.amountCzk ?? 0;
+      const amountCzk = item.amountCzk ?? 0;
+      runningWallet += amountCzk;
       runningPrincipal += item.principalDelta;
       runningReserved += item.reservationDelta;
+
+      if (item.kind === "interest") {
+        runningInterest += amountCzk;
+        runningRealizedPnl += amountCzk;
+      } else if (item.kind === "income") {
+        runningOtherIncome += amountCzk;
+        runningRealizedPnl += amountCzk;
+      } else if (item.kind === "fee") {
+        const fee = Math.abs(amountCzk);
+        runningFees += fee;
+        runningRealizedPnl -= fee;
+      }
+
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
       if (runningReserved < 0 && runningReserved > -0.02) runningReserved = 0;
 
@@ -855,20 +884,39 @@ export async function importInvestown(input: InvestownImportInput) {
           0,
           runningWallet + runningPrincipal + runningReserved,
         ),
+        realizedPnl: runningRealizedPnl,
+        interest: runningInterest,
+        otherIncome: runningOtherIncome,
+        fees: runningFees,
       });
     }
 
     const insertSnapshot = db.prepare(
-      "INSERT INTO snapshots(account_id, recorded_at, total_value_czk, cash_value_czk, invested_value_czk) " +
-      "VALUES(?, ?, ?, ?, ?) " +
+      "INSERT INTO snapshots(account_id, recorded_at, total_value_czk, cash_value_czk, invested_value_czk, raw_json) " +
+      "VALUES(?, ?, ?, ?, ?, ?) " +
       "ON CONFLICT(account_id, recorded_at) DO UPDATE SET " +
       "total_value_czk = excluded.total_value_czk, " +
       "cash_value_czk = excluded.cash_value_czk, " +
-      "invested_value_czk = excluded.invested_value_czk"
+      "invested_value_czk = excluded.invested_value_czk, " +
+      "raw_json = excluded.raw_json"
     );
 
     for (const [date, snapshot] of snapshots) {
-      insertSnapshot.run(accountId, date, snapshot.total, snapshot.cash, snapshot.invested);
+      insertSnapshot.run(
+        accountId,
+        date,
+        snapshot.total,
+        snapshot.cash,
+        snapshot.invested,
+        JSON.stringify({
+          financeOsInvestownHistory: {
+            realizedPnlCzk: snapshot.realizedPnl,
+            interestCzk: snapshot.interest,
+            otherIncomeCzk: snapshot.otherIncome,
+            feesCzk: snapshot.fees,
+          },
+        }),
+      );
     }
 
     // A native statement only proves values through its own newest row.
@@ -883,6 +931,14 @@ export async function importInvestown(input: InvestownImportInput) {
         totalValueCzk,
         cashValueCzk,
         investedValueCzk,
+        JSON.stringify({
+          financeOsInvestownHistory: {
+            realizedPnlCzk: derivedRealizedPnl,
+            interestCzk: derivedInterest,
+            otherIncomeCzk: derivedOtherIncome,
+            feesCzk: derivedFees,
+          },
+        }),
       );
     }
   } else {

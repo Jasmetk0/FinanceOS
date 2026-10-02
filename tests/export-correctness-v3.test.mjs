@@ -30,6 +30,18 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown daily snapshots persist and graph explicit realized P/L", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+
+  assert.ok(investown.includes("runningRealizedPnl"));
+  assert.ok(investown.includes("financeOsInvestownHistory"));
+  assert.ok(investown.includes("realizedPnlCzk: snapshot.realizedPnl"));
+  assert.ok(analytics.includes('provider === "investown"'));
+  assert.ok(analytics.includes("financeOsInvestownHistory"));
+  assert.ok(analytics.includes("const explicitProfit = Number(investownHistory.realizedPnlCzk)"));
+});
+
 test("Investown realized PnL counts investor compensation and income positively", () => {
   const investown = source("lib/server/investown.ts");
   const db = source("lib/server/db.ts");
