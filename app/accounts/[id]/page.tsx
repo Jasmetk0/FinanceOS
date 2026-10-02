@@ -37,6 +37,12 @@ function dateTime(value: string | null) {
   return value ? new Date(value).toLocaleString("cs-CZ") : "—";
 }
 
+function objectRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
 export default async function AccountDetailPage({
   params,
 }: {
@@ -48,6 +54,16 @@ export default async function AccountDetailPage({
 
   const performance = detail.performance;
   const isStale = detail.dataFreshness.status === "stale";
+  const apiReadCoverage = objectRecord(detail.sourceMetadata.apiReadCoverage);
+  const exportInventory = objectRecord(
+    detail.sourceMetadata.fullExportActionInventory,
+  );
+  const exportActions = Array.isArray(exportInventory.actions)
+    ? exportInventory.actions
+        .map((item) => objectRecord(item))
+        .filter((item) => typeof item.action === "string")
+        .slice(0, 12)
+    : [];
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -254,6 +270,59 @@ export default async function AccountDetailPage({
             <p className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
               Neznámé typy transakcí: {detail.sourceMetadata.unknownTypes.join(", ")}
             </p>
+          ) : null}
+
+          {detail.provider === "trading212" &&
+          Object.keys(apiReadCoverage).length ? (
+            <div className="mt-5 border-t border-white/7 pt-4">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-[var(--muted)]">
+                Trading 212 API pokrytí
+              </p>
+              <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                {Object.entries(apiReadCoverage).map(([name, rawStatus]) => {
+                  const status = objectRecord(rawStatus);
+                  const ok = status.ok === true;
+                  const count =
+                    typeof status.count === "number" ? status.count : null;
+                  return (
+                    <div
+                      key={name}
+                      className="flex items-center justify-between gap-3 rounded-xl border border-white/7 px-3 py-2"
+                    >
+                      <span className="text-[var(--muted)]">{name}</span>
+                      <span className={ok ? "font-mono" : "font-mono text-[var(--warning)]"}>
+                        {ok
+                          ? count === null
+                            ? "OK"
+                            : "OK · " + count.toLocaleString("cs-CZ")
+                          : "nedostupné"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {exportActions.length ? (
+                <div className="mt-4">
+                  <p className="text-xs text-[var(--muted)]">
+                    Akce nalezené v posledním plném API CSV reportu:
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {exportActions.map((item) => (
+                      <span
+                        key={String(item.action)}
+                        className="rounded-full border border-white/8 px-2.5 py-1 text-xs"
+                      >
+                        {String(item.action)}
+                        {typeof item.count === "number"
+                          ? " · " + item.count.toLocaleString("cs-CZ")
+                          : ""}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
 
           {detail.provider === "trading212" &&
