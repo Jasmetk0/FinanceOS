@@ -46,6 +46,8 @@ test("Trading 212 API backfill continues automatically while the app is open", (
   assert.ok(autoSync.includes("needsTrading212BackfillRetry"));
   assert.ok(autoSync.includes("history.ordersComplete !== true"));
   assert.ok(autoSync.includes('cardStatus === "requested"'));
+  assert.ok(autoSync.includes("dailyHistory.assetsPending"));
+  assert.ok(autoSync.includes("dailyHistory.partialDays"));
   assert.ok(autoSync.includes("scheduleBackfillRetry"));
 });
 
