@@ -30,6 +30,10 @@ function needsTrading212BackfillRetry(payload: unknown) {
         cashComplete?: unknown;
       };
       cardSync?: { status?: unknown };
+      dailyHistory?: {
+        assetsPending?: unknown;
+        partialDays?: unknown;
+      };
     };
 
     const history = detail.historyBackfill;
@@ -49,6 +53,17 @@ function needsTrading212BackfillRetry(payload: unknown) {
       cardStatus === "requested" ||
       cardStatus === "requested-fallback-window" ||
       cardStatus === "waiting"
+    ) {
+      return true;
+    }
+
+    const dailyHistory = detail.dailyHistory;
+    if (
+      dailyHistory &&
+      (
+        Number(dailyHistory.assetsPending || 0) > 0 ||
+        Number(dailyHistory.partialDays || 0) > 0
+      )
     ) {
       return true;
     }
