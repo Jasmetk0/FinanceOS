@@ -244,6 +244,19 @@ test("Trading 212 card enrichment keeps official CSV as the merchant-detail auth
   assert.ok(card.includes("card_cashback"));
 });
 
+test("Trading 212 detail always exposes API diagnostics and provider P/L fallback", () => {
+  const t212 = source("lib/server/integrations/trading212.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const detail = source("app/accounts/[id]/page.tsx");
+
+  assert.ok(t212.includes("financeOsApiReadCoverage: apiReadCoverage"));
+  assert.ok(analytics.includes("trading212SyncState"));
+  assert.ok(detail.includes("Trading 212 API pokrytí"));
+  assert.ok(detail.includes("Full export"));
+  assert.ok(detail.includes("P/L pozic"));
+  assert.ok(detail.includes("Provider P/L pozic; celkový zisk čeká na úplné cash-flow"));
+});
+
 test("Trading 212 sync exploits the full useful read-only API surface", () => {
   const card = source("lib/server/trading212-card.ts");
   const t212 = source("lib/server/integrations/trading212.ts");

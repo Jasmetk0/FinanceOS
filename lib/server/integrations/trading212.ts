@@ -829,6 +829,7 @@ export async function syncTrading212() {
       reconciliationStatus: "reconciled",
       raw: {
         ...summary,
+        financeOsApiReadCoverage: apiReadCoverage,
         financeOsReconciliation: {
           positionsMarketValue,
           knownCash: {
