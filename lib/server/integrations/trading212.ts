@@ -102,6 +102,24 @@ async function request<T>(
   return (await response.json()) as T;
 }
 
+async function requestOptional<T>(
+  environment: string,
+  credentials: Trading212Credentials,
+  path: string,
+): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
+  try {
+    return {
+      ok: true,
+      data: await request<T>(environment, credentials, path),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -270,11 +288,56 @@ export async function syncTrading212() {
 
   const { credentials, environment } = connection;
 
-  const [summaryRaw, positionsRaw, instrumentsRaw] = await Promise.all([
+  const [
+    summaryRaw,
+    positionsRaw,
+    instrumentsRaw,
+    pendingOrdersResult,
+    exchangesResult,
+    piesResult,
+  ] = await Promise.all([
     request<JsonObject>(environment, credentials, "/equity/account/summary"),
     request<unknown[]>(environment, credentials, "/equity/positions"),
     request<unknown[]>(environment, credentials, "/equity/metadata/instruments"),
+    requestOptional<unknown[]>(environment, credentials, "/equity/orders"),
+    requestOptional<unknown[]>(environment, credentials, "/equity/metadata/exchanges"),
+    requestOptional<unknown[]>(environment, credentials, "/equity/pies"),
   ]);
+
+  const apiReadCoverage = {
+    accountSummary: { ok: true, count: 1 },
+    positions: {
+      ok: true,
+      count: Array.isArray(positionsRaw) ? positionsRaw.length : 0,
+    },
+    instruments: {
+      ok: true,
+      count: Array.isArray(instrumentsRaw) ? instrumentsRaw.length : 0,
+    },
+    pendingOrders: pendingOrdersResult.ok
+      ? {
+          ok: true,
+          count: Array.isArray(pendingOrdersResult.data)
+            ? pendingOrdersResult.data.length
+            : 0,
+        }
+      : { ok: false, error: pendingOrdersResult.error },
+    exchanges: exchangesResult.ok
+      ? {
+          ok: true,
+          count: Array.isArray(exchangesResult.data)
+            ? exchangesResult.data.length
+            : 0,
+        }
+      : { ok: false, error: exchangesResult.error },
+    pies: piesResult.ok
+      ? {
+          ok: true,
+          count: Array.isArray(piesResult.data) ? piesResult.data.length : 0,
+          deprecatedApi: true,
+        }
+      : { ok: false, error: piesResult.error, deprecatedApi: true },
+  };
 
   const metadataByTicker = new Map<string, JsonObject>();
   for (const rawInstrument of Array.isArray(instrumentsRaw) ? instrumentsRaw : []) {
@@ -463,6 +526,7 @@ export async function syncTrading212() {
     reconciliationStatus,
     raw: {
       ...summary,
+      financeOsApiReadCoverage: apiReadCoverage,
       financeOsReconciliation: {
         positionsMarketValue,
         knownCash: {
@@ -818,6 +882,7 @@ export async function syncTrading212() {
     orders: orders.length,
     dividends: dividends.length,
     cashTransactions: cashTransactions.length,
+    apiReadCoverage,
     cardSync,
     cardDetected,
     historyBackfill: {
