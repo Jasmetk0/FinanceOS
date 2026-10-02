@@ -1909,7 +1909,6 @@ export function getAccountDetail(accountIdInput: string) {
         source, quality
       FROM snapshots
       WHERE account_id = ?
-        AND COALESCE(quality, 'verified') != 'partial'
       ORDER BY recorded_at ASC
     `)
     .all(accountId);
@@ -2077,12 +2076,18 @@ export function getAccountDetail(accountIdInput: string) {
       flowIndex += 1;
     }
 
+    const snapshotQuality = String(row.quality || "verified");
+    const snapshotComplete = snapshotQuality !== "partial";
     const valuationCovered =
-      freshness.status === "manual" ||
-      freshness.coverageThrough === null ||
-      date <= freshness.coverageThrough;
+      snapshotComplete &&
+      (
+        freshness.status === "manual" ||
+        freshness.coverageThrough === null ||
+        date <= freshness.coverageThrough
+      );
     const performanceComplete =
-      !firstPerformanceGap || date < firstPerformanceGap;
+      snapshotComplete &&
+      (!firstPerformanceGap || date < firstPerformanceGap);
     const capitalAttributed =
       ownContribution + externalRewards + transferAttribution;
     const metric = historyMetric(
