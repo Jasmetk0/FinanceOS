@@ -207,6 +207,7 @@ export interface PortfolioHistoryMetric {
 
 export interface PortfolioHistoryCoverage {
   complete: boolean;
+  performanceComplete?: boolean;
   knownProviders: string[];
   missingProviders: string[];
 }
