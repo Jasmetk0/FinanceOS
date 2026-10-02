@@ -61,6 +61,24 @@ function nextIsoDate(date: string): string {
   return parsed.toISOString().slice(0, 10);
 }
 
+function transactionAccountingDate(row: {
+  provider?: unknown;
+  occurred_at?: unknown;
+  raw_json?: unknown;
+}): string {
+  const provider = String(row.provider || "");
+  if (provider === "investown") {
+    const raw = parseRawObject(row.raw_json);
+    for (const candidate of [raw.sourceDate, raw.occurredAt]) {
+      if (typeof candidate !== "string") continue;
+      const match = candidate.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match?.[1]) return match[1];
+    }
+  }
+
+  return String(row.occurred_at || "").slice(0, 10);
+}
+
 function accountDataFreshness(row: {
   provider?: unknown;
   updated_at?: unknown;
@@ -1936,7 +1954,7 @@ export function getAccountDetail(accountIdInput: string) {
   const flowRows = db
     .prepare(`
       SELECT
-        substr(occurred_at, 1, 10) AS day,
+        occurred_at, raw_json,
         provider, kind, category, flow_scope, amount_czk, transfer_value_czk
       FROM transactions
       WHERE account_id = ?
@@ -1976,7 +1994,7 @@ export function getAccountDetail(accountIdInput: string) {
             AND transfer_value_czk IS NOT NULL
           )
         )
-      ORDER BY day ASC, occurred_at ASC
+      ORDER BY occurred_at ASC
     `)
     .all(accountId)
     .map((row) => {
@@ -2002,7 +2020,7 @@ export function getAccountDetail(accountIdInput: string) {
             ? amount
             : 0;
       return {
-        date: String(row.day),
+        date: transactionAccountingDate(row),
         depositCzk: kind === "deposit" ? Math.abs(amount) : 0,
         withdrawalCzk: kind === "withdrawal" ? Math.abs(amount) : 0,
         ownContributionDelta:
