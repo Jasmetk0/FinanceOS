@@ -1268,11 +1268,20 @@ export function getPerformanceData() {
 
     const transferRows = db
       .prepare(`
-        SELECT occurred_at, transfer_value_czk, flow_scope, category
+        SELECT
+          provider, occurred_at, amount_czk, transfer_value_czk,
+          flow_scope, category
         FROM transactions
         WHERE account_id = ?
           AND kind = 'transfer'
-          AND transfer_value_czk IS NOT NULL
+          AND (
+            transfer_value_czk IS NOT NULL
+            OR (
+              provider = 'trading212'
+              AND flow_scope = 'internal'
+              AND amount_czk IS NOT NULL
+            )
+          )
         ORDER BY occurred_at ASC
       `)
       .all(id);
@@ -1330,7 +1339,17 @@ export function getPerformanceData() {
     }
 
     for (const row of transferRows) {
-      const value = num(row.transfer_value_czk);
+      const explicitTransferValue =
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk);
+      const value =
+        explicitTransferValue !== null
+          ? explicitTransferValue
+          : String(row.provider) === "trading212" &&
+              String(row.flow_scope || "") === "internal"
+            ? num(row.amount_czk)
+            : 0;
       const date = new Date(String(row.occurred_at));
       if (value > 0) {
         transferIn += value;
@@ -1918,7 +1937,7 @@ export function getAccountDetail(accountIdInput: string) {
     .prepare(`
       SELECT
         substr(occurred_at, 1, 10) AS day,
-        kind, category, flow_scope, amount_czk, transfer_value_czk
+        provider, kind, category, flow_scope, amount_czk, transfer_value_czk
       FROM transactions
       WHERE account_id = ?
         AND (
@@ -1945,6 +1964,11 @@ export function getAccountDetail(accountIdInput: string) {
                 kind = 'income'
                 AND COALESCE(category, '') != 'card_cashback'
               )
+              OR (
+                provider = 'trading212'
+                AND kind = 'transfer'
+                AND flow_scope = 'internal'
+              )
             )
           )
           OR (
@@ -1956,10 +1980,27 @@ export function getAccountDetail(accountIdInput: string) {
     `)
     .all(accountId)
     .map((row) => {
+      const provider = String(row.provider || "");
       const kind = String(row.kind);
       const category = String(row.category || "");
       const amount = num(row.amount_czk);
-      const transferValue = num(row.transfer_value_czk);
+      const explicitTransferValue =
+        row.transfer_value_czk === null || row.transfer_value_czk === undefined
+          ? null
+          : num(row.transfer_value_czk);
+      // Trading 212's public API only covers the Invest/ISA side. A transfer
+      // between Invest and CFD can therefore have no linked FinanceOS account,
+      // but it is still a real cash flow for the Invest account chart. Use the
+      // signed provider amount as the account-level transfer delta while
+      // keeping it internal at portfolio level.
+      const transferValue =
+        explicitTransferValue !== null
+          ? explicitTransferValue
+          : provider === "trading212" &&
+              kind === "transfer" &&
+              String(row.flow_scope || "") === "internal"
+            ? amount
+            : 0;
       return {
         date: String(row.day),
         depositCzk: kind === "deposit" ? Math.abs(amount) : 0,
