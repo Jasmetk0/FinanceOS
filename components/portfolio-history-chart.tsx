@@ -293,7 +293,9 @@ export function PortfolioHistoryChart({
 
     if (metric === "value" && showContributions) {
       for (const point of filtered) {
-        values.push(point.total.contributedCzk);
+        if (point.coverage.complete) {
+          values.push(point.total.contributedCzk);
+        }
       }
     }
 
@@ -788,7 +790,10 @@ export function PortfolioHistoryChart({
               <path
                 d={buildPath(
                   filtered,
-                  (point) => point.total.contributedCzk,
+                  (point) =>
+                    point.coverage.complete
+                      ? point.total.contributedCzk
+                      : null,
                   chart.xScale,
                   chart.yScale,
                 )}
