@@ -153,6 +153,8 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(history.includes("Yahoo Finance chart"));
   assert.ok(history.includes("maybeToCzk"));
   assert.ok(history.includes("openingCashResidualCzk"));
+  assert.ok(history.includes("openingCashAnchoredToCurrentProviderBalance"));
+  assert.ok(history.includes("const cashHistoryComplete = transactionHistoryComplete"));
   assert.ok(history.includes("quantityMismatchAssets"));
   assert.ok(history.includes("transactionHistoryComplete"));
   assert.ok(history.includes("source = 'reconstructed'"));
