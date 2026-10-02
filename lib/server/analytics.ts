@@ -2104,6 +2104,7 @@ export function getAccountDetail(accountIdInput: string) {
       providers: { [provider]: metric },
       coverage: {
         complete: valuationCovered,
+        performanceComplete,
         knownProviders: valuationCovered ? [provider] : [],
         missingProviders: valuationCovered ? [] : [provider],
       },
