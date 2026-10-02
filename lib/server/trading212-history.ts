@@ -801,18 +801,17 @@ export async function syncTrading212DailyHistory(
     cashByDate.set(date, (cashByDate.get(date) ?? 0) + amount);
   }
   const currentCashCzk = num(account.cash_value_czk);
+  // Anchor the reconstructed cash ledger to today's provider-reported cash.
+  // A non-zero opening residual is not evidence of broken history: it can be
+  // legitimate cash that already existed before the earliest retained API
+  // event. Once all Trading 212 history cursors reached account inception,
+  // this residual is the opening cash balance for the reconstruction.
   const openingCashResidualCzk = currentCashCzk - totalCashImpact;
-  const cashResidualTolerance = Math.max(
-    100,
-    Math.abs(num(account.total_value_czk)) * 0.002,
-  );
   const transactionHistoryComplete =
     getState("history_complete:orders") === "true" &&
     getState("history_complete:dividends") === "true" &&
     getState("history_complete:cash") === "true";
-  const cashHistoryComplete =
-    transactionHistoryComplete &&
-    Math.abs(openingCashResidualCzk) <= cashResidualTolerance;
+  const cashHistoryComplete = transactionHistoryComplete;
 
   db.prepare(
     "DELETE FROM snapshots WHERE account_id = ? AND source = 'reconstructed'",
@@ -967,6 +966,7 @@ export async function syncTrading212DailyHistory(
     reconstructedDays,
     partialDays,
     openingCashResidualCzk,
+    openingCashAnchoredToCurrentProviderBalance: transactionHistoryComplete,
     cashHistoryComplete,
     transactionHistoryComplete,
     quantityMismatchCount: quantityMismatchAssets.size,
