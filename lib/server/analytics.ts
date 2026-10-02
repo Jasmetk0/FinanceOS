@@ -368,7 +368,8 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   const flowRows = db
     .prepare(`
       SELECT
-        substr(t.occurred_at, 1, 10) AS day,
+        t.occurred_at,
+        t.raw_json,
         t.provider,
         t.kind,
         t.category,
@@ -404,7 +405,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
             AND t.transfer_value_czk IS NOT NULL
           )
         )
-      ORDER BY day ASC, t.occurred_at ASC
+      ORDER BY t.occurred_at ASC
     `)
     .all();
 
@@ -456,13 +457,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       kind === "transfer" ? num(row.transfer_value_czk) : 0;
 
     return {
-      date: String(row.day),
+      date: transactionAccountingDate(row),
       provider: String(row.provider),
       ownContributionDelta,
       rewardDelta,
       transferDelta,
     };
   });
+
+  flows.sort((left, right) =>
+    left.date.localeCompare(right.date) ||
+    left.provider.localeCompare(right.provider),
+  );
 
   const contributionByProvider = new Map<string, number>();
   const rewardsByProvider = new Map<string, number>();
