@@ -38,6 +38,17 @@ test("SQLite has account/date indexes for navigation analytics", () => {
   assert.ok(db.includes("idx_snapshots_account_recorded"));
 });
 
+
+
+test("Trading 212 API backfill continues automatically while the app is open", () => {
+  const autoSync = source("components/auto-sync.tsx");
+  assert.ok(autoSync.includes("BACKFILL_RETRY_MS"));
+  assert.ok(autoSync.includes("needsTrading212BackfillRetry"));
+  assert.ok(autoSync.includes("history.ordersComplete !== true"));
+  assert.ok(autoSync.includes('cardStatus === "requested"'));
+  assert.ok(autoSync.includes("scheduleBackfillRetry"));
+});
+
 test("background sync yields startup to interactive navigation", () => {
   const worker = source("scripts/background-sync.ps1");
   assert.ok(worker.includes("Start-Sleep -Seconds 30"));
