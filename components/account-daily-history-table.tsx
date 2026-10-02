@@ -54,8 +54,10 @@ function startForPeriod(period: string, latest: string) {
 
 export function AccountDailyHistoryTable({
   rows,
+  provider,
 }: {
   rows: AccountDailyHistoryRow[];
+  provider: string;
 }) {
   const [period, setPeriod] = useState("90D");
   const latest = rows.at(-1)?.date ?? null;
@@ -153,7 +155,13 @@ export function AccountDailyHistoryTable({
                   {pct(row.returnPct)}
                 </td>
                 <td className="py-3 text-right text-xs text-[var(--muted)]">
-                  {row.source === "provider" ? "Trading 212" : "rekonstrukce"}
+                  {row.source === "provider"
+                    ? provider === "investown"
+                      ? "Investown"
+                      : provider === "trading212"
+                        ? "Trading 212"
+                        : provider
+                    : "rekonstrukce"}
                 </td>
               </tr>
             ))}
