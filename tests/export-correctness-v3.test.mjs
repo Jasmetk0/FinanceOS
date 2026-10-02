@@ -168,6 +168,9 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(analytics.includes("valuationCovered ="));
   assert.ok(analytics.includes("performanceComplete,"));
   assert.ok(analytics.includes("reconstructedSnapshotCount"));
+  assert.ok(analytics.includes("provider = 'trading212'"));
+  assert.ok(analytics.includes('kind === "transfer"'));
+  assert.ok(analytics.includes('String(row.provider) === "trading212"'));
   assert.ok(
     source("components/portfolio-history-chart.tsx").includes(
       "Historie vkladů/výběrů není ještě kompletní",
