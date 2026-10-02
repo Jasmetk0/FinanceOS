@@ -2219,6 +2219,18 @@ export function getAccountDetail(accountIdInput: string) {
     ? parseRawObject(trading212ExportInventoryRow.value)
     : null;
 
+  const trading212SyncState =
+    provider === "trading212"
+      ? Object.fromEntries(
+          db
+            .prepare(
+              "SELECT key, value FROM provider_sync_state WHERE provider = 'trading212'",
+            )
+            .all()
+            .map((row) => [String(row.key), String(row.value)]),
+        )
+      : null;
+
   return {
     id: String(account.id),
     provider,
@@ -2297,6 +2309,7 @@ export function getAccountDetail(accountIdInput: string) {
           ? (raw.financeOsApiReadCoverage as Record<string, unknown>)
           : null,
       fullExportActionInventory: trading212ExportInventory,
+      trading212SyncState,
     },
     chart: {
       providers: [provider],
