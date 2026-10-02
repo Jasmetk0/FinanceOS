@@ -38,6 +38,7 @@ const LAST_ERROR_KEY = "card_export_last_error";
 const RETRY_AFTER_KEY = "card_export_retry_after";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
+const ACTION_INVENTORY_KEY = "full_export_action_inventory";
 const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
@@ -348,12 +349,33 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
       cardEvidence: false,
     } as const;
   }
-  if (action === "transfer in" || action === "transfer out") {
+  if (action.includes("transfer")) {
+    const toCfd =
+      action.includes("to cfd") ||
+      action.includes("into cfd") ||
+      action.includes("invest to cfd");
+    const fromCfd =
+      action.includes("from cfd") ||
+      action.includes("cfd to invest") ||
+      action.includes("from cfd account");
+    const explicitIn =
+      action === "transfer in" ||
+      action.endsWith(" transfer in") ||
+      action.includes("transfer into invest");
+    const explicitOut =
+      action === "transfer out" ||
+      action.endsWith(" transfer out") ||
+      action.includes("transfer from invest");
+
+    const direction = fromCfd || explicitIn ? 1 : toCfd || explicitOut ? -1 : 0;
     return {
       kind: "transfer",
       flowScope: "internal",
-      category: "internal_transfer",
-      direction: action === "transfer in" ? 1 : -1,
+      category:
+        toCfd || fromCfd
+          ? "internal_transfer:cfd"
+          : "internal_transfer",
+      direction,
       // Transfer labels are not card-specific enough to prove 212 Card usage.
       cardEvidence: false,
     } as const;
@@ -463,13 +485,21 @@ async function enrichReportRows(input: {
   let inserted = 0;
   let cardRows = 0;
   let cashbackRows = 0;
+  let recognizedCashRows = 0;
+  const actionCounts = new Map<string, number>();
 
   for (const row of rows) {
     const actionRaw = lookup(row, ["Action", "Type"]);
+    const normalizedAction = normalizeAction(actionRaw) || "(missing action)";
+    actionCounts.set(
+      normalizedAction,
+      (actionCounts.get(normalizedAction) ?? 0) + 1,
+    );
     const merchant = lookup(row, ["Merchant name", "Merchant"]);
     const merchantCategory = lookup(row, ["Merchant category", "Category"]);
     const classification = cardClassification(actionRaw, merchantCategory);
     if (!classification) continue;
+    recognizedCashRows += 1;
 
     const money = monetaryValue(row, input.accountCurrency);
     if (!money) continue;
@@ -571,12 +601,29 @@ async function enrichReportRows(input: {
 
   if (cardRows > 0) setState(CARD_DETECTED_KEY, "true");
 
+  const actionInventory = [...actionCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([action, count]) => ({ action, count }));
+  setState(
+    ACTION_INVENTORY_KEY,
+    JSON.stringify({
+      reportId: input.reportId,
+      parsedRows: rows.length,
+      recognizedCashRows,
+      actions: actionInventory,
+      updatedAt: new Date().toISOString(),
+    }),
+  );
+
   return {
     parsedRows: rows.length,
     enriched,
     inserted,
     cardRows,
     cashbackRows,
+    recognizedCashRows,
+    ignoredReportRows: Math.max(0, rows.length - recognizedCashRows),
+    actionInventory,
   };
 }
 
@@ -614,9 +661,13 @@ async function requestExport(input: {
       method: "POST",
       body: JSON.stringify({
         dataIncluded: {
-          includeDividends: false,
-          includeInterest: false,
-          includeOrders: false,
+          // Request the richest read-only report Trading 212 exposes. Orders,
+          // dividends and interest are already imported from dedicated API
+          // endpoints; the CSV is used as an independent enrichment source,
+          // especially for richer transaction/transfer labels.
+          includeDividends: true,
+          includeInterest: true,
+          includeOrders: true,
           includeTransactions: true,
         },
         timeFrom: input.timeFrom,
@@ -1093,6 +1144,7 @@ export function getTrading212CardStatus() {
     firstCardAt: stats?.first_card_at ? String(stats.first_card_at) : null,
     lastCardAt: stats?.last_card_at ? String(stats.last_card_at) : null,
     pending: parsePending(getState(PENDING_KEY)),
+    fullExportActionInventory: safeJson(getState(ACTION_INVENTORY_KEY)),
     coverageCursor: getState(CURSOR_KEY),
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),
