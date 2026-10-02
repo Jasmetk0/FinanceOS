@@ -162,6 +162,8 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(analytics.includes("item.partial"));
   assert.ok(analytics.includes("latestByAccount.delete(item.accountId)"));
   assert.ok(analytics.includes("dailyHistory"));
+  assert.ok(analytics.includes('const snapshotComplete = snapshotQuality !== "partial"'));
+  assert.ok(analytics.includes("valuationCovered ="));
   assert.ok(analytics.includes("reconstructedSnapshotCount"));
   assert.ok(detail.includes("Denní historie účtu"));
   assert.ok(detail.includes("Denní rekonstrukce Trading 212"));
