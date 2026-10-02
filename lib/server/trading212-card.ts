@@ -433,9 +433,15 @@ function findExistingTransaction(
   const kindCandidates =
     classification.category === "card_cashback"
       ? ["deposit", "withdrawal", "income"]
-      : classification.kind === "income"
-        ? ["deposit", "income"]
-        : [classification.kind];
+      : classification.kind === "transfer"
+        // The superficial history endpoint may expose an Invest↔CFD movement
+        // as a generic deposit/withdrawal. The richer CSV label is allowed to
+        // upgrade that row to an internal transfer when date+amount identify
+        // exactly one candidate.
+        ? ["transfer", "deposit", "withdrawal"]
+        : classification.kind === "income"
+          ? ["deposit", "income"]
+          : [classification.kind];
   const placeholders = kindCandidates.map(() => "?").join(",");
 
   const candidates = db
@@ -539,12 +545,24 @@ async function enrichReportRows(input: {
 
     if (existing) {
       const raw = safeJson(existing.raw_json);
+      const sourceLabel =
+        merchant ||
+        (classification.kind === "transfer" ? actionRaw : "") ||
+        "Trading 212";
+      const counterparty =
+        merchant ||
+        merchantCategory ||
+        (classification.category === "internal_transfer:cfd" ? "Trading 212 CFD" : null);
+
       getDb()
         .prepare(`
           UPDATE transactions
           SET kind = ?,
               flow_scope = ?,
               category = ?,
+              currency = ?,
+              amount = ?,
+              amount_czk = ?,
               source_label = ?,
               counterparty_ref = ?,
               raw_json = ?
@@ -554,8 +572,11 @@ async function enrichReportRows(input: {
           classification.kind,
           classification.flowScope,
           classification.category,
-          merchant || "Trading 212",
-          merchant || merchantCategory || null,
+          money.currency,
+          signedAmount,
+          amountCzk,
+          sourceLabel,
+          counterparty,
           JSON.stringify({
             ...raw,
             financeOsCardExport: cardMetadata,
@@ -581,7 +602,10 @@ async function enrichReportRows(input: {
       amountCzk,
       note: merchant || actionRaw,
       category: classification.category,
-      sourceLabel: merchant || "Trading 212",
+      sourceLabel:
+        merchant ||
+        (classification.kind === "transfer" ? actionRaw : "") ||
+        "Trading 212",
       // The public transaction feed already contains card account movements.
       // If we cannot match the richer CSV row safely, keep this row as
       // enrichment-only so investment performance can never double-count it.
