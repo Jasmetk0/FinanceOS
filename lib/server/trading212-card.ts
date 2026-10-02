@@ -38,6 +38,7 @@ const LAST_ERROR_KEY = "card_export_last_error";
 const RETRY_AFTER_KEY = "card_export_retry_after";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
+const ACTION_INVENTORY_KEY = "full_export_action_inventory";
 const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
@@ -348,12 +349,33 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
       cardEvidence: false,
     } as const;
   }
-  if (action === "transfer in" || action === "transfer out") {
+  if (action.includes("transfer")) {
+    const toCfd =
+      action.includes("to cfd") ||
+      action.includes("into cfd") ||
+      action.includes("invest to cfd");
+    const fromCfd =
+      action.includes("from cfd") ||
+      action.includes("cfd to invest") ||
+      action.includes("from cfd account");
+    const explicitIn =
+      action === "transfer in" ||
+      action.endsWith(" transfer in") ||
+      action.includes("transfer into invest");
+    const explicitOut =
+      action === "transfer out" ||
+      action.endsWith(" transfer out") ||
+      action.includes("transfer from invest");
+
+    const direction = fromCfd || explicitIn ? 1 : toCfd || explicitOut ? -1 : 0;
     return {
       kind: "transfer",
       flowScope: "internal",
-      category: "internal_transfer",
-      direction: action === "transfer in" ? 1 : -1,
+      category:
+        toCfd || fromCfd
+          ? "internal_transfer:cfd"
+          : "internal_transfer",
+      direction,
       // Transfer labels are not card-specific enough to prove 212 Card usage.
       cardEvidence: false,
     } as const;
@@ -411,9 +433,15 @@ function findExistingTransaction(
   const kindCandidates =
     classification.category === "card_cashback"
       ? ["deposit", "withdrawal", "income"]
-      : classification.kind === "income"
-        ? ["deposit", "income"]
-        : [classification.kind];
+      : classification.kind === "transfer"
+        // The superficial history endpoint may expose an Invest↔CFD movement
+        // as a generic deposit/withdrawal. The richer CSV label is allowed to
+        // upgrade that row to an internal transfer when date+amount identify
+        // exactly one candidate.
+        ? ["transfer", "deposit", "withdrawal"]
+        : classification.kind === "income"
+          ? ["deposit", "income"]
+          : [classification.kind];
   const placeholders = kindCandidates.map(() => "?").join(",");
 
   const candidates = db
@@ -463,13 +491,21 @@ async function enrichReportRows(input: {
   let inserted = 0;
   let cardRows = 0;
   let cashbackRows = 0;
+  let recognizedCashRows = 0;
+  const actionCounts = new Map<string, number>();
 
   for (const row of rows) {
     const actionRaw = lookup(row, ["Action", "Type"]);
+    const normalizedAction = normalizeAction(actionRaw) || "(missing action)";
+    actionCounts.set(
+      normalizedAction,
+      (actionCounts.get(normalizedAction) ?? 0) + 1,
+    );
     const merchant = lookup(row, ["Merchant name", "Merchant"]);
     const merchantCategory = lookup(row, ["Merchant category", "Category"]);
     const classification = cardClassification(actionRaw, merchantCategory);
     if (!classification) continue;
+    recognizedCashRows += 1;
 
     const money = monetaryValue(row, input.accountCurrency);
     if (!money) continue;
@@ -509,12 +545,24 @@ async function enrichReportRows(input: {
 
     if (existing) {
       const raw = safeJson(existing.raw_json);
+      const sourceLabel =
+        merchant ||
+        (classification.kind === "transfer" ? actionRaw : "") ||
+        "Trading 212";
+      const counterparty =
+        merchant ||
+        merchantCategory ||
+        (classification.category === "internal_transfer:cfd" ? "Trading 212 CFD" : null);
+
       getDb()
         .prepare(`
           UPDATE transactions
           SET kind = ?,
               flow_scope = ?,
               category = ?,
+              currency = ?,
+              amount = ?,
+              amount_czk = ?,
               source_label = ?,
               counterparty_ref = ?,
               raw_json = ?
@@ -524,8 +572,11 @@ async function enrichReportRows(input: {
           classification.kind,
           classification.flowScope,
           classification.category,
-          merchant || "Trading 212",
-          merchant || merchantCategory || null,
+          money.currency,
+          signedAmount,
+          amountCzk,
+          sourceLabel,
+          counterparty,
           JSON.stringify({
             ...raw,
             financeOsCardExport: cardMetadata,
@@ -551,7 +602,10 @@ async function enrichReportRows(input: {
       amountCzk,
       note: merchant || actionRaw,
       category: classification.category,
-      sourceLabel: merchant || "Trading 212",
+      sourceLabel:
+        merchant ||
+        (classification.kind === "transfer" ? actionRaw : "") ||
+        "Trading 212",
       // The public transaction feed already contains card account movements.
       // If we cannot match the richer CSV row safely, keep this row as
       // enrichment-only so investment performance can never double-count it.
@@ -571,12 +625,29 @@ async function enrichReportRows(input: {
 
   if (cardRows > 0) setState(CARD_DETECTED_KEY, "true");
 
+  const actionInventory = [...actionCounts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([action, count]) => ({ action, count }));
+  setState(
+    ACTION_INVENTORY_KEY,
+    JSON.stringify({
+      reportId: input.reportId,
+      parsedRows: rows.length,
+      recognizedCashRows,
+      actions: actionInventory,
+      updatedAt: new Date().toISOString(),
+    }),
+  );
+
   return {
     parsedRows: rows.length,
     enriched,
     inserted,
     cardRows,
     cashbackRows,
+    recognizedCashRows,
+    ignoredReportRows: Math.max(0, rows.length - recognizedCashRows),
+    actionInventory,
   };
 }
 
@@ -614,9 +685,13 @@ async function requestExport(input: {
       method: "POST",
       body: JSON.stringify({
         dataIncluded: {
-          includeDividends: false,
-          includeInterest: false,
-          includeOrders: false,
+          // Request the richest read-only report Trading 212 exposes. Orders,
+          // dividends and interest are already imported from dedicated API
+          // endpoints; the CSV is used as an independent enrichment source,
+          // especially for richer transaction/transfer labels.
+          includeDividends: true,
+          includeInterest: true,
+          includeOrders: true,
           includeTransactions: true,
         },
         timeFrom: input.timeFrom,
@@ -1093,6 +1168,7 @@ export function getTrading212CardStatus() {
     firstCardAt: stats?.first_card_at ? String(stats.first_card_at) : null,
     lastCardAt: stats?.last_card_at ? String(stats.last_card_at) : null,
     pending: parsePending(getState(PENDING_KEY)),
+    fullExportActionInventory: safeJson(getState(ACTION_INVENTORY_KEY)),
     coverageCursor: getState(CURSOR_KEY),
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),

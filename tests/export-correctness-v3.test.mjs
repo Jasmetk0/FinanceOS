@@ -244,6 +244,29 @@ test("Trading 212 card enrichment keeps official CSV as the merchant-detail auth
   assert.ok(card.includes("card_cashback"));
 });
 
+test("Trading 212 sync exploits the full useful read-only API surface", () => {
+  const card = source("lib/server/trading212-card.ts");
+  const t212 = source("lib/server/integrations/trading212.ts");
+
+  assert.ok(card.includes("includeDividends: true"));
+  assert.ok(card.includes("includeInterest: true"));
+  assert.ok(card.includes("includeOrders: true"));
+  assert.ok(card.includes("includeTransactions: true"));
+  assert.ok(card.includes("full_export_action_inventory"));
+  assert.ok(card.includes('"internal_transfer:cfd"'));
+  assert.ok(card.includes('action.includes("to cfd")'));
+  assert.ok(card.includes('action.includes("from cfd")'));
+  assert.ok(card.includes('["transfer", "deposit", "withdrawal"]'));
+
+  assert.ok(t212.includes('"/equity/account/summary"'));
+  assert.ok(t212.includes('"/equity/positions"'));
+  assert.ok(t212.includes('"/equity/metadata/instruments"'));
+  assert.ok(t212.includes('"/equity/metadata/exchanges"'));
+  assert.ok(t212.includes('"/equity/orders"'));
+  assert.ok(t212.includes('"/equity/pies"'));
+  assert.ok(t212.includes("financeOsApiReadCoverage"));
+});
+
 test("Trading 212 Spending Pot is reconciled inside provider total without double counting", () => {
   const t212 = source("lib/server/integrations/trading212.ts");
   assert.ok(t212.includes("source: \"provider_total_residual\""));

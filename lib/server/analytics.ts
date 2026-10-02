@@ -2207,6 +2207,18 @@ export function getAccountDetail(accountIdInput: string) {
       ? null
       : num(raw.statementRows);
 
+  const trading212ExportInventoryRow =
+    provider === "trading212"
+      ? db
+          .prepare(
+            "SELECT value FROM provider_sync_state WHERE provider = 'trading212' AND key = 'full_export_action_inventory' LIMIT 1",
+          )
+          .get()
+      : null;
+  const trading212ExportInventory = trading212ExportInventoryRow?.value
+    ? parseRawObject(trading212ExportInventoryRow.value)
+    : null;
+
   return {
     id: String(account.id),
     provider,
@@ -2279,6 +2291,12 @@ export function getAccountDetail(accountIdInput: string) {
         typeof raw.financeOsHistoricalReconstruction === "object"
           ? (raw.financeOsHistoricalReconstruction as Record<string, unknown>)
           : null,
+      apiReadCoverage:
+        raw.financeOsApiReadCoverage &&
+        typeof raw.financeOsApiReadCoverage === "object"
+          ? (raw.financeOsApiReadCoverage as Record<string, unknown>)
+          : null,
+      fullExportActionInventory: trading212ExportInventory,
     },
     chart: {
       providers: [provider],
