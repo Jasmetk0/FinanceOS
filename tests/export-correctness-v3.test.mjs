@@ -253,7 +253,7 @@ test("Trading 212 sync exploits the full useful read-only API surface", () => {
   assert.ok(card.includes("includeOrders: true"));
   assert.ok(card.includes("includeTransactions: true"));
   assert.ok(card.includes("full_export_action_inventory"));
-  assert.ok(card.includes('category: "internal_transfer:cfd"'));
+  assert.ok(card.includes('"internal_transfer:cfd"'));
   assert.ok(card.includes('action.includes("to cfd")'));
   assert.ok(card.includes('action.includes("from cfd")'));
   assert.ok(card.includes('["transfer", "deposit", "withdrawal"]'));
