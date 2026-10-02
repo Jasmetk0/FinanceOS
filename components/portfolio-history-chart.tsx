@@ -26,6 +26,7 @@ export interface PortfolioChartPoint {
   providers: Record<string, PortfolioChartMetricData>;
   coverage: {
     complete: boolean;
+    performanceComplete?: boolean;
     knownProviders: string[];
     missingProviders: string[];
   };
@@ -293,7 +294,10 @@ export function PortfolioHistoryChart({
 
     if (metric === "value" && showContributions) {
       for (const point of filtered) {
-        if (point.coverage.complete) {
+        if (
+          point.coverage.complete &&
+          point.coverage.performanceComplete !== false
+        ) {
           values.push(point.total.contributedCzk);
         }
       }
@@ -686,7 +690,7 @@ export function PortfolioHistoryChart({
               {formatCurrency(hoverPoint.total.capitalAttributedCzk)}
               <br />
               P/L: {formatValue(hoverPoint.total.profitCzk, "profit")}
-              {!hoverPoint.coverage.complete ? (
+              {hoverPoint.coverage.missingProviders.length > 0 ? (
                 <>
                   <br />
                   <span className="text-[var(--warning)]">
@@ -694,6 +698,14 @@ export function PortfolioHistoryChart({
                     {hoverPoint.coverage.missingProviders
                       .map(providerLabel)
                       .join(", ")}
+                  </span>
+                </>
+              ) : null}
+              {hoverPoint.coverage.performanceComplete === false ? (
+                <>
+                  <br />
+                  <span className="text-[var(--warning)]">
+                    Historie vkladů/výběrů není ještě kompletní
                   </span>
                 </>
               ) : null}
@@ -791,7 +803,8 @@ export function PortfolioHistoryChart({
                 d={buildPath(
                   filtered,
                   (point) =>
-                    point.coverage.complete
+                    point.coverage.complete &&
+                    point.coverage.performanceComplete !== false
                       ? point.total.contributedCzk
                       : null,
                   chart.xScale,
