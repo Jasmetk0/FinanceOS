@@ -207,7 +207,10 @@ export default async function AccountDetailPage({
             title="Denní historie účtu"
             subtitle="Každý známý den: hodnota, cash, investice, vklady, výběry, kapitál, P/L a výnos"
           >
-            <AccountDailyHistoryTable rows={detail.dailyHistory} />
+            <AccountDailyHistoryTable
+              rows={detail.dailyHistory}
+              provider={detail.provider}
+            />
           </SectionCard>
         </section>
       ) : null}

@@ -30,6 +30,20 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown daily accounting uses statement-local dates, not UTC dates", () => {
+  const analytics = source("lib/server/analytics.ts");
+  const dailyTable = source("components/account-daily-history-table.tsx");
+  const accountPage = source("app/accounts/[id]/page.tsx");
+
+  assert.ok(analytics.includes("function transactionAccountingDate"));
+  assert.ok(analytics.includes('provider === "investown"'));
+  assert.ok(analytics.includes("raw.sourceDate"));
+  assert.ok(analytics.includes("transactionAccountingDate(row)"));
+  assert.ok(dailyTable.includes('provider === "investown"'));
+  assert.ok(dailyTable.includes('"Investown"'));
+  assert.ok(accountPage.includes("provider={detail.provider}"));
+});
+
 test("Investown daily snapshots persist and graph explicit realized P/L", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
