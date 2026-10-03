@@ -318,7 +318,16 @@ export function PortfolioHistoryChart({
 
   const estimateSourcePoint =
     investownOnly && estimateEndDate && filtered.length
-      ? filtered.at(-1) ?? null
+      ? [...filtered]
+          .reverse()
+          .find((point) => {
+            const providerData = point.providers.investown;
+            return (
+              providerData &&
+              metricValue(metric, providerData) !== null &&
+              Number.isFinite(metricValue(metric, providerData))
+            );
+          }) ?? null
       : null;
 
   const chart = useMemo(() => {
@@ -928,44 +937,6 @@ export function PortfolioHistoryChart({
                   />
                 ) : null}
 
-                {displayProviders.includes("investown") &&
-                estimateSourcePoint.providers.investown &&
-                metricValue(
-                  metric,
-                  estimateSourcePoint.providers.investown,
-                ) !== null ? (
-                  <path
-                    d={
-                      "M" +
-                      chart.xScale(estimateSourcePoint.date).toFixed(2) +
-                      "," +
-                      chart
-                        .yScale(
-                          metricValue(
-                            metric,
-                            estimateSourcePoint.providers.investown,
-                          ) as number,
-                        )
-                        .toFixed(2) +
-                      " L" +
-                      chart.xScale(estimateEndDate).toFixed(2) +
-                      "," +
-                      chart
-                        .yScale(
-                          metricValue(
-                            metric,
-                            estimateSourcePoint.providers.investown,
-                          ) as number,
-                        )
-                        .toFixed(2)
-                    }
-                    fill="none"
-                    stroke={colors.investown || providerColor("investown")}
-                    strokeWidth="2"
-                    strokeDasharray="7 6"
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ) : null}
               </>
             ) : null}
 
@@ -1004,6 +975,49 @@ export function PortfolioHistoryChart({
                 vectorEffect="non-scaling-stroke"
               />
             ))}
+
+
+            {estimateSourcePoint &&
+            estimateEndDate &&
+            displayProviders.includes("investown") &&
+            estimateSourcePoint.providers.investown &&
+            metricValue(
+              metric,
+              estimateSourcePoint.providers.investown,
+            ) !== null ? (
+              <path
+                d={
+                  "M" +
+                  chart.xScale(estimateSourcePoint.date).toFixed(2) +
+                  "," +
+                  chart
+                    .yScale(
+                      metricValue(
+                        metric,
+                        estimateSourcePoint.providers.investown,
+                      ) as number,
+                    )
+                    .toFixed(2) +
+                  " L" +
+                  chart.xScale(estimateEndDate).toFixed(2) +
+                  "," +
+                  chart
+                    .yScale(
+                      metricValue(
+                        metric,
+                        estimateSourcePoint.providers.investown,
+                      ) as number,
+                    )
+                    .toFixed(2)
+                }
+                fill="none"
+                stroke={colors.investown || providerColor("investown")}
+                strokeWidth="2.4"
+                strokeDasharray="7 6"
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
 
             {hoverPoint ? (
               <>
