@@ -73,6 +73,13 @@ function providerColorsServerSnapshot() {
   return "{}";
 }
 
+function netDepositedCzk(data: PortfolioChartMetricData) {
+  // Total portfolio: external deposits - external withdrawals.
+  // Provider series: also move known carried capital across owned-wallet
+  // transfers (for example Kraken -> Phantom), while rewards stay separate.
+  return data.capitalAttributedCzk - data.externalRewardsCzk;
+}
+
 function metricValue(
   metric: PortfolioChartMetric,
   data: PortfolioChartMetricData,
@@ -80,14 +87,14 @@ function metricValue(
   if (metric === "value") return data.valueCzk;
   if (metric === "profit") return data.profitCzk;
   if (metric === "return") return data.returnPct;
-  return data.contributedCzk;
+  return netDepositedCzk(data);
 }
 
 function metricLabel(metric: PortfolioChartMetric) {
   if (metric === "value") return "Hodnota portfolia";
   if (metric === "profit") return "Zisk / ztráta po externím kapitálu";
   if (metric === "return") return "Výnos vůči kapitálu pro P/L";
-  return "Čistý vlastní kapitál";
+  return "Čisté vklady";
 }
 
 function formatCurrency(value: number) {
@@ -370,7 +377,7 @@ export function PortfolioHistoryChart({
           point.coverage.complete &&
           point.coverage.performanceComplete !== false
         ) {
-          values.push(point.total.contributedCzk);
+          values.push(netDepositedCzk(point.total));
         }
       }
     }
@@ -442,7 +449,7 @@ export function PortfolioHistoryChart({
   const lastPoint = filtered.at(-1) ?? null;
   const periodNetContribution =
     firstPoint && lastPoint
-      ? lastPoint.total.contributedCzk - firstPoint.total.contributedCzk
+      ? netDepositedCzk(lastPoint.total) - netDepositedCzk(firstPoint.total)
       : 0;
   const periodExternalRewards =
     firstPoint && lastPoint
@@ -513,7 +520,7 @@ export function PortfolioHistoryChart({
               ["value", "Hodnota"],
               ["profit", "Zisk / ztráta"],
               ["return", "Výnos %"],
-              ["contributions", "Vlastní kapitál"],
+              ["contributions", "Čisté vklady"],
             ] as Array<[PortfolioChartMetric, string]>
           ).map(([value, label]) => (
             <button
@@ -676,7 +683,7 @@ export function PortfolioHistoryChart({
               checked={showContributions}
               onChange={(event) => setShowContributions(event.target.checked)}
             />
-            Vlastní kapitál jako baseline
+            Čisté vklady jako baseline
           </label>
         ) : null}
       </div>
@@ -688,8 +695,8 @@ export function PortfolioHistoryChart({
             value={formatValue(lastPoint.total.valueCzk, "value")}
           />
           <MiniStat
-            label="Čistý vlastní kapitál"
-            value={formatValue(lastPoint.total.contributedCzk, "contributions")}
+            label="Čisté vklady celkem"
+            value={formatValue(netDepositedCzk(lastPoint.total), "contributions")}
           />
           <MiniStat
             label="Externí odměny celkem"
@@ -753,8 +760,8 @@ export function PortfolioHistoryChart({
               />
             ))}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
-              Čistý vlastní kapitál:{" "}
-              {formatCurrency(hoverPoint.total.contributedCzk)}
+              Čisté vklady:{" "}
+              {formatCurrency(netDepositedCzk(hoverPoint.total))}
               <br />
               Externí odměny:{" "}
               {formatCurrency(hoverPoint.total.externalRewardsCzk)}
@@ -878,7 +885,7 @@ export function PortfolioHistoryChart({
                   (point) =>
                     point.coverage.complete &&
                     point.coverage.performanceComplete !== false
-                      ? point.total.contributedCzk
+                      ? netDepositedCzk(point.total)
                       : null,
                   chart.xScale,
                   chart.yScale,
@@ -900,11 +907,11 @@ export function PortfolioHistoryChart({
                       "M" +
                       chart.xScale(estimateSourcePoint.date).toFixed(2) +
                       "," +
-                      chart.yScale(estimateSourcePoint.total.contributedCzk).toFixed(2) +
+                      chart.yScale(netDepositedCzk(estimateSourcePoint.total)).toFixed(2) +
                       " L" +
                       chart.xScale(estimateEndDate).toFixed(2) +
                       "," +
-                      chart.yScale(estimateSourcePoint.total.contributedCzk).toFixed(2)
+                      chart.yScale(netDepositedCzk(estimateSourcePoint.total)).toFixed(2)
                     }
                     fill="none"
                     stroke="rgba(237,247,242,0.34)"

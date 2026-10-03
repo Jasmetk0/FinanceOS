@@ -77,7 +77,7 @@ test("P2P charts extend stale imports as a dashed unchanged estimate", () => {
   assert.ok(chart.includes("odhad do"));
   assert.ok(chart.includes("Přerušovaná část je odhad"));
   assert.ok(chart.includes("metricValue(metric, estimateSourcePoint.total)"));
-  assert.ok(chart.includes("estimateSourcePoint.total.contributedCzk"));
+  assert.ok(chart.includes("netDepositedCzk(estimateSourcePoint.total)"));
 });
 
 test("Investown and Mintos charts use step paths instead of diagonal interpolation", () => {
@@ -864,10 +864,41 @@ test("history chart keeps user deposits, rewards and P/L capital distinct", () =
   assert.ok(analytics.includes("capitalAttributedCzk"));
   assert.ok(analytics.includes("totalOwnContribution"));
   assert.ok(analytics.includes("totalExternalRewards"));
-  assert.ok(chart.includes("Čistý vlastní kapitál"));
+  assert.ok(chart.includes("Čisté vklady"));
   assert.ok(chart.includes("Kapitál pro P/L"));
   assert.ok(historyPage.includes("Historie vkladů, výběrů a externích odměn"));
-  assert.ok(historyPage.includes("Čistý vlastní kapitál"));
+  assert.ok(historyPage.includes("Čisté vklady"));
+});
+
+
+test("net-deposit chart mirrors T212 card withdrawals and Kraken account transfers", () => {
+  const chart = source("components/portfolio-history-chart.tsx");
+  const card = source("lib/server/trading212-card.ts");
+  const db = source("lib/server/db.ts");
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const history = source("app/history/page.tsx");
+
+  assert.ok(chart.includes("function netDepositedCzk"));
+  assert.ok(
+    chart.includes("data.capitalAttributedCzk - data.externalRewardsCzk"),
+  );
+  assert.ok(chart.includes("Čisté vklady jako baseline"));
+
+  assert.ok(card.includes('if (action === "card debit")'));
+  assert.ok(card.includes('kind: "withdrawal"'));
+  assert.ok(card.includes('flowScope: "external"'));
+  assert.ok(db.includes("category = 'cash_out_external'"));
+  assert.ok(db.includes("category = 'card_spend:inferred'"));
+
+  assert.ok(
+    kraken.includes(
+      'if ((type === "deposit" || type === "withdrawal") && isFiat(currency))',
+    ),
+  );
+  assert.ok(kraken.includes('return "external";'));
+  assert.ok(kraken.includes('"wallet_transfer_out_owned"'));
+  assert.ok(kraken.includes('"wallet_transfer_in_owned"'));
+  assert.ok(history.includes("celkové čisté vklady nezmění"));
 });
 
 
