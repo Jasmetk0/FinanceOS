@@ -699,8 +699,11 @@ export async function importInvestown(input: InvestownImportInput) {
   ).length;
   const derivedOwnerCapitalCzk = prepared.reduce((sum, item) => {
     if (item.amountCzk === null) return sum;
-    if (item.kind === "deposit") return sum + Math.abs(item.amountCzk);
-    if (item.kind === "withdrawal") return sum - Math.abs(item.amountCzk);
+    if (item.kind === "deposit" || item.kind === "withdrawal") {
+      // Native statement amounts already carry the economic sign. Preserving
+      // it makes deposit/withdrawal corrections reconcile automatically.
+      return sum + item.amountCzk;
+    }
     return sum;
   }, 0);
   const accountingExpectedValueCzk =
