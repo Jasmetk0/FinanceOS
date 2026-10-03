@@ -649,6 +649,8 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       providers: providerMetrics,
       coverage: {
         complete,
+        performanceComplete:
+          !firstPerformanceGap || date < firstPerformanceGap,
         knownProviders,
         missingProviders,
       },
@@ -1466,12 +1468,15 @@ export function getPerformanceData() {
       flows.push({ date: now, amount: currentValue });
     }
 
-    // Per-account/provider capital attribution moves with owned-wallet
-    // transfers. Portfolio-level contribution below remains external-only.
-    const netContributed =
-      deposits - withdrawals + transferIn - transferOut;
+    // "Čisté vklady" are external owner cash only. Internal transfers are
+    // tracked separately because they may move capital between accounts
+    // (for example Kraken -> Phantom or Trading 212 Invest <-> CFD), but they
+    // must never change the net-deposit metric itself.
+    const netContributed = deposits - withdrawals;
+    const capitalAttributed =
+      netContributed + transferIn - transferOut;
     const performanceExternalCapital =
-      netContributed + externalRewards;
+      capitalAttributed + externalRewards;
     const unclassifiedFlowCount = num(unresolvedAccountFlowRow?.count);
     const knownUnclassifiedFlowCzk = num(
       unresolvedAccountFlowRow?.known_value_czk,
@@ -1502,6 +1507,7 @@ export function getPerformanceData() {
       transferInCzk: transferIn,
       transferOutCzk: transferOut,
       netContributedCzk: netContributed,
+      capitalAttributedCzk: capitalAttributed,
       performanceExternalCapitalCzk: performanceExternalCapital,
       estimatedProfitCzk: estimatedProfit,
       valueThroughDate,

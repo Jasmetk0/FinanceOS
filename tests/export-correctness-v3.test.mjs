@@ -871,18 +871,26 @@ test("history chart keeps user deposits, rewards and P/L capital distinct", () =
 });
 
 
-test("net-deposit chart mirrors T212 card withdrawals and Kraken account transfers", () => {
+test("net deposits exclude internal transfers while account P/L keeps capital attribution", () => {
+  const analytics = source("lib/server/analytics.ts");
   const chart = source("components/portfolio-history-chart.tsx");
+  const accountPage = source("app/accounts/[id]/page.tsx");
   const card = source("lib/server/trading212-card.ts");
   const db = source("lib/server/db.ts");
   const kraken = source("lib/server/integrations/kraken.ts");
-  const history = source("app/history/page.tsx");
 
   assert.ok(chart.includes("function netDepositedCzk"));
-  assert.ok(
-    chart.includes("data.capitalAttributedCzk - data.externalRewardsCzk"),
-  );
+  assert.ok(chart.includes("return data.contributedCzk"));
+  assert.ok(chart.includes("function metricValueForPoint"));
   assert.ok(chart.includes("Čisté vklady jako baseline"));
+
+  assert.ok(analytics.includes("const netContributed = deposits - withdrawals"));
+  assert.ok(
+    analytics.includes("netContributed + transferIn - transferOut"),
+  );
+  assert.ok(analytics.includes("capitalAttributedCzk: capitalAttributed"));
+  assert.ok(accountPage.includes("Čisté vklady zatím nejsou kompletní"));
+  assert.ok(accountPage.includes("Kapitál přiřazený účtu"));
 
   assert.ok(card.includes('if (action === "card debit")'));
   assert.ok(card.includes('kind: "withdrawal"'));
@@ -898,7 +906,6 @@ test("net-deposit chart mirrors T212 card withdrawals and Kraken account transfe
   assert.ok(kraken.includes('return "external";'));
   assert.ok(kraken.includes('"wallet_transfer_out_owned"'));
   assert.ok(kraken.includes('"wallet_transfer_in_owned"'));
-  assert.ok(history.includes("celkové čisté vklady nezmění"));
 });
 
 
