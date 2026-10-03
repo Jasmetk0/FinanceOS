@@ -477,6 +477,7 @@ function findExistingTransaction(
       "SELECT * FROM transactions WHERE provider = 'trading212' " +
         `AND kind IN (${placeholders}) ` +
         "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
+        "AND external_id NOT LIKE 'card-export:%' " +
         "AND amount IS NOT NULL " +
         "AND UPPER(currency) = UPPER(?) " +
         "AND ABS(ABS(amount) - ?) <= ? " +
@@ -508,6 +509,7 @@ function findExistingTransaction(
       "SELECT * FROM transactions WHERE provider = 'trading212' " +
         `AND kind IN (${placeholders}) ` +
         "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
+        "AND external_id NOT LIKE 'card-export:%' " +
         "AND amount_czk IS NOT NULL " +
         "AND ABS(ABS(amount_czk) - ?) <= ? " +
         "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
@@ -525,6 +527,118 @@ function findExistingTransaction(
     czkCandidates as Array<Record<string, unknown>>,
     occurredAt,
   );
+}
+
+function reconcileStoredRichExportRows() {
+  const db = getDb();
+  const enrichmentRows = db
+    .prepare(`
+      SELECT
+        id, external_id, occurred_at, currency, amount, amount_czk,
+        note, source_label, counterparty_ref, raw_json
+      FROM transactions
+      WHERE provider = 'trading212'
+        AND external_id LIKE 'card-export:%'
+        AND COALESCE(raw_json, '') LIKE '%"enrichmentOnly":true%'
+      ORDER BY occurred_at ASC, id ASC
+    `)
+    .all();
+
+  if (!enrichmentRows.length) return 0;
+
+  const updateTarget = db.prepare(`
+    UPDATE transactions
+    SET kind = ?,
+        flow_scope = ?,
+        category = ?,
+        currency = ?,
+        amount = ?,
+        amount_czk = ?,
+        note = ?,
+        source_label = ?,
+        counterparty_ref = ?,
+        raw_json = ?
+    WHERE id = ?
+  `);
+  const deleteEnrichment = db.prepare(
+    "DELETE FROM transactions WHERE id = ?",
+  );
+
+  let reconciled = 0;
+
+  for (const row of enrichmentRows) {
+    const raw = safeJson(row.raw_json);
+    const metadata = safeJson(raw.financeOsCardExport);
+    const csv = safeJson(raw.csv);
+    const actionRaw =
+      typeof metadata.action === "string"
+        ? metadata.action
+        : lookup(
+            Object.fromEntries(
+              Object.entries(csv).map(([key, value]) => [key, String(value ?? "")]),
+            ),
+            ["Action", "Type"],
+          );
+    const merchantCategory =
+      typeof metadata.merchantCategory === "string"
+        ? metadata.merchantCategory
+        : lookup(
+            Object.fromEntries(
+              Object.entries(csv).map(([key, value]) => [key, String(value ?? "")]),
+            ),
+            ["Merchant category", "Category"],
+          );
+    const classification = cardClassification(actionRaw, merchantCategory);
+    if (!classification) continue;
+
+    const amount = Number(row.amount);
+    const amountCzk =
+      row.amount_czk === null || row.amount_czk === undefined
+        ? null
+        : Number(row.amount_czk);
+    if (!Number.isFinite(amount)) continue;
+    if (amountCzk !== null && !Number.isFinite(amountCzk)) continue;
+
+    const csvId =
+      typeof metadata.csvId === "string" ? metadata.csvId : "";
+    const existing = findExistingTransaction(
+      csvId,
+      classification,
+      String(row.occurred_at),
+      amount,
+      String(row.currency),
+      amountCzk,
+    );
+    if (!existing || String(existing.id) === String(row.id)) continue;
+
+    const targetRaw = safeJson(existing.raw_json);
+    updateTarget.run(
+      classification.kind,
+      classification.flowScope,
+      classification.category,
+      String(row.currency),
+      amount,
+      amountCzk,
+      row.note === null || row.note === undefined ? null : String(row.note),
+      row.source_label === null || row.source_label === undefined
+        ? null
+        : String(row.source_label),
+      row.counterparty_ref === null || row.counterparty_ref === undefined
+        ? null
+        : String(row.counterparty_ref),
+      JSON.stringify({
+        ...targetRaw,
+        financeOsCardExport: metadata,
+        financeOsCardCsv: csv,
+        financeOsReconciledFromStoredExport: true,
+      }),
+      String(existing.id),
+    );
+    deleteEnrichment.run(String(row.id));
+    reconciled += 1;
+  }
+
+  return reconciled;
 }
 
 async function enrichReportRows(input: {
@@ -781,6 +895,12 @@ async function syncTrading212CardHistoryInternal(input: {
     }
   }
   setState(ACCOUNT_KEY, input.accountId);
+
+  // Re-run matching against already downloaded rich-export rows before any
+  // network/backoff decision. This repairs older FinanceOS databases after the
+  // matching algorithm improves, even when Trading 212 says the export is
+  // still current and no new report should be requested.
+  reconcileStoredRichExportRows();
 
   const pending = parsePending(getState(PENDING_KEY));
   const retryAfter = getState(RETRY_AFTER_KEY);
