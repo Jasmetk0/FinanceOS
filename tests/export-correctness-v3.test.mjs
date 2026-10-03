@@ -30,6 +30,16 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown provider estimate tail stays visible in provider color", () => {
+  const chart = source("components/portfolio-history-chart.tsx");
+
+  assert.ok(chart.includes("providerData &&"));
+  assert.ok(chart.includes('displayProviders.includes("investown")'));
+  assert.ok(chart.includes('stroke={colors.investown || providerColor("investown")}'));
+  assert.ok(chart.includes('strokeWidth="2.4"'));
+  assert.ok(chart.includes('strokeLinecap="round"'));
+});
+
 test("Investown charts extend stale imports as a dashed unchanged estimate", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
