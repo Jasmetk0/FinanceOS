@@ -238,6 +238,18 @@ test("Investown corrections preserve statement signs end to end", () => {
   assert.ok(importer.includes("investownReservationDelta"));
 });
 
+test("Investown import status reports full accounting health", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("accountingComplete: boolean"));
+  assert.ok(investown.includes("reconciliationStatus"));
+  assert.ok(investown.includes("reconciliationDifferenceCzk"));
+  assert.ok(importer.includes("accounting verified"));
+  assert.ok(importer.includes("accounting review"));
+  assert.ok(importer.includes("Účetní rozdíl"));
+});
+
 test("Investown native statement value is reconciled against capital plus gains", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
