@@ -166,7 +166,8 @@ function isNativeInvestown(headers: string[]) {
   return INVESTOWN_HEADERS.every((header) => set.has(header));
 }
 
-function money(value: number) {
+function money(value: number | null) {
+  if (value === null) return "—";
   return value.toLocaleString("cs-CZ", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
