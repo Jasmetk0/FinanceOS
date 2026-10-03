@@ -4,8 +4,10 @@ import {
   classifyInvestownKind,
   investownIncomeCategory,
   investownInterestBucket,
+  investownInvestedPrincipalDelta,
   investownPrincipalDelta,
   investownReservationDelta,
+  investownReturnedPrincipalDelta,
   summarizeInvestownPerformance,
 } from "@/lib/investown-semantics.mjs";
 import { getDb } from "@/lib/server/db";
@@ -579,14 +581,9 @@ export async function importInvestown(input: InvestownImportInput) {
       reserved: 0,
     };
 
-    if (item.principalDelta > 0) {
-      project.principal += item.principalDelta;
-      project.invested += item.principalDelta;
-    } else if (item.principalDelta < 0) {
-      const returned = Math.abs(item.principalDelta);
-      project.principal -= returned;
-      project.returned += returned;
-    }
+    project.principal += item.principalDelta;
+    project.invested += investownInvestedPrincipalDelta(item.row);
+    project.returned += investownReturnedPrincipalDelta(item.row);
 
     if (item.kind === "interest" && item.amountCzk !== null) {
       // Preserve the provider sign so a future yield/penalty correction or
@@ -609,6 +606,8 @@ export async function importInvestown(input: InvestownImportInput) {
     }
 
     if (project.principal < 0 && project.principal > -0.02) project.principal = 0;
+    if (project.invested < 0 && project.invested > -0.02) project.invested = 0;
+    if (project.returned < 0 && project.returned > -0.02) project.returned = 0;
     if (project.reserved < 0 && project.reserved > -0.02) project.reserved = 0;
     projects.set(externalId, project);
   }
