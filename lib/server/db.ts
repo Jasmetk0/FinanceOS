@@ -489,7 +489,15 @@ function repairInvestownClassificationAudit(db: DatabaseSync) {
           typeof raw.projectType === "string" ? raw.projectType : undefined,
       });
 
-      if (classified === "adjustment") {
+      const requiresPortfolioRebuild =
+        String(row.kind) === "adjustment" && classified === "transfer";
+
+      if (classified === "adjustment" || requiresPortfolioRebuild) {
+        // A newly learned principal/secondary-market movement cannot be safely
+        // repaired by changing one transaction row: holdings and historical
+        // principal snapshots must be rebuilt from the statement too. Keep it
+        // visibly unclassified until the next Investown re-import does that
+        // atomically.
         unknownTypes.add(type);
         if (
           String(row.kind) !== "adjustment" ||
@@ -509,8 +517,8 @@ function repairInvestownClassificationAudit(db: DatabaseSync) {
         continue;
       }
 
-      // If a later FinanceOS version learns a provider wording that used to
-      // be stored as an unknown adjustment, repair that row automatically.
+      // Non-principal semantics can be repaired safely in place because the
+      // statement amount is already reflected in wallet/value history.
       if (String(row.kind) === "adjustment") {
         const repairedCategory =
           classified === "income"
