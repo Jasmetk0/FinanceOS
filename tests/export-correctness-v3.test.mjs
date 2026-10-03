@@ -250,6 +250,16 @@ test("Investown corrections preserve statement signs end to end", () => {
   assert.ok(importer.includes("investownReservationDelta"));
 });
 
+test("native Investown CSV cannot be reinterpreted as a non-CZK statement", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes('input.sourceFormat === "investown-native"'));
+  assert.ok(investown.includes('? "CZK"'));
+  assert.ok(importer.includes("native Investown = CZK"));
+  assert.ok(importer.includes("disabled={nativeFormat}"));
+});
+
 test("Investown import status reports full accounting health", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
