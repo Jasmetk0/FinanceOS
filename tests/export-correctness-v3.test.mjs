@@ -103,36 +103,68 @@ test("Investown daily accounting uses statement-local dates, not UTC dates", () 
   assert.ok(accountPage.includes("provider={detail.provider}"));
 });
 
-test("Investown daily snapshots persist and graph explicit realized P/L", () => {
+test("Investown daily snapshots persist separate investment P/L and external rewards", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
 
-  assert.ok(investown.includes("runningRealizedPnl"));
+  assert.ok(investown.includes("runningInvestmentPnl"));
+  assert.ok(investown.includes("runningExternalRewards"));
+  assert.ok(investown.includes("runningTotalGain"));
   assert.ok(investown.includes("financeOsInvestownHistory"));
-  assert.ok(investown.includes("realizedPnlCzk: snapshot.realizedPnl"));
+  assert.ok(investown.includes("realizedPnlCzk: snapshot.investmentPnl"));
+  assert.ok(investown.includes("externalRewardsCzk: snapshot.externalRewards"));
+  assert.ok(investown.includes("totalGainCzk: snapshot.totalGain"));
   assert.ok(analytics.includes('provider === "investown"'));
   assert.ok(analytics.includes("financeOsInvestownHistory"));
   assert.ok(analytics.includes("const investmentPnl = Number(investownHistory.investmentPnlCzk)"));
-  assert.ok(analytics.includes("const legacyPnl = Number(investownHistory.realizedPnlCzk)"));
-  assert.ok(analytics.includes("const explicitProfit = Number.isFinite(investmentPnl)"));
+  assert.ok(analytics.includes("const explicitRewards = Number(investownHistory.externalRewardsCzk)"));
 });
 
-test("Investown realized PnL counts investor compensation and income positively", () => {
+test("Investown realized P/L is investment-only while external rewards stay separate", () => {
+  const semantics = source("lib/investown-semantics.mjs");
   const investown = source("lib/server/investown.ts");
   const db = source("lib/server/db.ts");
+  const analytics = source("lib/server/analytics.ts");
 
-  assert.ok(investown.includes('"Smluvní pokuta": "interest"'));
-  assert.ok(investown.includes('"Zákonné úroky z prodlení": "interest"'));
-  assert.ok(investown.includes('"Odměna": "income"'));
-  assert.ok(investown.includes("derivedInterest + derivedOtherIncome - derivedFees"));
+  assert.ok(semantics.includes('"Smluvní pokuta z prodlení": "interest"'));
+  assert.ok(semantics.includes('"Zákonný úrok z prodlení": "interest"'));
+  assert.ok(semantics.includes('"Odměna": "income"'));
+  assert.ok(semantics.includes("investmentPnlCzk"));
+  assert.ok(semantics.includes("externalRewardsCzk"));
+  assert.ok(semantics.includes("totalGainCzk"));
+
+  assert.ok(investown.includes("derivedInvestmentPnl"));
+  assert.ok(investown.includes("derivedExternalRewards"));
+  assert.ok(investown.includes("derivedTotalGain"));
+  assert.ok(investown.includes("const derivedRealizedPnl = derivedInvestmentPnl"));
   assert.ok(investown.includes("realizedPnl: derivedRealizedPnl"));
   assert.ok(investown.includes("realizedPnlCzk: derivedRealizedPnl"));
 
+  assert.ok(analytics.includes("'referral_reward'"));
+  assert.ok(analytics.includes("'campaign_reward'"));
+  assert.ok(analytics.includes("isExternalRewardCategory"));
+
   assert.ok(db.includes("function repairInvestownRealizedPnl"));
-  assert.ok(db.includes("kind = 'interest'"));
-  assert.ok(db.includes("kind = 'income'"));
-  assert.ok(db.includes("kind = 'fee'"));
+  assert.ok(db.includes("external_rewards_czk"));
+  assert.ok(db.includes("investment_income_czk"));
+  assert.ok(db.includes("derivedInvestmentPnl"));
+  assert.ok(db.includes("derivedExternalRewards"));
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
+});
+
+test("Investown native imports are previewed before destructive statement reconciliation", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+  const route = source("app/api/import/investown/route.ts");
+
+  assert.ok(investown.includes("dryRun?: boolean"));
+  assert.ok(investown.includes("allowAuthoritativeRemovals?: boolean"));
+  assert.ok(investown.includes("if (input.dryRun)"));
+  assert.ok(investown.includes("if (removedTransactions > 0 && input.allowAuthoritativeRemovals !== true)"));
+  assert.ok(importer.includes("Preview změn před importem"));
+  assert.ok(importer.includes("Potvrdit a provést import"));
+  assert.ok(importer.includes("dryRun"));
+  assert.ok(route.includes("allowAuthoritativeRemovals"));
 });
 
 test("full native Investown statements remove rows deleted by the provider", () => {
