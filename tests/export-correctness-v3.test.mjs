@@ -543,9 +543,9 @@ test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
   assert.ok(analytics.includes("t.flow_scope = 'external'"));
-  assert.ok(analytics.includes("OR t.provider = 'investown'"));
+  assert.ok(analytics.includes("OR t.provider IN ('investown', 'mintos')"));
   assert.ok(analytics.includes("flow_scope = 'external'"));
-  assert.ok(analytics.includes("OR provider = 'investown'"));
+  assert.ok(analytics.includes("OR provider IN ('investown', 'mintos')"));
 });
 
 
