@@ -30,6 +30,15 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown charts use step paths instead of diagonal interpolation", () => {
+  const chart = source("components/portfolio-history-chart.tsx");
+
+  assert.ok(chart.includes('mode: "linear" | "step" = "linear"'));
+  assert.ok(chart.includes('if (mode === "step")'));
+  assert.ok(chart.includes('provider === "investown" ? "step" : "linear"'));
+  assert.ok(chart.includes('investownOnly ? "step" : "linear"'));
+});
+
 test("Investown daily accounting uses statement-local dates, not UTC dates", () => {
   const analytics = source("lib/server/analytics.ts");
   const dailyTable = source("components/account-daily-history-table.tsx");
