@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { isPerformanceExternalRewardCategory } from "@/lib/investown-semantics.mjs";
 import { getDatabasePath } from "@/lib/server/paths";
 import {
   canonicalCryptoIdentity,
@@ -565,6 +566,116 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
   }
 }
 
+function repairInvestownSnapshotPerformance(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+
+  const transactionRows = db.prepare(`
+    SELECT occurred_at, kind, category, amount_czk, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND amount_czk IS NOT NULL
+      AND kind IN ('interest', 'income', 'fee')
+    ORDER BY occurred_at ASC
+  `);
+  const snapshotRows = db.prepare(`
+    SELECT recorded_at, raw_json
+    FROM snapshots
+    WHERE account_id = ?
+    ORDER BY recorded_at ASC
+  `);
+  const updateSnapshot = db.prepare(
+    "UPDATE snapshots SET raw_json = ? " +
+      "WHERE account_id = ? AND recorded_at = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const flows = transactionRows
+      .all(String(account.id))
+      .map((row) => {
+        const raw = parseJsonObject(row.raw_json);
+        const sourceDate =
+          typeof raw.sourceDate === "string" ? raw.sourceDate : "";
+        const localMatch = sourceDate.match(/^(\d{4}-\d{2}-\d{2})/);
+        return {
+          date:
+            localMatch?.[1] ||
+            String(row.occurred_at || "").slice(0, 10),
+          occurredAt: String(row.occurred_at || ""),
+          kind: String(row.kind || ""),
+          category: String(row.category || ""),
+          amountCzk: Number(row.amount_czk) || 0,
+        };
+      })
+      .sort(
+        (left, right) =>
+          left.date.localeCompare(right.date) ||
+          left.occurredAt.localeCompare(right.occurredAt),
+      );
+
+    let index = 0;
+    let interestCzk = 0;
+    let investmentIncomeCzk = 0;
+    let externalRewardsCzk = 0;
+    let feesCzk = 0;
+
+    for (const snapshot of snapshotRows.all(String(account.id))) {
+      const date = String(snapshot.recorded_at || "").slice(0, 10);
+      while (index < flows.length && flows[index].date <= date) {
+        const flow = flows[index];
+        if (flow.kind === "interest") {
+          interestCzk += flow.amountCzk;
+        } else if (flow.kind === "income") {
+          if (isPerformanceExternalRewardCategory(flow.category)) {
+            externalRewardsCzk += flow.amountCzk;
+          } else {
+            investmentIncomeCzk += flow.amountCzk;
+          }
+        } else if (flow.kind === "fee") {
+          feesCzk += Math.abs(flow.amountCzk);
+        }
+        index += 1;
+      }
+
+      const investmentPnlCzk =
+        interestCzk + investmentIncomeCzk - feesCzk;
+      const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+      const raw = parseJsonObject(snapshot.raw_json);
+      const previousHistory =
+        raw.financeOsInvestownHistory &&
+        typeof raw.financeOsInvestownHistory === "object" &&
+        !Array.isArray(raw.financeOsInvestownHistory)
+          ? (raw.financeOsInvestownHistory as Record<string, unknown>)
+          : {};
+
+      updateSnapshot.run(
+        JSON.stringify({
+          ...raw,
+          financeOsInvestownHistory: {
+            ...previousHistory,
+            realizedPnlCzk: investmentPnlCzk,
+            investmentPnlCzk,
+            externalRewardsCzk,
+            totalGainCzk,
+            interestCzk,
+            otherIncomeCzk:
+              investmentIncomeCzk + externalRewardsCzk,
+            feesCzk,
+          },
+        }),
+        String(account.id),
+        String(snapshot.recorded_at),
+      );
+    }
+  }
+}
+
 function backfillCanonicalAssets(db: DatabaseSync) {
   const rows = db
     .prepare(
@@ -628,6 +739,7 @@ export function repairStoredData(db: DatabaseSync) {
   repairTrading212CashSemantics(db);
   backfillAccountCoverage(db);
   repairInvestownRealizedPnl(db);
+  repairInvestownSnapshotPerformance(db);
   backfillCanonicalAssets(db);
 }
 
