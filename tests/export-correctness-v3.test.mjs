@@ -712,6 +712,7 @@ test("Trading 212 rich-export reconciliation repairs old unresolved cash rows sa
 
   assert.ok(card.includes("function reconcileStoredRichExportRows"));
   assert.ok(card.includes("reconcileStoredRichExportRows();"));
+  assert.ok(card.includes('if (typeof value === "object") return value as JsonObject'));
   assert.ok(card.includes("external_id NOT LIKE 'card-export:%'"));
   assert.ok(card.includes("UPPER(currency) = UPPER(?)"));
   assert.ok(card.includes("ABS(ABS(amount) - ?) <= ?"));
