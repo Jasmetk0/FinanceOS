@@ -1095,14 +1095,32 @@ export async function syncKraken() {
     // Private requests are intentionally sequential. Kraken nonces are scoped
     // to the API key, so parallel requests can arrive out of order even if
     // locally generated nonce values are unique.
-    const balances = await privateRequest<Record<string, string>>(
-      "/0/private/Balance",
+    const keyInfo = await privateRequest<JsonObject>(
+      "/0/private/GetApiKeyInfo",
       credentials,
     );
+    const keyDiagnostics = safeKrakenKeyDiagnostics(keyInfo);
+    const rawExtendedBalances = await privateRequest<Record<string, unknown>>(
+      "/0/private/BalanceEx",
+      credentials,
+    );
+    const extendedBalances = parseExtendedBalances(rawExtendedBalances);
     const pairs = await getAssetPairs();
+    const earn = await fetchEarnAllocations(credentials);
+    const margin = await fetchMarginStatus(
+      credentials,
+      keyDiagnostics.marginQueryEnabled,
+    );
     const trades = await fetchAllTrades(credentials);
     const ledgers = await fetchAllLedgers(credentials);
-    const withdrawalStatuses = await fetchRecentWithdrawalStatuses(credentials);
+    const depositStatuses = await fetchRecentLegacyFundingStatuses(
+      credentials,
+      "deposit",
+    );
+    const withdrawalStatuses = await fetchRecentLegacyFundingStatuses(
+      credentials,
+      "withdrawal",
+    );
 
   const accountExternalId = "spot";
   let cashValueCzk = 0;
@@ -1111,14 +1129,17 @@ export async function syncKraken() {
     rawAsset: string;
     normalized: string;
     quantity: number;
+    availableQuantity: number;
+    heldTradeQuantity: number;
+    balanceBucket: string;
     currentPrice: number | null;
     quote: string;
     valueQuote: number;
     valueCzk: number;
   }> = [];
 
-  for (const [rawAsset, rawQuantity] of Object.entries(balances)) {
-    const quantity = numberValue(rawQuantity, 0);
+  for (const [rawAsset, extended] of extendedBalances.entries()) {
+    const quantity = extended.balance;
     if (!quantity) continue;
 
     const normalized = normalizeAssetCode(rawAsset);
@@ -1130,6 +1151,9 @@ export async function syncKraken() {
       rawAsset,
       normalized,
       quantity,
+      availableQuantity: extended.available,
+      heldTradeQuantity: extended.holdTrade,
+      balanceBucket: extended.bucket,
       currentPrice: priced.price,
       quote: priced.quote || normalized,
       valueQuote: priced.valueQuote,
@@ -1156,7 +1180,34 @@ export async function syncKraken() {
     totalValueCzk,
     realizedPnlCzk: 0,
     unrealizedPnlCzk: 0,
-    raw: { balances },
+    raw: {
+      balances: Object.fromEntries(
+        [...extendedBalances.entries()].map(([asset, value]) => [
+          asset,
+          {
+            balance: value.balance,
+            holdTrade: value.holdTrade,
+            credit: value.credit,
+            creditUsed: value.creditUsed,
+            available: value.available,
+            bucket: value.bucket,
+          },
+        ]),
+      ),
+      financeOsKrakenV2: {
+        balanceSource: "BalanceEx",
+        key: keyDiagnostics,
+        earn,
+        margin,
+        funding: {
+          legacyDepositStatusRows: depositStatuses.rows.length,
+          legacyWithdrawalStatusRows: withdrawalStatuses.rows.length,
+          legacyDepositStatusError: depositStatuses.error,
+          legacyWithdrawalStatusError: withdrawalStatuses.error,
+          api: "legacy_status_fallback",
+        },
+      },
+    },
   });
 
   const holdings = [];
@@ -1187,7 +1238,15 @@ export async function syncKraken() {
       marketValueCzk: item.valueCzk,
       unrealizedPnl: null,
       unrealizedPnlCzk: null,
-      raw: { rawAsset: item.rawAsset },
+      raw: {
+        rawAsset: item.rawAsset,
+        financeOsKrakenBalance: {
+          bucket: item.balanceBucket,
+          totalQuantity: item.quantity,
+          availableQuantity: item.availableQuantity,
+          heldTradeQuantity: item.heldTradeQuantity,
+        },
+      },
     });
   }
   replaceHoldings(accountIdValue, holdings);
@@ -1300,7 +1359,10 @@ export async function syncKraken() {
 
     reclassifyLegacyKrakenWalletFlows();
     repairLegacyKrakenLedgerQuantities();
-    enrichKrakenWalletTransfers(withdrawalStatuses);
+    enrichKrakenWalletTransfers(
+      depositStatuses.rows,
+      withdrawalStatuses.rows,
+    );
     rebuildKrakenTransferBookValuesAndCostBasis();
     recordSnapshot(accountIdValue);
 
@@ -1309,7 +1371,11 @@ export async function syncKraken() {
       holdings: holdings.length,
       trades: trades.length,
       ledgers: ledgers.length,
-      enrichedWithdrawals: withdrawalStatuses.length,
+      enrichedDeposits: depositStatuses.rows.length,
+      enrichedWithdrawals: withdrawalStatuses.rows.length,
+      earnAllocations: earn.activeStrategies,
+      openMarginPositions: margin.openPositions,
+      balanceSource: "BalanceEx",
     };
   });
 }
