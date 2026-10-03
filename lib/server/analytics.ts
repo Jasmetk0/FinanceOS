@@ -1585,6 +1585,10 @@ export function getPerformanceData() {
               'referral_reward',
               'campaign_reward'
             )
+            AND (
+              t.flow_scope = 'external'
+              OR t.provider = 'investown'
+            )
           )
         )
       ORDER BY t.occurred_at ASC
@@ -2720,6 +2724,10 @@ export function getHistoryData() {
               'external_reward',
               'referral_reward',
               'campaign_reward'
+            )
+            AND (
+              t.flow_scope = 'external'
+              OR t.provider = 'investown'
             )
           )
         )
