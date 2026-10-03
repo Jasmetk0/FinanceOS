@@ -157,6 +157,18 @@ test("Investown realized P/L is investment-only while external rewards stay sepa
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("legacy Investown snapshots are repaired to investment-only P/L", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("function repairInvestownSnapshotPerformance"));
+  assert.ok(db.includes("raw.sourceDate"));
+  assert.ok(db.includes("isPerformanceExternalRewardCategory"));
+  assert.ok(db.includes("investmentPnlCzk"));
+  assert.ok(db.includes("externalRewardsCzk"));
+  assert.ok(db.includes("totalGainCzk"));
+  assert.ok(db.includes("repairInvestownSnapshotPerformance(db)"));
+});
+
 test("Investown native imports are previewed before destructive statement reconciliation", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
