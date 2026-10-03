@@ -2112,7 +2112,12 @@ export function getAccountDetail(accountIdInput: string) {
           (kind === "income" && !isExternalRewardCategory(category))
             ? amount
             : 0,
-        feesCzk: kind === "fee" ? Math.abs(amount) : 0,
+        feesCzk:
+          kind === "fee"
+            ? provider === "investown"
+              ? -amount
+              : Math.abs(amount)
+            : 0,
         transferInCzk:
           kind === "transfer" && transferValue > 0 ? transferValue : 0,
         transferOutCzk:
