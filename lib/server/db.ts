@@ -451,6 +451,10 @@ function backfillAccountCoverage(db: DatabaseSync) {
     "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ?, " +
       "reconciliation_status = ?, reconciliation_difference = ? WHERE id = ?",
   );
+  const unknownTypeCount = db.prepare(
+    "SELECT COUNT(*) AS count FROM transactions " +
+      "WHERE account_id = ? AND kind = 'adjustment'",
+  );
 
   for (const row of investownRows) {
     const raw = parseJsonObject(row.raw_json);
@@ -460,10 +464,12 @@ function backfillAccountCoverage(db: DatabaseSync) {
 
     if (!isCompleteNativeStatement) continue;
 
-    const realized =
-      String(row.realized_pnl_status || "unknown") === "unknown"
-        ? "available"
-        : String(row.realized_pnl_status);
+    const unresolvedTypes =
+      Number(unknownTypeCount.get(String(row.id))?.count) || 0;
+    const accountingComplete = unresolvedTypes === 0;
+    const realized = accountingComplete
+      ? "available"
+      : "partial";
     const unrealized =
       String(row.unrealized_pnl_status || "unknown") === "unknown"
         ? "not_applicable"
@@ -472,7 +478,7 @@ function backfillAccountCoverage(db: DatabaseSync) {
     update.run(
       realized,
       unrealized,
-      "reconciled",
+      accountingComplete ? "reconciled" : "warning",
       0,
       String(row.id),
     );
