@@ -687,8 +687,9 @@ function backfillAccountCoverage(db: DatabaseSync) {
     SELECT
       COALESCE(SUM(CASE WHEN kind = 'adjustment' THEN 1 ELSE 0 END), 0) AS unknown_count,
       COALESCE(SUM(CASE WHEN amount_czk IS NULL THEN 1 ELSE 0 END), 0) AS missing_czk_count,
-      COALESCE(SUM(CASE WHEN kind = 'deposit' THEN ABS(amount_czk) ELSE 0 END), 0) AS deposits_czk,
-      COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN ABS(amount_czk) ELSE 0 END), 0) AS withdrawals_czk,
+      COALESCE(SUM(
+        CASE WHEN kind IN ('deposit', 'withdrawal') THEN amount_czk ELSE 0 END
+      ), 0) AS owner_capital_czk,
       COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
       COALESCE(SUM(
         CASE
@@ -732,9 +733,7 @@ function backfillAccountCoverage(db: DatabaseSync) {
     const values = audit.get(String(row.id));
     const unresolvedTypes = Number(values?.unknown_count) || 0;
     const missingCzkRows = Number(values?.missing_czk_count) || 0;
-    const ownerCapitalCzk =
-      (Number(values?.deposits_czk) || 0) -
-      (Number(values?.withdrawals_czk) || 0);
+    const ownerCapitalCzk = Number(values?.owner_capital_czk) || 0;
     const investmentPnlCzk =
       (Number(values?.interest_czk) || 0) +
       (Number(values?.investment_income_czk) || 0) -
