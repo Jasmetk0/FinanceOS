@@ -448,7 +448,8 @@ function backfillAccountCoverage(db: DatabaseSync) {
     .all();
 
   const update = db.prepare(
-    "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ? WHERE id = ?",
+    "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ?, " +
+      "reconciliation_status = ?, reconciliation_difference = ? WHERE id = ?",
   );
 
   for (const row of investownRows) {
@@ -468,7 +469,13 @@ function backfillAccountCoverage(db: DatabaseSync) {
         ? "not_applicable"
         : String(row.unrealized_pnl_status);
 
-    update.run(realized, unrealized, String(row.id));
+    update.run(
+      realized,
+      unrealized,
+      "reconciled",
+      0,
+      String(row.id),
+    );
   }
 }
 
@@ -482,6 +489,32 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
   const totals = db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') NOT IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS investment_income_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS external_rewards_czk,
       COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_czk ELSE 0 END), 0) AS income_czk,
       COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
     FROM transactions
@@ -499,19 +532,27 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
 
     const row = totals.get(String(account.id));
     const interestCzk = Number(row?.interest_czk) || 0;
+    const investmentIncomeCzk = Number(row?.investment_income_czk) || 0;
+    const externalRewardsCzk = Number(row?.external_rewards_czk) || 0;
     const incomeCzk = Number(row?.income_czk) || 0;
     const feesCzk = Number(row?.fees_czk) || 0;
-    const realizedPnlCzk = interestCzk + incomeCzk - feesCzk;
+    const investmentPnlCzk =
+      interestCzk + investmentIncomeCzk - feesCzk;
+    const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
 
     update.run(
-      realizedPnlCzk,
-      realizedPnlCzk,
+      investmentPnlCzk,
+      investmentPnlCzk,
       JSON.stringify({
         ...raw,
         derivedInterest: interestCzk,
+        derivedOtherInvestmentIncome: investmentIncomeCzk,
+        derivedExternalRewards: externalRewardsCzk,
         derivedOtherIncome: incomeCzk,
         derivedFees: feesCzk,
-        derivedRealizedPnl: realizedPnlCzk,
+        derivedInvestmentPnl: investmentPnlCzk,
+        derivedTotalGain: totalGainCzk,
+        derivedRealizedPnl: investmentPnlCzk,
       }),
       String(account.id),
     );
