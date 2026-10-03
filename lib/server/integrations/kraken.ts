@@ -1784,6 +1784,18 @@ export function getKrakenStatus() {
       unclassifiedTransfersWithBookValue: numberValue(
         transferAudit?.unclassified_with_book_value,
       ),
+      betaDepositRows: numberValue(funding.betaDepositRows),
+      betaWithdrawalRows: numberValue(funding.betaWithdrawalRows),
+      betaDepositPages: numberValue(funding.betaDepositPages),
+      betaWithdrawalPages: numberValue(funding.betaWithdrawalPages),
+      betaDepositError:
+        typeof funding.betaDepositError === "string"
+          ? funding.betaDepositError
+          : null,
+      betaWithdrawalError:
+        typeof funding.betaWithdrawalError === "string"
+          ? funding.betaWithdrawalError
+          : null,
       depositStatusRows: numberValue(funding.legacyDepositStatusRows),
       withdrawalStatusRows: numberValue(
         funding.legacyWithdrawalStatusRows,
