@@ -135,6 +135,21 @@ test("Investown realized PnL counts investor compensation and income positively"
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("full native Investown statements remove rows deleted by the provider", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("const authoritativeNativeSnapshot"));
+  assert.ok(investown.includes('input.sourceFormat === "investown-native"'));
+  assert.ok(investown.includes("incomingFirstAt <= existingFirstAt"));
+  assert.ok(investown.includes("incomingLastAt >= existingLastAt"));
+  assert.ok(investown.includes("removedTransactions += remainder.length"));
+  assert.ok(investown.includes("lastImportRemovedTransactions: removedTransactions"));
+  assert.ok(investown.includes("lastImportAuthoritativeSnapshot: authoritativeNativeSnapshot"));
+  assert.ok(importer.includes("removedTransactions: number"));
+  assert.ok(importer.includes("historických řádků odstraněno podle novějšího plného výpisu"));
+});
+
 test("Investown imports are cumulative and deduplicated", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
