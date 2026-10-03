@@ -640,8 +640,6 @@ export async function importInvestown(input: InvestownImportInput) {
     input.sourceFormat === "investown-native" &&
     overrideCash === null &&
     overrideTotal === null;
-  const nativeAccountingComplete =
-    nativeDerivedStatement && unknownTypes.size === 0;
 
   const walletCash = overrideCash ?? derivedWallet;
   const totalValue = overrideTotal ?? Math.max(0, walletCash + derivedInvested);
@@ -662,6 +660,32 @@ export async function importInvestown(input: InvestownImportInput) {
     toCzk(investedValue, accountCurrency),
     toCzk(totalValue, accountCurrency),
   ]);
+
+  const missingCzkRows = prepared.filter(
+    (item) => item.amountCzk === null,
+  ).length;
+  const derivedOwnerCapitalCzk = prepared.reduce((sum, item) => {
+    if (item.amountCzk === null) return sum;
+    if (item.kind === "deposit") return sum + Math.abs(item.amountCzk);
+    if (item.kind === "withdrawal") return sum - Math.abs(item.amountCzk);
+    return sum;
+  }, 0);
+  const accountingExpectedValueCzk =
+    derivedOwnerCapitalCzk + derivedTotalGain;
+  const accountingDifferenceCzk =
+    nativeDerivedStatement &&
+    accountCurrency === "CZK" &&
+    missingCzkRows === 0
+      ? totalValueCzk - accountingExpectedValueCzk
+      : null;
+  const accountingIdentityOk =
+    accountingDifferenceCzk === null ||
+    Math.abs(accountingDifferenceCzk) <= 0.05;
+  const nativeAccountingComplete =
+    nativeDerivedStatement &&
+    unknownTypes.size === 0 &&
+    missingCzkRows === 0 &&
+    accountingIdentityOk;
 
   // All asynchronous currency work is complete before opening the SQLite
   // transaction. The import itself is atomic: a failed row cannot leave a
@@ -734,9 +758,13 @@ export async function importInvestown(input: InvestownImportInput) {
           totalValueCzk,
         },
         accounting: {
+          derivedOwnerCapitalCzk,
           derivedInvestmentPnl,
           derivedExternalRewards,
           derivedTotalGain,
+          accountingExpectedValueCzk,
+          accountingDifferenceCzk,
+          missingCzkRows,
         },
       }),
     )
@@ -768,6 +796,17 @@ export async function importInvestown(input: InvestownImportInput) {
       totalValueCzk: derivedWallet + derivedInvested,
       activeProjects: projectedActiveProjects,
       allProjects: projects.size,
+    },
+    reconciliation: {
+      checked:
+        nativeDerivedStatement &&
+        accountCurrency === "CZK" &&
+        missingCzkRows === 0,
+      ownerCapitalCzk: derivedOwnerCapitalCzk,
+      expectedValueCzk: accountingExpectedValueCzk,
+      differenceCzk: accountingDifferenceCzk,
+      ok: nativeAccountingComplete,
+      missingCzkRows,
     },
     effective: {
       walletCashCzk: cashValueCzk,
@@ -819,6 +858,24 @@ export async function importInvestown(input: InvestownImportInput) {
     );
   }
 
+  if (
+    nativeDerivedStatement &&
+    accountCurrency === "CZK" &&
+    missingCzkRows === 0 &&
+    unknownTypes.size === 0 &&
+    accountingDifferenceCzk !== null &&
+    Math.abs(accountingDifferenceCzk) > 0.05
+  ) {
+    throw new Error(
+      "Investown účetní kontrola nesedí o " +
+        accountingDifferenceCzk.toLocaleString("cs-CZ", {
+          maximumFractionDigits: 2,
+        }) +
+        " Kč. Import nebyl proveden, protože hodnota účtu neodpovídá " +
+        "vlastním vkladům/výběrům + investičnímu P/L + externím odměnám.",
+    );
+  }
+
   if (removedTransactions > 0) {
     if (input.allowAuthoritativeRemovals !== true) {
       throw new Error(
@@ -849,7 +906,7 @@ export async function importInvestown(input: InvestownImportInput) {
     unrealizedPnl: 0,
     realizedPnlStatus: nativeAccountingComplete ? "available" : "partial",
     unrealizedPnlStatus: "not_applicable",
-    reconciliationDifference: 0,
+    reconciliationDifference: accountingDifferenceCzk ?? 0,
     reconciliationStatus: nativeAccountingComplete
       ? "reconciled"
       : nativeDerivedStatement
@@ -887,6 +944,16 @@ export async function importInvestown(input: InvestownImportInput) {
       negativePrincipalProjects,
       negativeReservationProjects,
       accountingComplete: nativeAccountingComplete,
+      accountingReconciliation: {
+        checked:
+          nativeDerivedStatement &&
+          accountCurrency === "CZK" &&
+          missingCzkRows === 0,
+        ownerCapitalCzk: derivedOwnerCapitalCzk,
+        expectedValueCzk: accountingExpectedValueCzk,
+        differenceCzk: accountingDifferenceCzk,
+        missingCzkRows,
+      },
       lastImportRows: incomingPrepared.length,
       lastImportNewTransactions: newTransactions,
       lastImportMatchedTransactions: matchedTransactions,
