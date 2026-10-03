@@ -61,6 +61,15 @@ function nextIsoDate(date: string): string {
   return parsed.toISOString().slice(0, 10);
 }
 
+function isExternalRewardCategory(category: string) {
+  return (
+    category === "card_cashback" ||
+    category === "external_reward" ||
+    category === "referral_reward" ||
+    category === "campaign_reward"
+  );
+}
+
 function transactionAccountingDate(row: {
   provider?: unknown;
   occurred_at?: unknown;
@@ -395,8 +404,12 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
               )
               OR (
                 t.kind = 'income'
-                AND t.category = 'card_cashback'
-                AND t.flow_scope = 'external'
+                AND t.category IN (
+                  'card_cashback',
+                  'external_reward',
+                  'referral_reward',
+                  'campaign_reward'
+                )
               )
             )
           )
@@ -445,7 +458,8 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   const flows = flowRows.map((row) => {
     const kind = String(row.kind);
     const category = String(row.category || "");
-    const isReward = kind === "income" && category === "card_cashback";
+    const isReward =
+      kind === "income" && isExternalRewardCategory(category);
     const ownContributionDelta =
       kind === "deposit"
         ? Math.abs(num(row.amount_czk))
@@ -1978,16 +1992,7 @@ export function getAccountDetail(accountIdInput: string) {
                   )
                 )
               )
-              OR (
-                kind = 'income'
-                AND category = 'card_cashback'
-                AND flow_scope = 'external'
-              )
-              OR kind IN ('dividend', 'interest', 'fee')
-              OR (
-                kind = 'income'
-                AND COALESCE(category, '') != 'card_cashback'
-              )
+              OR kind IN ('dividend', 'interest', 'fee', 'income')
               OR (
                 provider = 'trading212'
                 AND kind = 'transfer'
@@ -2036,13 +2041,13 @@ export function getAccountDetail(accountIdInput: string) {
               ? -Math.abs(amount)
               : 0,
         rewardDelta:
-          kind === "income" && category === "card_cashback"
+          kind === "income" && isExternalRewardCategory(category)
             ? amount
             : 0,
         investmentIncomeCzk:
           kind === "dividend" ||
           kind === "interest" ||
-          (kind === "income" && category !== "card_cashback")
+          (kind === "income" && !isExternalRewardCategory(category))
             ? amount
             : 0,
         feesCzk: kind === "fee" ? Math.abs(amount) : 0,
@@ -2180,20 +2185,32 @@ export function getAccountDetail(accountIdInput: string) {
           : null;
       if (
         investownHistory &&
-        investownHistory.realizedPnlCzk !== null &&
-        investownHistory.realizedPnlCzk !== undefined &&
-        Number.isFinite(Number(investownHistory.realizedPnlCzk)) &&
         performanceComplete
       ) {
-        const explicitProfit = Number(investownHistory.realizedPnlCzk);
-        metric = {
-          ...metric,
-          profitCzk: explicitProfit,
-          returnPct:
-            capitalAttributed > 0
-              ? (explicitProfit / capitalAttributed) * 100
-              : null,
-        };
+        const investmentPnl = Number(investownHistory.investmentPnlCzk);
+        const legacyPnl = Number(investownHistory.realizedPnlCzk);
+        const explicitProfit = Number.isFinite(investmentPnl)
+          ? investmentPnl
+          : Number.isFinite(legacyPnl)
+            ? legacyPnl
+            : null;
+        const explicitRewards = Number(investownHistory.externalRewardsCzk);
+
+        if (explicitProfit !== null) {
+          metric = {
+            ...metric,
+            externalRewardsCzk: Number.isFinite(explicitRewards)
+              ? explicitRewards
+              : metric.externalRewardsCzk,
+            profitCzk: explicitProfit,
+            returnPct:
+              ownContribution + transferAttribution > 0
+                ? (explicitProfit /
+                    (ownContribution + transferAttribution)) *
+                  100
+                : null,
+          };
+        }
       }
     }
 
