@@ -213,12 +213,17 @@ test("Investown native imports are previewed before destructive statement reconc
 
   assert.ok(investown.includes("dryRun?: boolean"));
   assert.ok(investown.includes("allowAuthoritativeRemovals?: boolean"));
+  assert.ok(investown.includes("confirmationToken?: string"));
+  assert.ok(investown.includes("const previewToken = crypto"));
   assert.ok(investown.includes("if (input.dryRun)"));
-  assert.ok(investown.includes("if (removedTransactions > 0 && input.allowAuthoritativeRemovals !== true)"));
+  assert.ok(investown.includes("input.confirmationToken !== previewToken"));
+  assert.ok(investown.includes("if (removedTransactions > 0)"));
   assert.ok(importer.includes("Preview změn před importem"));
   assert.ok(importer.includes("Potvrdit a provést import"));
+  assert.ok(importer.includes("pendingPreview.previewToken"));
   assert.ok(importer.includes("dryRun"));
   assert.ok(route.includes("allowAuthoritativeRemovals"));
+  assert.ok(route.includes("confirmationToken"));
 });
 
 test("full native Investown statements remove rows deleted by the provider", () => {
