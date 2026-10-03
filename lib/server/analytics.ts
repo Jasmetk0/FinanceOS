@@ -1080,11 +1080,20 @@ export function getCashFlowData(months = 18) {
         item.expensesCzk += Math.abs(amount);
       }
     } else {
-      if (kind === "income") item.incomeCzk += Math.max(0, amount);
+      const signedProvider =
+        provider === "investown" || provider === "mintos";
+      if (kind === "income") {
+        item.incomeCzk += signedProvider ? amount : Math.max(0, amount);
+      }
       if (kind === "gift") item.giftsCzk += Math.max(0, amount);
-      if (kind === "interest") item.interestCzk += Math.max(0, amount);
+      if (kind === "interest") {
+        item.interestCzk += signedProvider ? amount : Math.max(0, amount);
+      }
       if (kind === "expense" || kind === "fee") {
-        item.expensesCzk += Math.abs(amount);
+        item.expensesCzk +=
+          signedProvider && kind === "fee"
+            ? -amount
+            : Math.abs(amount);
       }
     }
 
@@ -2613,8 +2622,18 @@ export function getAssetDetail(symbolInput: string) {
       if (tx.kind === "buy") acc.buysCzk += Math.abs(amount);
       if (tx.kind === "sell") acc.sellsCzk += Math.abs(amount);
       if (tx.kind === "dividend") acc.dividendsCzk += Math.max(0, amount);
-      if (tx.kind === "interest") acc.interestCzk += Math.max(0, amount);
-      if (tx.kind === "fee") acc.feesCzk += Math.abs(amount);
+      if (tx.kind === "interest") {
+        acc.interestCzk +=
+          tx.provider === "investown" || tx.provider === "mintos"
+            ? amount
+            : Math.max(0, amount);
+      }
+      if (tx.kind === "fee") {
+        acc.feesCzk +=
+          tx.provider === "investown" || tx.provider === "mintos"
+            ? -amount
+            : Math.abs(amount);
+      }
       if (tx.kind === "transfer" && tx.quantity !== null && amount < 0) {
         acc.principalInCzk += Math.abs(amount);
       }
