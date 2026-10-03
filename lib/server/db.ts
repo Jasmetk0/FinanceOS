@@ -716,7 +716,7 @@ function backfillAccountCoverage(db: DatabaseSync) {
           ELSE 0
         END
       ), 0) AS investment_income_czk,
-      COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN -amount_czk ELSE 0 END), 0) AS fees_czk
     FROM transactions
     WHERE account_id = ?
   `);
@@ -803,7 +803,7 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
         END
       ), 0) AS external_rewards_czk,
       COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_czk ELSE 0 END), 0) AS income_czk,
-      COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN -amount_czk ELSE 0 END), 0) AS fees_czk
     FROM transactions
     WHERE account_id = ?
       AND amount_czk IS NOT NULL
@@ -944,7 +944,7 @@ function repairInvestownSnapshotPerformance(db: DatabaseSync) {
             investmentIncomeCzk += flow.amountCzk;
           }
         } else if (flow.kind === "fee") {
-          feesCzk += Math.abs(flow.amountCzk);
+          feesCzk -= flow.amountCzk;
         }
         index += 1;
       }
