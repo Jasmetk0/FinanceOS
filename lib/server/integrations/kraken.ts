@@ -130,6 +130,120 @@ async function privateRequest<T>(
   }
 }
 
+async function fundingRequest<T>(
+  path: string,
+  credentials: KrakenCredentials,
+  params: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> {
+  const queueKey = credentials.apiKey;
+  const previous = privateQueues.get(queueKey) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => gate);
+  privateQueues.set(queueKey, queued);
+
+  await previous.catch(() => undefined);
+
+  try {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) query.set(key, String(value));
+    }
+
+    const queryString = query.toString();
+    const signedPath = queryString ? path + "?" + queryString : path;
+    const nonce = nextNonce();
+    const bodyBytes = Buffer.alloc(0);
+    const digest = crypto
+      .createHash("sha256")
+      .update(Buffer.concat([Buffer.from(nonce, "utf8"), bodyBytes]))
+      .digest();
+    const signature = crypto
+      .createHmac("sha512", Buffer.from(credentials.apiSecret, "base64"))
+      .update(
+        Buffer.concat([Buffer.from(signedPath, "utf8"), digest]),
+      )
+      .digest("base64");
+
+    const response = await fetch("https://api.kraken.com" + signedPath, {
+      method: "GET",
+      headers: {
+        "API-Key": credentials.apiKey,
+        "API-Sign": signature,
+        "API-Nonce": nonce,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    const json = (await response.json()) as T & {
+      error?: unknown;
+      errors?: unknown;
+    };
+    if (!response.ok) {
+      throw new Error(
+        "Kraken Funding request failed with HTTP " + response.status + ".",
+      );
+    }
+    return json;
+  } finally {
+    release();
+    if (privateQueues.get(queueKey) === queued) {
+      privateQueues.delete(queueKey);
+    }
+  }
+}
+
+type KrakenFundingBetaAudit = {
+  rows: JsonObject[];
+  pages: number;
+  error: string | null;
+};
+
+async function fetchFundingBetaHistory(
+  credentials: KrakenCredentials,
+  direction: "deposit" | "withdrawal",
+): Promise<KrakenFundingBetaAudit> {
+  const rows: JsonObject[] = [];
+  let cursor = "";
+  let pages = 0;
+
+  try {
+    while (true) {
+      const path =
+        direction === "deposit"
+          ? "/funding/v1/deposits"
+          : "/funding/v1/withdrawals";
+      const response = await fundingRequest<JsonObject>(
+        path,
+        credentials,
+        cursor ? { cursor } : { limit: 500 },
+      );
+      pages += 1;
+      const list =
+        direction === "deposit"
+          ? response.deposits
+          : response.withdrawals;
+      if (Array.isArray(list)) {
+        rows.push(...list.map((item) => asObject(item)));
+      }
+      const next = stringValue(response.next_cursor);
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+
+    return { rows, pages, error: null };
+  } catch (error) {
+    return {
+      rows,
+      pages,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function publicRequest<T>(path: string): Promise<T> {
   const response = await fetch(`https://api.kraken.com${path}`, {
     cache: "no-store",
