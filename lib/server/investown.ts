@@ -525,7 +525,9 @@ export async function importInvestown(input: InvestownImportInput) {
     }
 
     if (item.kind === "interest" && item.amountCzk !== null) {
-      project.interest += Math.max(0, item.amountCzk);
+      // Preserve the provider sign so a future yield/penalty correction or
+      // reversal cannot silently overstate lifetime project income.
+      project.interest += item.amountCzk;
     }
 
     if (item.reservationDelta !== 0) {
