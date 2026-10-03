@@ -2091,7 +2091,13 @@ export function getAccountDetail(accountIdInput: string) {
               ? -Math.abs(amount)
               : 0,
         rewardDelta:
-          kind === "income" && isExternalRewardCategory(category)
+          kind === "income" &&
+          isExternalRewardCategory(category) &&
+          (
+            String(row.flow_scope || "") === "external" ||
+            provider === "investown" ||
+            provider === "mintos"
+          )
             ? amount
             : 0,
         investmentIncomeCzk:
