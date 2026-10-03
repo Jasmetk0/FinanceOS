@@ -214,6 +214,18 @@ test("unknown Investown transaction types block performance instead of being gue
   assert.ok(history.includes("blokuje P/L a výnos"));
 });
 
+test("Investown rejects incomplete reversal history", () => {
+  const investown = source("lib/server/investown.ts");
+
+  assert.ok(investown.includes("negativeInvestedProjects"));
+  assert.ok(investown.includes("negativeReturnedProjects"));
+  assert.ok(
+    investown.includes(
+      "Some project principal/reservation or reversal counters require transactions",
+    ),
+  );
+});
+
 test("Investown corrections preserve statement signs end to end", () => {
   const semantics = source("lib/investown-semantics.mjs");
   const investown = source("lib/server/investown.ts");
