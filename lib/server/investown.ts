@@ -620,6 +620,14 @@ export async function importInvestown(input: InvestownImportInput) {
     .filter((project) => project.reserved < -0.02)
     .map((project) => project.name)
     .sort();
+  const negativeInvestedProjects = [...projects.values()]
+    .filter((project) => project.invested < -0.02)
+    .map((project) => project.name)
+    .sort();
+  const negativeReturnedProjects = [...projects.values()]
+    .filter((project) => project.returned < -0.02)
+    .map((project) => project.name)
+    .sort();
 
   const derivedPrincipal = [...projects.values()].reduce(
     (sum, project) => sum + Math.max(0, project.principal),
@@ -674,12 +682,15 @@ export async function importInvestown(input: InvestownImportInput) {
     overrideCash === null &&
     overrideTotal === null &&
     (negativePrincipalProjects.length > 0 ||
-      negativeReservationProjects.length > 0)
+      negativeReservationProjects.length > 0 ||
+      negativeInvestedProjects.length > 0 ||
+      negativeReturnedProjects.length > 0)
   ) {
     throw new Error(
       "Investown statement cannot be reconstructed as a complete history. " +
-        "Some projects return more principal/reservations than the file contains. " +
-        "Export the full account history or use the current-balance override.",
+        "Some project principal/reservation or reversal counters require transactions " +
+        "that are missing from the file. Export the full account history or use the " +
+        "current-balance override.",
     );
   }
 
@@ -907,6 +918,8 @@ export async function importInvestown(input: InvestownImportInput) {
       unknownTypes: [...unknownTypes].sort(),
       negativePrincipalProjects,
       negativeReservationProjects,
+      negativeInvestedProjects,
+      negativeReturnedProjects,
     },
   };
 
@@ -1013,6 +1026,8 @@ export async function importInvestown(input: InvestownImportInput) {
       unknownTypes: [...unknownTypes].sort(),
       negativePrincipalProjects,
       negativeReservationProjects,
+      negativeInvestedProjects,
+      negativeReturnedProjects,
       accountingComplete: nativeAccountingComplete,
       accountingReconciliation: {
         checked:
