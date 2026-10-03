@@ -611,15 +611,18 @@ export default async function AccountDetailPage({
           {detail.holdings.length ? (
             isInvestown ? (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1050px] border-collapse text-left">
+                <table className="w-full min-w-[1450px] border-collapse text-left">
                   <thead>
                     <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                       <th className="pb-3 font-medium">Projekt</th>
                       <th className="pb-3 text-right font-medium">Nesplacená jistina</th>
                       <th className="pb-3 text-right font-medium">Rezervováno</th>
                       <th className="pb-3 text-right font-medium">Celkem investováno</th>
-                      <th className="pb-3 text-right font-medium">Splacená jistina</th>
-                      <th className="pb-3 text-right font-medium">Přijaté výnosy</th>
+                      <th className="pb-3 text-right font-medium">Vrácená jistina</th>
+                      <th className="pb-3 text-right font-medium">Běžný / ostatní výnos</th>
+                      <th className="pb-3 text-right font-medium">Bonus + prodlení</th>
+                      <th className="pb-3 text-right font-medium">Přijaté výnosy celkem</th>
+                      <th className="pb-3 text-right font-medium">Vráceno celkem</th>
                       <th className="pb-3 text-right font-medium">Výnos / investováno</th>
                     </tr>
                   </thead>
@@ -627,7 +630,23 @@ export default async function AccountDetailPage({
                     {detail.holdings.map((holding) => {
                       const p2p = holding.p2p;
                       const invested = p2p?.investedPrincipalCzk ?? null;
+                      const returnedPrincipal =
+                        p2p?.returnedPrincipalCzk ?? null;
                       const received = p2p?.receivedInterestCzk ?? null;
+                      const ordinaryAndOther =
+                        p2p
+                          ? (p2p.ordinaryYieldCzk ?? 0) +
+                            (p2p.otherYieldCzk ?? 0)
+                          : null;
+                      const bonusAndLate =
+                        p2p
+                          ? (p2p.bonusYieldCzk ?? 0) +
+                            (p2p.penaltyYieldCzk ?? 0)
+                          : null;
+                      const totalReturned =
+                        returnedPrincipal !== null && received !== null
+                          ? returnedPrincipal + received
+                          : null;
                       const projectReturn =
                         invested !== null && invested > 0 && received !== null
                           ? (received / invested) * 100
@@ -658,10 +677,19 @@ export default async function AccountDetailPage({
                             {money(invested)}
                           </td>
                           <td className="py-4 text-right font-mono text-sm">
-                            {money(p2p?.returnedPrincipalCzk ?? null)}
+                            {money(returnedPrincipal)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(ordinaryAndOther)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(bonusAndLate)}
                           </td>
                           <td className="py-4 text-right font-mono text-sm">
                             {money(received)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(totalReturned)}
                           </td>
                           <td className="py-4 text-right font-mono text-sm">
                             {pct(projectReturn)}
@@ -672,9 +700,11 @@ export default async function AccountDetailPage({
                   </tbody>
                 </table>
                 <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
-                  Výnos / investováno je jednoduchý kumulativní poměr přijatých
-                  výnosů k historicky investované jistině projektu; nejde o XIRR
-                  ani průběžné tržní ocenění.
+                  Běžný / ostatní výnos oddělujeme od bonusů, smluvních pokut
+                  a zákonných úroků z prodlení. „Vráceno celkem“ je vrácená
+                  jistina + všechny projektové výnosy. Výnos / investováno je
+                  jednoduchý kumulativní poměr výnosů k historicky investované
+                  jistině; nejde o XIRR ani průběžné tržní ocenění.
                 </p>
               </div>
             ) : (
