@@ -484,8 +484,10 @@ export function InvestownImporter({
           currentValue: optionalNumber(data.get("currentValue")),
           walletCash: optionalNumber(data.get("walletCash")),
           rows,
-          // Investown imports are cumulative by default. Previously imported
-          // transactions stay in FinanceOS and overlapping rows are deduplicated.
+          // Partial Investown imports are cumulative. A native CSV that covers
+          // the complete stored time span is treated as the provider's current
+          // authoritative statement and may remove rows Investown later revised
+          // or removed.
           replaceExisting: false,
           sourceFormat: nativeFormat ? "investown-native" : "mapped",
         }),
@@ -496,6 +498,8 @@ export function InvestownImporter({
           imported: number;
           newTransactions: number;
           matchedTransactions: number;
+          removedTransactions: number;
+          authoritativeNativeSnapshot: boolean;
           storedTransactions: number;
           skipped: number;
           derived: {
@@ -532,7 +536,13 @@ export function InvestownImporter({
           payload.result.newTransactions.toLocaleString("cs-CZ") +
           " nových · " +
           payload.result.matchedTransactions.toLocaleString("cs-CZ") +
-          " už známých · celkem uloženo " +
+          " už známých" +
+          (payload.result.removedTransactions > 0
+            ? " · " +
+              payload.result.removedTransactions.toLocaleString("cs-CZ") +
+              " historických řádků odstraněno podle novějšího plného výpisu"
+            : "") +
+          " · celkem uloženo " +
           payload.result.storedTransactions.toLocaleString("cs-CZ") +
           " transakcí · " +
           payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
@@ -846,10 +856,11 @@ export function InvestownImporter({
       </form>
 
       <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-        Historii stačí nahrát jednou. Další Investown soubory se přidávají k
-        už uloženým transakcím, překryv se automaticky deduplikuje a FinanceOS
-        vždy z celé známé historie znovu rekonstruuje portfolio i denní
-        snapshoty. Novější soubor tedy může obsahovat jen nové období.
+        Částečné novější výpisy se přidávají k uložené historii a překryv se
+        automaticky deduplikuje. Pokud ale nahraješ nový originální CSV výpis,
+        který pokrývá celý už známý časový rozsah, FinanceOS ho bere jako
+        autoritativní verzi historie Investownu. Tím se odstraní i staré řádky,
+        které Investown v novějším plném výpisu zpětně opravil nebo odebral.
       </p>
     </article>
   );
