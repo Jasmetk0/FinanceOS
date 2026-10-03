@@ -227,6 +227,10 @@ test("Investown corrections preserve statement signs end to end", () => {
   assert.ok(investown.includes("runningInvestmentPnl += amountCzk"));
   assert.ok(analytics.includes("function ownerCapitalDelta"));
   assert.ok(analytics.includes('provider === "investown" || provider === "mintos"'));
+  assert.ok(analytics.includes("const signedProvider"));
+  assert.ok(analytics.includes("signedProvider ? amount : Math.max(0, amount)"));
+  assert.ok(analytics.includes("signedProvider && kind === \"fee\""));
+  assert.ok(analytics.includes('tx.provider === "investown" || tx.provider === "mintos"'));
   assert.ok(analytics.includes('provider === "investown"'));
   assert.ok(db.includes("owner_capital_czk"));
   assert.ok(db.includes("THEN -amount_czk ELSE 0 END"));
