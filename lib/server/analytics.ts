@@ -2221,11 +2221,11 @@ export function getAccountDetail(accountIdInput: string) {
 
     // Investown native statements explicitly tell us which cash movements are
     // yield/income/fees. For this provider there is no mark-to-market P/L: loan
-    // principal is carried at face value. Use the cumulative realized P/L that
-    // the importer persisted in each daily snapshot instead of inferring profit
-    // only as account value minus owner capital. This makes contractual
-    // penalties, statutory late interest, rewards and ordinary yield visible
-    // in the profit/return graph on the exact day they were credited.
+    // principal is carried at face value. Use the cumulative investment P/L
+    // persisted in each daily snapshot instead of inferring profit only as
+    // account value minus owner capital. Contractual penalties, statutory late
+    // interest and ordinary yield raise P/L; referral/promo rewards remain
+    // visible as external reward capital without inflating investment return.
     if (provider === "investown" && row.raw_json) {
       const snapshotRaw = parseRawObject(row.raw_json);
       const investownHistory =
@@ -2254,10 +2254,8 @@ export function getAccountDetail(accountIdInput: string) {
               : metric.externalRewardsCzk,
             profitCzk: explicitProfit,
             returnPct:
-              ownContribution + transferAttribution > 0
-                ? (explicitProfit /
-                    (ownContribution + transferAttribution)) *
-                  100
+              capitalAttributed > 0
+                ? (explicitProfit / capitalAttributed) * 100
                 : null,
           };
         }
