@@ -778,6 +778,10 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedTotalGain,
       derivedRealizedPnl,
       statementRows: prepared.length,
+      typeCounts: Object.fromEntries(
+        [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+      ),
+      unknownTypes: [...unknownTypes].sort(),
       lastImportRows: incomingPrepared.length,
       lastImportNewTransactions: newTransactions,
       lastImportMatchedTransactions: matchedTransactions,
