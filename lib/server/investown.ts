@@ -904,9 +904,9 @@ export async function importInvestown(input: InvestownImportInput) {
     };
   }
 
-  if (input.confirmationToken && input.confirmationToken !== previewToken) {
+  if (!input.confirmationToken || input.confirmationToken !== previewToken) {
     throw new Error(
-      "Investown preview už neodpovídá aktuálním datům. Proveď novou kontrolu před importem.",
+      "Investown import vyžaduje potvrzení přesného aktuálního preview. Proveď nejdřív kontrolu a potom potvrď stejný náhled.",
     );
   }
 
