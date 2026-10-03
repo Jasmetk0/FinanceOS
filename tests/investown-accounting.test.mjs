@@ -156,3 +156,26 @@ test("Investown non-promotional income can contribute to investment P/L", () => 
   assert.equal(summary.investmentPnlCzk, 33);
   assert.equal(summary.totalGainCzk, 33);
 });
+
+
+test("Investown full-statement aggregate keeps penalties positive and referral rewards separate", () => {
+  const summary = summarizeInvestownPerformance([
+    { kind: "interest", amountCzk: 3506.90, category: "Výnos" },
+    { kind: "interest", amountCzk: 18.23, category: "Částečný výnos" },
+    { kind: "interest", amountCzk: 123.94, category: "Bonusový výnos" },
+    { kind: "interest", amountCzk: 9.45, category: "Smluvní pokuta" },
+    { kind: "interest", amountCzk: 1.37, category: "Zákonné úroky z prodlení" },
+    { kind: "income", amountCzk: 1000, category: "referral_reward" },
+    { kind: "income", amountCzk: 1000, category: "referral_reward" },
+  ]);
+
+  assert.equal(summary.interestCzk, 3659.89);
+  assert.equal(summary.investmentPnlCzk, 3659.89);
+  assert.equal(summary.externalRewardsCzk, 2000);
+  assert.equal(summary.totalGainCzk, 5659.89);
+
+  const ownerCapitalCzk = 63293.43 - 10317.88;
+  const expectedValueCzk = ownerCapitalCzk + summary.totalGainCzk;
+  assert.equal(Number(ownerCapitalCzk.toFixed(2)), 52975.55);
+  assert.equal(Number(expectedValueCzk.toFixed(2)), 58635.44);
+});
