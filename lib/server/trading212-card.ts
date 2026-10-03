@@ -289,6 +289,7 @@ function normalizeOccurredAt(value: string): string | null {
 
 function safeJson(value: unknown): JsonObject {
   if (!value) return {};
+  if (typeof value === "object") return value as JsonObject;
   try {
     const parsed = JSON.parse(String(value));
     return parsed && typeof parsed === "object" ? (parsed as JsonObject) : {};
