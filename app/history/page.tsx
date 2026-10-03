@@ -34,7 +34,7 @@ export default function HistoryPage() {
 
       <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
-          label="Známý čistý vlastní kapitál"
+          label="Známé čisté vklady"
           value={data.summary.netContributedCzk}
           format="currency"
           hint="Vklady − výběry − card spend + refundy"
@@ -111,7 +111,7 @@ export default function HistoryPage() {
       <div className="mt-4">
         <SectionCard
           title="Historie vkladů, výběrů a externích odměn"
-          subtitle="Vlastní kapitál je vedený odděleně od cashbacku a dalších externích odměn"
+          subtitle="Čisté vklady jsou vedené odděleně od cashbacku a dalších externích odměn"
         >
           {data.monthlyCapitalFlows.length ? (
             <div className="overflow-x-auto">
@@ -123,7 +123,7 @@ export default function HistoryPage() {
                     <th className="pb-3 text-right font-medium">Běžné výběry</th>
                     <th className="pb-3 text-right font-medium">Card spend</th>
                     <th className="pb-3 text-right font-medium">Card refundy</th>
-                    <th className="pb-3 text-right font-medium">Čistý vlastní kapitál</th>
+                    <th className="pb-3 text-right font-medium">Čisté vklady</th>
                     <th className="pb-3 text-right font-medium">Externí odměny</th>
                     <th className="pb-3 text-right font-medium">Kapitál pro P/L</th>
                   </tr>
@@ -188,10 +188,10 @@ export default function HistoryPage() {
             </p>
           )}
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-            „Čistý vlastní kapitál“ = běžné vklady − běžné výběry − card spend
-            + refundy. Card spend je oddělený, takže se už netváří jako bankovní
-            výběr. „Kapitál pro P/L“ navíc přidává externí odměny, aby cashback
-            nezvyšoval vykázaný investiční výnos.
+            „Čisté vklady“ = běžné vklady − běžné výběry − card spend + refundy.
+            Platby 212 Card se tedy počítají jako výběr stejně jako v Trading 212.
+            „Kapitál pro P/L“ navíc přidává externí odměny, aby cashback nezvyšoval
+            vykázaný investiční výnos.
           </p>
         </SectionCard>
       </div>
@@ -202,6 +202,13 @@ export default function HistoryPage() {
           subtitle="Přepínej hodnotu, čisté vklady, P/L a procentní výnos; filtruj období i jednotlivé platformy"
         >
           <PortfolioHistoryChart data={data.chart} />
+          <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+            U Kraken se fiat vklady a výběry berou z ledger historie. Známý přesun
+            mezi Kraken a vlastní Phantom peněženkou pouze přesune přiřazený kapitál
+            mezi platformami, takže celkové čisté vklady nezmění. Nepropojené
+            crypto transfery zůstávají raději nerozpoznané, než aby FinanceOS
+            vymyslel jejich CZK hodnotu.
+          </p>
         </SectionCard>
       </div>
 
