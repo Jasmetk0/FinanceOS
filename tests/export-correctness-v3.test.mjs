@@ -247,6 +247,9 @@ test("Investown native statement value is reconciled against capital plus gains"
   assert.ok(investown.includes("accountingReconciliation"));
   assert.ok(importer.includes("Účetní rozdíl"));
   assert.ok(importer.includes("Kontrola sedí."));
+  const accountPage = source("app/accounts/[id]/page.tsx");
+  assert.ok(accountPage.includes("Účetní rozdíl"));
+  assert.ok(accountPage.includes("detail.reconciliationDifferenceCzk"));
 });
 
 test("every Investown write requires an exact preview confirmation", () => {
