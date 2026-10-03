@@ -239,9 +239,9 @@ function safeKrakenKeyDiagnostics(keyInfo: JsonObject) {
       ? keyInfo.ipAllowlist.length
       : 0,
     hasHistoryRestriction:
-      (stringValue(keyInfo.queryFrom) &&
+      (Boolean(stringValue(keyInfo.queryFrom)) &&
         stringValue(keyInfo.queryFrom) !== "0") ||
-      (stringValue(keyInfo.queryTo) &&
+      (Boolean(stringValue(keyInfo.queryTo)) &&
         stringValue(keyInfo.queryTo) !== "0"),
     hasExpiry:
       Boolean(stringValue(keyInfo.validUntil)) &&
