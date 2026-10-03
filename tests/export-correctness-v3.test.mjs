@@ -30,6 +30,18 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
+test("Investown charts extend stale imports as a dashed unchanged estimate", () => {
+  const chart = source("components/portfolio-history-chart.tsx");
+
+  assert.ok(chart.includes("const estimateEndDate"));
+  assert.ok(chart.includes("const estimateSourcePoint"));
+  assert.ok(chart.includes('strokeDasharray="7 6"'));
+  assert.ok(chart.includes("odhad do"));
+  assert.ok(chart.includes("Přerušovaná část Investownu je odhad"));
+  assert.ok(chart.includes("metricValue(metric, estimateSourcePoint.total)"));
+  assert.ok(chart.includes("estimateSourcePoint.total.contributedCzk"));
+});
+
 test("Investown charts use step paths instead of diagonal interpolation", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
