@@ -214,7 +214,21 @@ export default async function AccountDetailPage({
           )}
         </SectionCard>
 
-        <SectionCard title="Výkon" subtitle="Cash-flow očištěná analytika">
+        <SectionCard
+          title="Výkon"
+          subtitle="Čisté vklady = externí vklady − externí výběry; interní transfery jsou vedené zvlášť"
+        >
+          {performance?.performanceStatus === "partial" ? (
+            <div className="mb-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+              <span className="font-medium text-[var(--warning)]">
+                Čisté vklady zatím nejsou kompletní.
+              </span>{" "}
+              FinanceOS má {performance.unclassifiedFlowCount} nevyřešených
+              cash-flow záznamů. Známá část zatím vychází na{" "}
+              {money(performance.netContributedCzk)}, ale dokud se nerozliší
+              skutečné vklady od ostatních pohybů, nevydáváme ji za finální číslo.
+            </div>
+          ) : null}
           <dl className="space-y-4 text-sm">
             <div className="flex items-center justify-between gap-4">
               <dt className="text-[var(--muted)]">
@@ -229,8 +243,12 @@ export default async function AccountDetailPage({
               </div>
             ) : null}
             <div className="flex items-center justify-between gap-4">
-              <dt className="text-[var(--muted)]">Čistý vložený kapitál</dt>
-              <dd className="font-mono">{money(performance?.netContributedCzk ?? null)}</dd>
+              <dt className="text-[var(--muted)]">Čisté vklady</dt>
+              <dd className="font-mono">
+                {performance?.performanceStatus === "partial"
+                  ? "—"
+                  : money(performance?.netContributedCzk ?? null)}
+              </dd>
             </div>
             <div className="flex items-center justify-between gap-4">
               <dt className="text-[var(--muted)]">Vklady</dt>
@@ -248,6 +266,16 @@ export default async function AccountDetailPage({
               <dt className="text-[var(--muted)]">Transfery ven</dt>
               <dd className="font-mono">{money(performance?.transferOutCzk ?? null)}</dd>
             </div>
+            {performance &&
+            (Math.abs(performance.transferInCzk) > 0.01 ||
+              Math.abs(performance.transferOutCzk) > 0.01) ? (
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-[var(--muted)]">Kapitál přiřazený účtu</dt>
+                <dd className="font-mono">
+                  {money(performance.capitalAttributedCzk)}
+                </dd>
+              </div>
+            ) : null}
             <div className="border-t border-white/7 pt-4">
               {isInvestown ? (
                 <>
