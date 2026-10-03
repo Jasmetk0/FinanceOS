@@ -167,7 +167,16 @@ test("Investown imports are cumulative and deduplicated", () => {
   );
   assert.ok(importer.includes("replaceExisting: false"));
   assert.ok(importer.includes("už známých"));
-  assert.ok(importer.includes("Historii stačí nahrát jednou"));
+  assert.ok(
+    importer.includes(
+      "Částečné novější výpisy se přidávají k uložené historii",
+    ),
+  );
+  assert.ok(
+    importer.includes(
+      "autoritativní verzi historie Investownu",
+    ),
+  );
 });
 
 test("Investown statement history is never carried past source coverage", () => {
