@@ -77,7 +77,7 @@ test("P2P charts extend stale imports as a dashed unchanged estimate", () => {
   assert.ok(chart.includes("odhad do"));
   assert.ok(chart.includes("Přerušovaná část je odhad"));
   assert.ok(chart.includes("metricValue(metric, estimateSourcePoint.total)"));
-  assert.ok(chart.includes("estimateSourcePoint.total.contributedCzk"));
+  assert.ok(chart.includes("netDepositedCzk(estimateSourcePoint.total)"));
 });
 
 test("Investown and Mintos charts use step paths instead of diagonal interpolation", () => {
