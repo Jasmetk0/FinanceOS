@@ -43,7 +43,7 @@ export default function ConnectionsPage() {
             title="Kraken Pro accounting coverage"
             subtitle="BalanceEx, Earn, wallet transfers, cost basis a API-key coverage"
           >
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
               <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
                 <p className="text-xs text-[var(--muted)]">Balance source</p>
                 <p className="mt-2 text-sm font-semibold">
@@ -114,6 +114,26 @@ export default function ConnectionsPage() {
                 <p className="mt-1 text-[10px] text-[var(--muted)]">
                   Export API{" "}
                   {krakenStatus.key.exportDataEnabled ? "povoleno" : "nepovoleno"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">History audit</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {krakenStatus.historyAudit.mode === "full"
+                    ? "Plný scan"
+                    : krakenStatus.historyAudit.mode === "incremental"
+                      ? "Incremental"
+                      : "čeká na nový sync"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  trades{" "}
+                  {krakenStatus.historyAudit.trades.providerCount.toLocaleString(
+                    "cs-CZ",
+                  )}{" "}
+                  · ledger{" "}
+                  {krakenStatus.historyAudit.ledgers.providerCount.toLocaleString(
+                    "cs-CZ",
+                  )}
                 </p>
               </div>
               <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
