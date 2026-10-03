@@ -893,6 +893,50 @@ test("History page exposes unresolved flow gaps instead of folding them into dep
 });
 
 
+test("Kraken v2 uses BalanceEx, Earn and read-only key diagnostics", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes('"/0/private/BalanceEx"'));
+  assert.ok(kraken.includes('"/0/private/Earn/Allocations"'));
+  assert.ok(kraken.includes("safeKrakenKeyDiagnostics"));
+  assert.ok(kraken.includes("holdTrade"));
+  assert.ok(kraken.includes("available: balance + credit - creditUsed - holdTrade"));
+  assert.ok(kraken.includes("balanceBucket"));
+  assert.ok(kraken.includes("fetchMarginStatus"));
+  assert.ok(kraken.includes("financeOsKrakenV2"));
+  assert.ok(connections.includes("Kraken Pro accounting coverage"));
+  assert.ok(connections.includes("BalanceEx"));
+  assert.ok(connections.includes("API historie"));
+});
+
+test("Kraken enriches both deposit and withdrawal wallet metadata without changing accounting scope", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+
+  assert.ok(kraken.includes('"/0/private/DepositStatus"'));
+  assert.ok(kraken.includes('"/0/private/WithdrawStatus"'));
+  assert.ok(kraken.includes('"wallet_transfer_in_unclassified"'));
+  assert.ok(kraken.includes('"wallet_transfer_out_unclassified"'));
+  assert.ok(kraken.includes("financeOsFundingTxid"));
+  assert.ok(kraken.includes("financeOsFundingAddress"));
+  assert.ok(kraken.includes("financeOsFundingOriginators"));
+  assert.ok(kraken.includes("depositStatuses.rows"));
+  assert.ok(kraken.includes("withdrawalStatuses.rows"));
+});
+
+test("Kraken status never exposes API key material", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const statusStart = kraken.indexOf("export function getKrakenStatus");
+  const statusBlock = kraken.slice(statusStart);
+
+  assert.ok(statusStart >= 0);
+  assert.ok(statusBlock.includes("exportDataEnabled"));
+  assert.ok(statusBlock.includes("hasHistoryRestriction"));
+  assert.ok(statusBlock.includes("ipAllowlistCount"));
+  assert.equal(statusBlock.includes("apiSecret"), false);
+  assert.equal(statusBlock.includes("credentials.apiKey"), false);
+});
+
 test("Kraken resync preserves owned Phantom links and wallet lot movements", () => {
   const kraken = source("lib/server/integrations/kraken.ts");
   assert.ok(kraken.includes("ownedWalletLink"));
