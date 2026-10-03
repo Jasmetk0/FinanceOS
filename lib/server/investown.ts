@@ -906,7 +906,9 @@ export async function importInvestown(input: InvestownImportInput) {
           ? "external"
           : item.kind === "transfer"
             ? "internal"
-            : "not_applicable",
+            : item.kind === "adjustment"
+              ? "unclassified"
+              : "not_applicable",
       raw: {
         ...row,
         originalTimezone: row.timezone || null,
