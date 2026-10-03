@@ -589,7 +589,7 @@ function ledgerCategory(type: string, currency: string, subtype: string) {
   return subtype || null;
 }
 
-interface KrakenWithdrawalStatus {
+interface KrakenFundingStatus {
   asset?: string;
   refid?: string;
   txid?: string | null;
@@ -600,46 +600,73 @@ interface KrakenWithdrawalStatus {
   status?: string;
   method?: string;
   network?: string;
+  originators?: unknown[];
 }
 
-async function fetchRecentWithdrawalStatuses(
+async function fetchRecentLegacyFundingStatuses(
   credentials: KrakenCredentials,
-): Promise<KrakenWithdrawalStatus[]> {
+  direction: "deposit" | "withdrawal",
+): Promise<{
+  rows: KrakenFundingStatus[];
+  error: string | null;
+}> {
   try {
+    const path =
+      direction === "deposit"
+        ? "/0/private/DepositStatus"
+        : "/0/private/WithdrawStatus";
     const result = await privateRequest<unknown>(
-      "/0/private/WithdrawStatus",
+      path,
       credentials,
       { cursor: true },
     );
     if (Array.isArray(result)) {
-      return result.map((item) => asObject(item) as KrakenWithdrawalStatus);
+      return {
+        rows: result.map((item) => asObject(item) as KrakenFundingStatus),
+        error: null,
+      };
     }
     const object = asObject(result);
-    const withdrawals = object.withdrawals;
-    return Array.isArray(withdrawals)
-      ? withdrawals.map((item) => asObject(item) as KrakenWithdrawalStatus)
-      : [];
-  } catch {
-    // Ledger sync still remains useful if Kraken does not expose funding status
-    // for this account/key. The transfer stays explicitly unclassified.
-    return [];
+    const list =
+      direction === "deposit" ? object.deposits : object.withdrawals;
+    return {
+      rows: Array.isArray(list)
+        ? list.map((item) => asObject(item) as KrakenFundingStatus)
+        : [],
+      error: null,
+    };
+  } catch (error) {
+    // These are deprecated Kraken funding endpoints. They remain a best-effort
+    // enrichment fallback while the ledger remains the accounting source of
+    // truth. Failing enrichment must never erase or invent cash flow.
+    return {
+      rows: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
 function enrichKrakenWalletTransfers(
-  statuses: KrakenWithdrawalStatus[],
+  deposits: KrakenFundingStatus[],
+  withdrawals: KrakenFundingStatus[],
 ) {
   const db = getDb();
-  const byRef = new Map(
-    statuses
+  const depositByRef = new Map(
+    deposits
+      .filter((item) => item.refid)
+      .map((item) => [String(item.refid), item]),
+  );
+  const withdrawalByRef = new Map(
+    withdrawals
       .filter((item) => item.refid)
       .map((item) => [String(item.refid), item]),
   );
 
   const rows = db
     .prepare(
-      "SELECT id, raw_json FROM transactions " +
-        "WHERE provider = 'kraken' AND category = 'wallet_transfer_out_unclassified'",
+      "SELECT id, category, raw_json FROM transactions " +
+        "WHERE provider = 'kraken' AND category IN (" +
+        "'wallet_transfer_in_unclassified', 'wallet_transfer_out_unclassified')",
     )
     .all();
 
@@ -656,12 +683,22 @@ function enrichKrakenWalletTransfers(
     }
 
     const refid = stringValue(raw.refid);
-    const status = byRef.get(refid);
+    const direction = String(row.category).includes("_in_")
+      ? "deposit"
+      : "withdrawal";
+    const status =
+      direction === "deposit"
+        ? depositByRef.get(refid)
+        : withdrawalByRef.get(refid);
     if (!status) continue;
 
-    const destination = stringValue(status.info);
+    const address = stringValue(status.info);
     const txid = status.txid ? String(status.txid) : "";
-    const counterparty = destination || txid || null;
+    const originators = Array.isArray(status.originators)
+      ? status.originators.map(String).filter(Boolean)
+      : [];
+    const counterparty =
+      address || originators[0] || txid || null;
     const sourceLabel = [status.network, status.method]
       .filter(Boolean)
       .map(String)
@@ -669,10 +706,18 @@ function enrichKrakenWalletTransfers(
 
     update.run(
       counterparty,
-      sourceLabel || "Kraken on-chain withdrawal",
+      sourceLabel ||
+        (direction === "deposit"
+          ? "Kraken on-chain deposit"
+          : "Kraken on-chain withdrawal"),
       JSON.stringify({
         ...raw,
-        financeOsWithdrawalStatus: status,
+        [direction === "deposit"
+          ? "financeOsDepositStatus"
+          : "financeOsWithdrawalStatus"]: status,
+        financeOsFundingTxid: txid || null,
+        financeOsFundingAddress: address || null,
+        financeOsFundingOriginators: originators,
       }),
       String(row.id),
     );
