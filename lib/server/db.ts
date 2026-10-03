@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import {
   classifyInvestownKind,
+  investownIncomeCategory,
   isPerformanceExternalRewardCategory,
 } from "@/lib/investown-semantics.mjs";
 import { getDatabasePath } from "@/lib/server/paths";
@@ -456,7 +457,7 @@ function repairInvestownClassificationAudit(db: DatabaseSync) {
     ORDER BY occurred_at ASC, external_id ASC
   `);
   const updateTransaction = db.prepare(
-    "UPDATE transactions SET flow_scope = ? WHERE id = ?",
+    "UPDATE transactions SET kind = ?, category = ?, flow_scope = ?, raw_json = ? WHERE id = ?",
   );
   const updateAccount = db.prepare(
     "UPDATE accounts SET raw_json = ? WHERE id = ?",
@@ -488,11 +489,60 @@ function repairInvestownClassificationAudit(db: DatabaseSync) {
           typeof raw.projectType === "string" ? raw.projectType : undefined,
       });
 
-      if (classified === "adjustment" || String(row.kind) === "adjustment") {
+      if (classified === "adjustment") {
         unknownTypes.add(type);
-        if (String(row.flow_scope) !== "unclassified") {
-          updateTransaction.run("unclassified", String(row.id));
+        if (
+          String(row.kind) !== "adjustment" ||
+          String(row.flow_scope) !== "unclassified"
+        ) {
+          updateTransaction.run(
+            "adjustment",
+            type,
+            "unclassified",
+            JSON.stringify({
+              ...raw,
+              financeOsClassification: "adjustment",
+            }),
+            String(row.id),
+          );
         }
+        continue;
+      }
+
+      // If a later FinanceOS version learns a provider wording that used to
+      // be stored as an unknown adjustment, repair that row automatically.
+      if (String(row.kind) === "adjustment") {
+        const repairedCategory =
+          classified === "income"
+            ? investownIncomeCategory({
+                type,
+                description:
+                  typeof raw.description === "string"
+                    ? raw.description
+                    : undefined,
+                projectType:
+                  typeof raw.projectType === "string"
+                    ? raw.projectType
+                    : undefined,
+              })
+            : type;
+        const repairedScope =
+          classified === "deposit" || classified === "withdrawal"
+            ? "external"
+            : classified === "transfer"
+              ? "internal"
+              : "not_applicable";
+
+        updateTransaction.run(
+          classified,
+          repairedCategory,
+          repairedScope,
+          JSON.stringify({
+            ...raw,
+            financeOsClassification: classified,
+          }),
+          String(row.id),
+        );
       }
     }
 
