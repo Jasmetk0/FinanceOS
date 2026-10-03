@@ -1317,6 +1317,14 @@ export async function syncKraken() {
     });
     const trades = tradeHistory.entries;
     const ledgers = ledgerHistory.entries;
+    const fundingBetaDeposits = await fetchFundingBetaHistory(
+      credentials,
+      "deposit",
+    );
+    const fundingBetaWithdrawals = await fetchFundingBetaHistory(
+      credentials,
+      "withdrawal",
+    );
     const depositStatuses = await fetchRecentLegacyFundingStatuses(
       credentials,
       "deposit",
@@ -1404,11 +1412,20 @@ export async function syncKraken() {
         earn,
         margin,
         funding: {
+          betaDepositRows: fundingBetaDeposits.rows.length,
+          betaWithdrawalRows: fundingBetaWithdrawals.rows.length,
+          betaDepositPages: fundingBetaDeposits.pages,
+          betaWithdrawalPages: fundingBetaWithdrawals.pages,
+          betaDepositError: fundingBetaDeposits.error,
+          betaWithdrawalError: fundingBetaWithdrawals.error,
           legacyDepositStatusRows: depositStatuses.rows.length,
           legacyWithdrawalStatusRows: withdrawalStatuses.rows.length,
           legacyDepositStatusError: depositStatuses.error,
           legacyWithdrawalStatusError: withdrawalStatuses.error,
-          api: "legacy_status_fallback",
+          api:
+            fundingBetaDeposits.error || fundingBetaWithdrawals.error
+              ? "funding_beta_with_legacy_fallback"
+              : "funding_beta",
         },
         historyAudit: {
           mode: deepAudit ? "full" : "incremental",
@@ -1584,6 +1601,8 @@ export async function syncKraken() {
     enrichKrakenWalletTransfers(
       depositStatuses.rows,
       withdrawalStatuses.rows,
+      fundingBetaDeposits.rows,
+      fundingBetaWithdrawals.rows,
     );
     rebuildKrakenTransferBookValuesAndCostBasis();
     recordSnapshot(accountIdValue);
@@ -1593,6 +1612,8 @@ export async function syncKraken() {
       holdings: holdings.length,
       trades: trades.length,
       ledgers: ledgers.length,
+      fundingBetaDeposits: fundingBetaDeposits.rows.length,
+      fundingBetaWithdrawals: fundingBetaWithdrawals.rows.length,
       enrichedDeposits: depositStatuses.rows.length,
       enrichedWithdrawals: withdrawalStatuses.rows.length,
       earnAllocations: earn.activeStrategies,
