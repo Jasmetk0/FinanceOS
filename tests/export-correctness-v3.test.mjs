@@ -214,6 +214,26 @@ test("unknown Investown transaction types block performance instead of being gue
   assert.ok(history.includes("blokuje P/L a výnos"));
 });
 
+test("Investown corrections preserve statement signs end to end", () => {
+  const semantics = source("lib/investown-semantics.mjs");
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const db = source("lib/server/db.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(semantics.includes("return -amount"));
+  assert.ok(semantics.includes("feesCzk -= amount"));
+  assert.ok(investown.includes("const feeCost = -amountCzk"));
+  assert.ok(investown.includes("runningInvestmentPnl += amountCzk"));
+  assert.ok(analytics.includes("function ownerCapitalDelta"));
+  assert.ok(analytics.includes('provider === "investown" || provider === "mintos"'));
+  assert.ok(analytics.includes('provider === "investown"'));
+  assert.ok(db.includes("owner_capital_czk"));
+  assert.ok(db.includes("THEN -amount_czk ELSE 0 END"));
+  assert.ok(importer.includes("investownPrincipalDelta"));
+  assert.ok(importer.includes("investownReservationDelta"));
+});
+
 test("Investown native statement value is reconciled against capital plus gains", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
