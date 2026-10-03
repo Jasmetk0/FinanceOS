@@ -809,6 +809,8 @@ async function fetchRecentLegacyFundingStatuses(
 function enrichKrakenWalletTransfers(
   deposits: KrakenFundingStatus[],
   withdrawals: KrakenFundingStatus[],
+  betaDeposits: JsonObject[],
+  betaWithdrawals: JsonObject[],
 ) {
   const db = getDb();
   const depositByRef = new Map(
@@ -821,10 +823,20 @@ function enrichKrakenWalletTransfers(
       .filter((item) => item.refid)
       .map((item) => [String(item.refid), item]),
   );
+  const betaDepositByRef = new Map(
+    betaDeposits
+      .map((item) => [stringValue(item.deposit_id), item] as const)
+      .filter(([id]) => Boolean(id)),
+  );
+  const betaWithdrawalByRef = new Map(
+    betaWithdrawals
+      .map((item) => [stringValue(item.withdrawal_id), item] as const)
+      .filter(([id]) => Boolean(id)),
+  );
 
   const rows = db
     .prepare(
-      "SELECT id, category, raw_json FROM transactions " +
+      "SELECT id, category, counterparty_ref, raw_json FROM transactions " +
         "WHERE provider = 'kraken' AND category IN (" +
         "'wallet_transfer_in_unclassified', 'wallet_transfer_out_unclassified')",
     )
@@ -850,31 +862,43 @@ function enrichKrakenWalletTransfers(
       direction === "deposit"
         ? depositByRef.get(refid)
         : withdrawalByRef.get(refid);
-    if (!status) continue;
+    const betaStatus =
+      direction === "deposit"
+        ? betaDepositByRef.get(refid)
+        : betaWithdrawalByRef.get(refid);
+    if (!status && !betaStatus) continue;
 
-    const address = stringValue(status.info);
-    const txid = status.txid ? String(status.txid) : "";
-    const originators = Array.isArray(status.originators)
-      ? status.originators.map(String).filter(Boolean)
-      : [];
+    const address = status ? stringValue(status.info) : "";
+    const txid = status?.txid ? String(status.txid) : "";
+    const originators =
+      status && Array.isArray(status.originators)
+        ? status.originators.map(String).filter(Boolean)
+        : [];
     const counterparty =
-      address || originators[0] || txid || null;
-    const sourceLabel = [status.network, status.method]
-      .filter(Boolean)
-      .map(String)
-      .join(" · ");
+      address ||
+      originators[0] ||
+      txid ||
+      stringValue(row.counterparty_ref) ||
+      null;
+    const sourceLabel = status
+      ? [status.network, status.method]
+          .filter(Boolean)
+          .map(String)
+          .join(" · ")
+      : "";
 
     update.run(
       counterparty,
       sourceLabel ||
         (direction === "deposit"
-          ? "Kraken on-chain deposit"
-          : "Kraken on-chain withdrawal"),
+          ? "Kraken Funding Beta deposit"
+          : "Kraken Funding Beta withdrawal"),
       JSON.stringify({
         ...raw,
         [direction === "deposit"
           ? "financeOsDepositStatus"
-          : "financeOsWithdrawalStatus"]: status,
+          : "financeOsWithdrawalStatus"]: status ?? null,
+        financeOsFundingBeta: betaStatus ?? null,
         financeOsFundingTxid: txid || null,
         financeOsFundingAddress: address || null,
         financeOsFundingOriginators: originators,
