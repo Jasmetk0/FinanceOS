@@ -249,7 +249,7 @@ test("Investown native statement value is reconciled against capital plus gains"
   assert.ok(importer.includes("Kontrola sedí."));
 });
 
-test("Investown native imports are previewed before destructive statement reconciliation", () => {
+test("every Investown write requires an exact preview confirmation", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
   const route = source("app/api/import/investown/route.ts");
@@ -259,7 +259,11 @@ test("Investown native imports are previewed before destructive statement reconc
   assert.ok(investown.includes("confirmationToken?: string"));
   assert.ok(investown.includes("const previewToken = crypto"));
   assert.ok(investown.includes("if (input.dryRun)"));
-  assert.ok(investown.includes("input.confirmationToken !== previewToken"));
+  assert.ok(
+    investown.includes(
+      "!input.confirmationToken || input.confirmationToken !== previewToken",
+    ),
+  );
   assert.ok(investown.includes("if (removedTransactions > 0)"));
   assert.ok(importer.includes("Preview změn před importem"));
   assert.ok(importer.includes("Potvrdit a provést import"));
