@@ -639,6 +639,7 @@ export function InvestownImporter({
 
       router.refresh();
     } catch (error) {
+      if (pendingPreview) setPendingPreview(null);
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
