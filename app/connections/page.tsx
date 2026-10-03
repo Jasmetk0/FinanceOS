@@ -89,7 +89,12 @@ export default function ConnectionsPage() {
                   {krakenStatus.funding.unclassifiedTransfers.toLocaleString(
                     "cs-CZ",
                   )}{" "}
-                  čeká na spárování
+                  čeká na spárování · Beta{" "}
+                  {(
+                    krakenStatus.funding.betaDepositRows +
+                    krakenStatus.funding.betaWithdrawalRows
+                  ).toLocaleString("cs-CZ")}{" "}
+                  funding záznamů
                 </p>
               </div>
               <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
@@ -156,6 +161,8 @@ export default function ConnectionsPage() {
             krakenStatus.margin.openPositions > 0 ||
             krakenStatus.funding.unclassifiedTransfers > 0 ||
             krakenStatus.earn.error ||
+            krakenStatus.funding.betaDepositError ||
+            krakenStatus.funding.betaWithdrawalError ||
             krakenStatus.funding.depositStatusError ||
             krakenStatus.funding.withdrawalStatusError ? (
               <div className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
@@ -171,6 +178,16 @@ export default function ConnectionsPage() {
                   : ""}
                 {krakenStatus.earn.error
                   ? "Earn diagnostika: " + krakenStatus.earn.error + ". "
+                  : ""}
+                {krakenStatus.funding.betaDepositError
+                  ? "Funding Beta deposits: " +
+                    krakenStatus.funding.betaDepositError +
+                    ". "
+                  : ""}
+                {krakenStatus.funding.betaWithdrawalError
+                  ? "Funding Beta withdrawals: " +
+                    krakenStatus.funding.betaWithdrawalError +
+                    ". "
                   : ""}
                 {krakenStatus.funding.depositStatusError
                   ? "Deposit enrichment: " +
