@@ -50,14 +50,14 @@ export default function PerformancePage() {
           hint={
             data.totals.performanceStatus === "partial"
               ? "Pouze bezpečně klasifikované vlastní vklady/výběry"
-              : "Vlastní kapitál bez card rewards"
+              : "Vlastní kapitál bez externích odměn"
           }
         />
         <StatCard
           label="Externí odměny"
           value={data.totals.externalRewardsCzk}
           format="currency"
-          hint="Např. Trading 212 cashback; není to vlastní vklad ani tržní výnos"
+          hint="Např. Trading 212 cashback nebo Investown referral/promo; není to vlastní vklad ani investiční výnos"
           positive={data.totals.externalRewardsCzk > 0}
         />
         <StatCard

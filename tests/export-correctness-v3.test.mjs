@@ -103,36 +103,217 @@ test("Investown daily accounting uses statement-local dates, not UTC dates", () 
   assert.ok(accountPage.includes("provider={detail.provider}"));
 });
 
-test("Investown daily snapshots persist and graph explicit realized P/L", () => {
+test("Investown daily snapshots persist separate investment P/L and external rewards", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
 
-  assert.ok(investown.includes("runningRealizedPnl"));
+  assert.ok(investown.includes("runningInvestmentPnl"));
+  assert.ok(investown.includes("runningExternalRewards"));
+  assert.ok(investown.includes("runningTotalGain"));
   assert.ok(investown.includes("financeOsInvestownHistory"));
-  assert.ok(investown.includes("realizedPnlCzk: snapshot.realizedPnl"));
+  assert.ok(investown.includes("realizedPnlCzk: snapshot.investmentPnl"));
+  assert.ok(investown.includes("externalRewardsCzk: snapshot.externalRewards"));
+  assert.ok(investown.includes("totalGainCzk: snapshot.totalGain"));
   assert.ok(analytics.includes('provider === "investown"'));
   assert.ok(analytics.includes("financeOsInvestownHistory"));
   assert.ok(analytics.includes("const investmentPnl = Number(investownHistory.investmentPnlCzk)"));
-  assert.ok(analytics.includes("const legacyPnl = Number(investownHistory.realizedPnlCzk)"));
-  assert.ok(analytics.includes("const explicitProfit = Number.isFinite(investmentPnl)"));
+  assert.ok(analytics.includes("const explicitRewards = Number(investownHistory.externalRewardsCzk)"));
+  assert.ok(analytics.includes("explicitProfit / capitalAttributed"));
+  assert.equal(
+    analytics.includes("explicitProfit /\n                    (ownContribution + transferAttribution)"),
+    false,
+  );
 });
 
-test("Investown realized PnL counts investor compensation and income positively", () => {
+test("Investown realized P/L is investment-only while external rewards stay separate", () => {
+  const semantics = source("lib/investown-semantics.mjs");
   const investown = source("lib/server/investown.ts");
   const db = source("lib/server/db.ts");
+  const analytics = source("lib/server/analytics.ts");
 
-  assert.ok(investown.includes('"Smluvní pokuta": "interest"'));
-  assert.ok(investown.includes('"Zákonné úroky z prodlení": "interest"'));
-  assert.ok(investown.includes('"Odměna": "income"'));
-  assert.ok(investown.includes("derivedInterest + derivedOtherIncome - derivedFees"));
+  assert.ok(semantics.includes('"Smluvní pokuta z prodlení": "interest"'));
+  assert.ok(semantics.includes('"Zákonný úrok z prodlení": "interest"'));
+  assert.ok(semantics.includes('"Odměna": "income"'));
+  assert.ok(semantics.includes("investmentPnlCzk"));
+  assert.ok(semantics.includes("externalRewardsCzk"));
+  assert.ok(semantics.includes("totalGainCzk"));
+
+  assert.ok(investown.includes("derivedInvestmentPnl"));
+  assert.ok(investown.includes("derivedExternalRewards"));
+  assert.ok(investown.includes("derivedTotalGain"));
+  assert.ok(investown.includes("const derivedRealizedPnl = derivedInvestmentPnl"));
   assert.ok(investown.includes("realizedPnl: derivedRealizedPnl"));
   assert.ok(investown.includes("realizedPnlCzk: derivedRealizedPnl"));
 
+  assert.ok(analytics.includes("'referral_reward'"));
+  assert.ok(analytics.includes("'campaign_reward'"));
+  assert.ok(analytics.includes("isExternalRewardCategory"));
+
   assert.ok(db.includes("function repairInvestownRealizedPnl"));
-  assert.ok(db.includes("kind = 'interest'"));
-  assert.ok(db.includes("kind = 'income'"));
-  assert.ok(db.includes("kind = 'fee'"));
+  assert.ok(db.includes("external_rewards_czk"));
+  assert.ok(db.includes("investment_income_czk"));
+  assert.ok(db.includes("derivedInvestmentPnl"));
+  assert.ok(db.includes("derivedExternalRewards"));
+  assert.ok(db.includes("derivedOrdinaryYield"));
+  assert.ok(db.includes("derivedBonusYield"));
+  assert.ok(db.includes("derivedPenaltyYield"));
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
+});
+
+test("legacy Investown classification audit is repaired with current semantics", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("function repairInvestownClassificationAudit"));
+  assert.ok(db.includes("classifyInvestownKind"));
+  assert.ok(db.includes("investownIncomeCategory"));
+  assert.ok(db.includes("unknownTypes"));
+  assert.ok(db.includes('"unclassified"'));
+  assert.ok(db.includes('String(row.kind) === "adjustment"'));
+  assert.ok(db.includes("const requiresPortfolioRebuild"));
+  assert.ok(db.includes('classified === "transfer"'));
+  assert.ok(db.includes("financeOsClassification: classified"));
+  assert.ok(db.includes("repairInvestownClassificationAudit(db)"));
+});
+
+test("legacy Investown snapshots are repaired to investment-only P/L", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("function repairInvestownSnapshotPerformance"));
+  assert.ok(db.includes("raw.sourceDate"));
+  assert.ok(db.includes("isPerformanceExternalRewardCategory"));
+  assert.ok(db.includes("investmentPnlCzk"));
+  assert.ok(db.includes("externalRewardsCzk"));
+  assert.ok(db.includes("totalGainCzk"));
+  assert.ok(db.includes("repairInvestownSnapshotPerformance(db)"));
+});
+
+test("unknown Investown transaction types block performance instead of being guessed", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+
+  assert.ok(investown.includes('item.kind === "adjustment"'));
+  assert.ok(investown.includes('? "unclassified"'));
+  assert.ok(investown.includes("const nativeAccountingComplete"));
+  assert.ok(investown.includes("unknownTypes.size === 0"));
+
+  assert.ok(
+    analytics.includes(
+      "t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')",
+    ),
+  );
+  assert.ok(
+    analytics.includes(
+      "kind IN ('deposit', 'withdrawal', 'adjustment')",
+    ),
+  );
+  assert.ok(analytics.includes("performanceGapRows"));
+  assert.ok(analytics.includes("transactionAccountingDate(row)"));
+  assert.ok(analytics.includes("unresolvedAdjustmentCount"));
+  assert.ok(history.includes("unresolvedAdjustmentCount"));
+  assert.ok(history.includes("blokuje P/L a výnos"));
+});
+
+test("Investown rejects incomplete reversal history", () => {
+  const investown = source("lib/server/investown.ts");
+
+  assert.ok(investown.includes("negativeInvestedProjects"));
+  assert.ok(investown.includes("negativeReturnedProjects"));
+  assert.ok(
+    investown.includes(
+      "Some project principal/reservation or reversal counters require transactions",
+    ),
+  );
+});
+
+test("Investown corrections preserve statement signs end to end", () => {
+  const semantics = source("lib/investown-semantics.mjs");
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const db = source("lib/server/db.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(semantics.includes("return -amount"));
+  assert.ok(semantics.includes("feesCzk -= amount"));
+  assert.ok(investown.includes("const feeCost = -amountCzk"));
+  assert.ok(investown.includes("runningInvestmentPnl += amountCzk"));
+  assert.ok(analytics.includes("function ownerCapitalDelta"));
+  assert.ok(analytics.includes('provider === "investown" || provider === "mintos"'));
+  assert.ok(analytics.includes("const signedProvider"));
+  assert.ok(analytics.includes("signedProvider ? amount : Math.max(0, amount)"));
+  assert.ok(analytics.includes("signedProvider && kind === \"fee\""));
+  assert.ok(analytics.includes('tx.provider === "investown" || tx.provider === "mintos"'));
+  assert.ok(analytics.includes('provider === "investown"'));
+  assert.ok(db.includes("owner_capital_czk"));
+  assert.ok(db.includes("THEN -amount_czk ELSE 0 END"));
+  assert.ok(importer.includes("investownPrincipalDelta"));
+  assert.ok(importer.includes("investownReservationDelta"));
+});
+
+test("native Investown CSV cannot be reinterpreted as a non-CZK statement", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes('input.sourceFormat === "investown-native"'));
+  assert.ok(investown.includes('? "CZK"'));
+  assert.ok(importer.includes("native Investown = CZK"));
+  assert.ok(importer.includes("disabled={nativeFormat}"));
+});
+
+test("Investown import status reports full accounting health", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("accountingComplete: boolean"));
+  assert.ok(investown.includes("reconciliationStatus"));
+  assert.ok(investown.includes("reconciliationDifferenceCzk"));
+  assert.ok(importer.includes("accounting verified"));
+  assert.ok(importer.includes("accounting review"));
+  assert.ok(importer.includes("Účetní rozdíl"));
+});
+
+test("Investown native statement value is reconciled against capital plus gains", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("const derivedOwnerCapitalCzk"));
+  assert.ok(investown.includes("const accountingExpectedValueCzk"));
+  assert.ok(investown.includes("const accountingDifferenceCzk"));
+  assert.ok(investown.includes("Math.abs(accountingDifferenceCzk) <= 0.05"));
+  assert.ok(investown.includes("Investown účetní kontrola nesedí o "));
+  assert.ok(investown.includes("reconciliationDifference: accountingDifferenceCzk ?? 0"));
+  assert.ok(investown.includes("accountingReconciliation"));
+  assert.ok(importer.includes("Účetní rozdíl"));
+  assert.ok(importer.includes("Kontrola sedí."));
+  const accountPage = source("app/accounts/[id]/page.tsx");
+  assert.ok(accountPage.includes("Účetní rozdíl"));
+  assert.ok(accountPage.includes("detail.reconciliationDifferenceCzk"));
+});
+
+test("every Investown write requires an exact preview confirmation", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+  const route = source("app/api/import/investown/route.ts");
+
+  assert.ok(investown.includes("dryRun?: boolean"));
+  assert.ok(investown.includes("allowAuthoritativeRemovals?: boolean"));
+  assert.ok(investown.includes("confirmationToken?: string"));
+  assert.ok(investown.includes("const previewToken = crypto"));
+  assert.ok(investown.includes("if (input.dryRun)"));
+  assert.ok(
+    investown.includes(
+      "!input.confirmationToken || input.confirmationToken !== previewToken",
+    ),
+  );
+  assert.ok(investown.includes("if (removedTransactions > 0)"));
+  assert.ok(importer.includes("Preview změn před importem"));
+  assert.ok(importer.includes("Potvrdit a provést import"));
+  assert.ok(importer.includes("pendingPreview.previewToken"));
+  assert.ok(importer.includes("dryRun"));
+  assert.ok(route.includes("allowAuthoritativeRemovals"));
+  assert.ok(route.includes("confirmationToken"));
+  assert.ok(route.includes("replaceExisting: body.replaceExisting === true"));
+  assert.equal(route.includes("replaceExisting: body.replaceExisting !== false"), false);
 });
 
 test("full native Investown statements remove rows deleted by the provider", () => {
@@ -169,14 +350,33 @@ test("Investown imports are cumulative and deduplicated", () => {
   assert.ok(importer.includes("už známých"));
   assert.ok(
     importer.includes(
-      "Částečné novější výpisy se přidávají k uložené historii",
+      "Každý import nejdřív proběhne jako read-only preview",
     ),
   );
-  assert.ok(
-    importer.includes(
-      "autoritativní verzi historie Investownu",
-    ),
-  );
+  assert.ok(importer.includes("autoritativní verzi historie"));
+  assert.ok(importer.includes("po výslovném druhém"));
+});
+
+test("legacy Investown accounts backfill provider-local coverage dates", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("const coverageRows = db.prepare"));
+  assert.ok(db.includes("rowRaw.sourceDate"));
+  assert.ok(db.includes("statementFirstDate"));
+  assert.ok(db.includes("statementLastDate"));
+});
+
+test("Investown freshness uses provider-local coverage dates", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+
+  assert.ok(investown.includes("const statementFirstDate"));
+  assert.ok(investown.includes("const statementLastDate"));
+  assert.ok(investown.includes("statementFirstDate,"));
+  assert.ok(investown.includes("statementLastDate,"));
+  assert.ok(analytics.includes("raw.statementLastDate"));
+  assert.ok(analytics.includes("raw.statementFirstDate"));
+  assert.ok(analytics.includes("statementLastDate ||"));
 });
 
 test("Investown statement history is never carried past source coverage", () => {
@@ -503,10 +703,15 @@ test("Trading 212 cashback is external reward capital, not investment return", (
 
 test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent", () => {
   const card = source("lib/server/trading212-card.ts");
+  const analytics = source("lib/server/analytics.ts");
   assert.ok(card.includes('const enrichmentOnly = true'));
   assert.ok(card.includes('.get("cash:" + id)'));
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
+  assert.ok(analytics.includes("t.flow_scope = 'external'"));
+  assert.ok(analytics.includes("OR t.provider IN ('investown', 'mintos')"));
+  assert.ok(analytics.includes("flow_scope = 'external'"));
+  assert.ok(analytics.includes("OR provider IN ('investown', 'mintos')"));
 });
 
 

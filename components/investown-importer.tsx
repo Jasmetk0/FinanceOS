@@ -2,6 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  investownPrincipalDelta,
+  investownReservationDelta,
+} from "@/lib/investown-semantics.mjs";
 
 type CsvData = {
   headers: string[];
@@ -21,15 +25,6 @@ const INVESTOWN_HEADERS = [
   "Odkaz na projekt",
   "Typ projektu",
 ] as const;
-
-const PRINCIPAL_IN = new Set(["Investice", "Autoinvestice"]);
-const PRINCIPAL_OUT = new Set([
-  "Splacení jistiny",
-  "Částečné splacení jistiny",
-  "Odstoupení",
-]);
-const OFFER_LOCK = new Set(["Nabídka ke koupi"]);
-const OFFER_UNLOCK = new Set(["Vrácení nabídky"]);
 
 const inputClass =
   "mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
@@ -171,7 +166,8 @@ function isNativeInvestown(headers: string[]) {
   return INVESTOWN_HEADERS.every((header) => set.has(header));
 }
 
-function money(value: number) {
+function money(value: number | null) {
+  if (value === null) return "—";
   return value.toLocaleString("cs-CZ", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -192,6 +188,13 @@ type InvestownStatus = {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  ordinaryYieldCzk: number;
+  bonusYieldCzk: number;
+  penaltyYieldCzk: number;
+  otherYieldCzk: number;
+  investmentPnlCzk: number;
+  externalRewardsCzk: number;
+  totalGainCzk: number;
   realizedProfitCzk: number;
   transactions: number;
   projects: number;
@@ -199,7 +202,69 @@ type InvestownStatus = {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  accountingComplete: boolean;
+  reconciliationStatus: string;
+  reconciliationDifferenceCzk: number;
   typeCounts: Array<{ type: string; count: number }>;
+};
+
+type InvestownImportResult = {
+  accountId: string | null;
+  dryRun: boolean;
+  previewToken: string;
+  imported: number;
+  newTransactions: number;
+  matchedTransactions: number;
+  removedTransactions: number;
+  authoritativeNativeSnapshot: boolean;
+  storedTransactions: number;
+  skipped: number;
+  derived: {
+    walletCashCzk: number;
+    investedPrincipalCzk: number;
+    reservedOffersCzk: number;
+    receivedInterestCzk: number;
+    ordinaryYieldCzk: number;
+    bonusYieldCzk: number;
+    penaltyYieldCzk: number;
+    otherYieldCzk: number;
+    otherInvestmentIncomeCzk: number;
+    externalRewardsCzk: number;
+    otherIncomeCzk: number;
+    feesCzk: number;
+    investmentPnlCzk: number;
+    totalGainCzk: number;
+    realizedPnlCzk: number;
+    totalValueCzk: number;
+    activeProjects: number;
+    allProjects: number;
+  };
+  reconciliation: {
+    checked: boolean;
+    ownerCapitalCzk: number;
+    expectedValueCzk: number;
+    differenceCzk: number | null;
+    ok: boolean;
+    missingCzkRows: number;
+  };
+  effective: {
+    walletCashCzk: number;
+    investedValueCzk: number;
+    totalValueCzk: number;
+  };
+  diff: {
+    transactions: number;
+    totalValueCzk: number;
+    walletCashCzk: number;
+    investmentPnlCzk: number;
+    externalRewardsCzk: number;
+  };
+  coverage: {
+    unknownTypes: string[];
+    lastAt: string | null;
+    previousLastAt: string | null;
+    advanced: boolean;
+  };
 };
 
 export function InvestownImporter({
@@ -224,6 +289,8 @@ export function InvestownImporter({
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingPreview, setPendingPreview] =
+    useState<InvestownImportResult | null>(null);
 
   async function load(file: File) {
     try {
@@ -333,6 +400,7 @@ export function InvestownImporter({
         ]),
       );
       setMessage(null);
+      setPendingPreview(null);
     } catch (error) {
       setCsv(null);
       setFilename("");
@@ -374,10 +442,8 @@ export function InvestownImporter({
       if (date && (!earliest || date < earliest)) earliest = date;
       if (date && (!latest || date > latest)) latest = date;
 
-      if (PRINCIPAL_IN.has(type)) principal += Math.abs(amount);
-      if (PRINCIPAL_OUT.has(type)) principal -= Math.abs(amount);
-      if (OFFER_LOCK.has(type)) reserved += Math.abs(amount);
-      if (OFFER_UNLOCK.has(type)) reserved -= Math.abs(amount);
+      principal += investownPrincipalDelta({ type, amount });
+      reserved += investownReservationDelta({ type, amount });
     }
 
     if (Math.abs(wallet) < 0.005) wallet = 0;
@@ -471,56 +537,32 @@ export function InvestownImporter({
       data.get("accountCurrency") || "CZK",
     ).toUpperCase();
     const rows = buildRows(accountCurrency);
+    const currentValue = optionalNumber(data.get("currentValue"));
+    const walletCash = optionalNumber(data.get("walletCash"));
 
-    setBusy(true);
-    setMessage(null);
-
-    try {
+    async function requestImport(
+      dryRun: boolean,
+      allowAuthoritativeRemovals: boolean,
+      confirmationToken?: string,
+    ) {
       const response = await fetch("/api/import/investown", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           accountCurrency,
-          currentValue: optionalNumber(data.get("currentValue")),
-          walletCash: optionalNumber(data.get("walletCash")),
+          currentValue,
+          walletCash,
           rows,
-          // Partial Investown imports are cumulative. A native CSV that covers
-          // the complete stored time span is treated as the provider's current
-          // authoritative statement and may remove rows Investown later revised
-          // or removed.
           replaceExisting: false,
           sourceFormat: nativeFormat ? "investown-native" : "mapped",
+          dryRun,
+          allowAuthoritativeRemovals,
+          confirmationToken,
         }),
       });
 
       const payload = (await response.json()) as {
-        result?: {
-          imported: number;
-          newTransactions: number;
-          matchedTransactions: number;
-          removedTransactions: number;
-          authoritativeNativeSnapshot: boolean;
-          storedTransactions: number;
-          skipped: number;
-          derived: {
-            walletCashCzk: number;
-            investedPrincipalCzk: number;
-            totalValueCzk: number;
-            activeProjects: number;
-            allProjects: number;
-          };
-          effective: {
-            walletCashCzk: number;
-            investedValueCzk: number;
-            totalValueCzk: number;
-          };
-          coverage: {
-            unknownTypes: string[];
-            lastAt: string | null;
-            previousLastAt: string | null;
-            advanced: boolean;
-          };
-        };
+        result?: InvestownImportResult;
         error?: string;
       };
 
@@ -528,32 +570,89 @@ export function InvestownImporter({
         throw new Error(payload.error || "Investown import selhal.");
       }
 
-      const unknown = payload.result.coverage.unknownTypes;
+      return payload.result;
+    }
+
+    setBusy(true);
+    setMessage(null);
+
+    try {
+      if (!pendingPreview) {
+        const previewResult = await requestImport(true, false);
+        setPendingPreview(previewResult);
+
+        const destructive =
+          previewResult.removedTransactions > 0
+            ? " · POZOR: " +
+              previewResult.removedTransactions.toLocaleString("cs-CZ") +
+              " starších řádků bude odstraněno podle novějšího plného výpisu"
+            : "";
+
+        setMessage(
+          "Kontrola hotová — zatím se nic nezměnilo. " +
+            "Po potvrzení: " +
+            (previewResult.diff.transactions >= 0 ? "+" : "") +
+            previewResult.diff.transactions.toLocaleString("cs-CZ") +
+            " transakcí · Δ hodnota " +
+            money(previewResult.diff.totalValueCzk) +
+            " · Δ investiční P/L " +
+            money(previewResult.diff.investmentPnlCzk) +
+            " · Δ odměny " +
+            money(previewResult.diff.externalRewardsCzk) +
+            (previewResult.reconciliation.checked
+              ? " · účetní rozdíl " +
+                money(previewResult.reconciliation.differenceCzk)
+              : "") +
+            destructive +
+            ".",
+        );
+        return;
+      }
+
+      const result = await requestImport(
+        false,
+        pendingPreview.removedTransactions > 0,
+        pendingPreview.previewToken,
+      );
+      const unknown = result.coverage.unknownTypes;
+      setPendingPreview(null);
       setMessage(
         "Hotovo · soubor " +
-          payload.result.imported.toLocaleString("cs-CZ") +
+          result.imported.toLocaleString("cs-CZ") +
           " řádků · " +
-          payload.result.newTransactions.toLocaleString("cs-CZ") +
+          result.newTransactions.toLocaleString("cs-CZ") +
           " nových · " +
-          payload.result.matchedTransactions.toLocaleString("cs-CZ") +
+          result.matchedTransactions.toLocaleString("cs-CZ") +
           " už známých" +
-          (payload.result.removedTransactions > 0
+          (result.removedTransactions > 0
             ? " · " +
-              payload.result.removedTransactions.toLocaleString("cs-CZ") +
+              result.removedTransactions.toLocaleString("cs-CZ") +
               " historických řádků odstraněno podle novějšího plného výpisu"
             : "") +
           " · celkem uloženo " +
-          payload.result.storedTransactions.toLocaleString("cs-CZ") +
+          result.storedTransactions.toLocaleString("cs-CZ") +
           " transakcí · " +
-          payload.result.derived.activeProjects.toLocaleString("cs-CZ") +
+          result.derived.activeProjects.toLocaleString("cs-CZ") +
           " aktivních projektů · hodnota " +
-          money(payload.result.effective.totalValueCzk) +
-          (payload.result.coverage.lastAt
+          money(result.effective.totalValueCzk) +
+          " · investiční P/L " +
+          money(result.derived.investmentPnlCzk) +
+          " (běžné " +
+          money(result.derived.ordinaryYieldCzk) +
+          ", bonusové " +
+          money(result.derived.bonusYieldCzk) +
+          ", pokuty/prodlení " +
+          money(result.derived.penaltyYieldCzk) +
+          ") · externí odměny " +
+          money(result.derived.externalRewardsCzk) +
+          " · celkový přírůstek " +
+          money(result.derived.totalGainCzk) +
+          (result.coverage.lastAt
             ? " · poslední transakce " +
-              new Date(payload.result.coverage.lastAt).toLocaleString("cs-CZ")
+              new Date(result.coverage.lastAt).toLocaleString("cs-CZ")
             : "") +
-          (!payload.result.coverage.advanced &&
-          payload.result.coverage.previousLastAt !== null
+          (!result.coverage.advanced &&
+          result.coverage.previousLastAt !== null
             ? " · POZOR: tento výpis neobsahuje žádné novější transakce než předchozí import."
             : "") +
           (unknown.length
@@ -563,6 +662,7 @@ export function InvestownImporter({
 
       router.refresh();
     } catch (error) {
+      if (pendingPreview) setPendingPreview(null);
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
       setBusy(false);
@@ -618,17 +718,19 @@ export function InvestownImporter({
             <span
               className={[
                 "w-fit rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider",
-                initialStatus.unknownTypes
+                !initialStatus.accountingComplete
                   ? "border-[var(--warning)]/25 bg-[var(--warning)]/8 text-[var(--warning)]"
                   : "border-[var(--accent)]/25 bg-[var(--accent)]/8 text-[var(--accent)]",
               ].join(" ")}
             >
-              {initialStatus.unknownTypes
-                ? initialStatus.unknownTypes + " unknown"
-                : "fully classified"}
+              {initialStatus.accountingComplete
+                ? "accounting verified"
+                : initialStatus.unknownTypes
+                  ? initialStatus.unknownTypes + " unknown types"
+                  : "accounting review"}
             </span>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Preview
               label="Hodnota z výpisu"
               value={money(initialStatus.currentValueCzk)}
@@ -642,8 +744,32 @@ export function InvestownImporter({
               value={money(initialStatus.investedValueCzk)}
             />
             <Preview
-              label="Zisk z výpisu"
-              value={money(initialStatus.realizedProfitCzk)}
+              label="Běžné výnosy"
+              value={money(initialStatus.ordinaryYieldCzk)}
+            />
+            <Preview
+              label="Bonusové výnosy"
+              value={money(initialStatus.bonusYieldCzk)}
+            />
+            <Preview
+              label="Pokuty + prodlení"
+              value={money(initialStatus.penaltyYieldCzk)}
+            />
+            <Preview
+              label="Jiné investiční výnosy"
+              value={money(initialStatus.otherYieldCzk)}
+            />
+            <Preview
+              label="Investiční P/L"
+              value={money(initialStatus.investmentPnlCzk)}
+            />
+            <Preview
+              label="Externí odměny"
+              value={money(initialStatus.externalRewardsCzk)}
+            />
+            <Preview
+              label="Celkový přírůstek"
+              value={money(initialStatus.totalGainCzk)}
             />
             <Preview
               label="Aktivní projekty"
@@ -653,7 +779,24 @@ export function InvestownImporter({
               label="Transakce"
               value={initialStatus.transactions.toLocaleString("cs-CZ")}
             />
+            <Preview
+              label="Účetní rozdíl"
+              value={money(initialStatus.reconciliationDifferenceCzk)}
+            />
           </div>
+          {!initialStatus.accountingComplete ? (
+            <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+              Investown historie zatím není účetně ověřená. Stav:{" "}
+              <strong className="text-[var(--text)]">
+                {initialStatus.reconciliationStatus}
+              </strong>
+              {initialStatus.unknownTypes
+                ? " · neznámé typy: " + initialStatus.unknownTypes.toLocaleString("cs-CZ")
+                : ""}
+              {" · rozdíl "}
+              {money(initialStatus.reconciliationDifferenceCzk)}.
+            </p>
+          ) : null}
 
           {initialStatus.lastAt ? (
             <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
@@ -753,7 +896,10 @@ export function InvestownImporter({
               <Field key={label} label={label}>
                 <select
                   value={value}
-                  onChange={(event) => setter(event.target.value)}
+                  onChange={(event) => {
+                    setter(event.target.value);
+                    setPendingPreview(null);
+                  }}
                   className={inputClass}
                 >
                   <option value="">— not mapped —</option>
@@ -809,11 +955,19 @@ export function InvestownImporter({
             Override použij jen u neúplného výpisu.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Field label="Account currency">
+            <Field
+              label={
+                nativeFormat
+                  ? "Account currency (native Investown = CZK)"
+                  : "Account currency"
+              }
+            >
               <input
                 name="accountCurrency"
                 defaultValue="CZK"
                 required
+                disabled={nativeFormat}
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
@@ -824,6 +978,7 @@ export function InvestownImporter({
                 step="0.01"
                 min="0"
                 placeholder="Auto from statement"
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
@@ -834,11 +989,88 @@ export function InvestownImporter({
                 step="0.01"
                 min="0"
                 placeholder="Auto from statement"
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
           </div>
         </div>
+
+        {pendingPreview ? (
+          <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-4">
+            <p className="text-sm font-semibold">Preview změn před importem</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+              <Preview
+                label="Δ transakce"
+                value={
+                  (pendingPreview.diff.transactions >= 0 ? "+" : "") +
+                  pendingPreview.diff.transactions.toLocaleString("cs-CZ")
+                }
+              />
+              <Preview
+                label="Δ hodnota"
+                value={money(pendingPreview.diff.totalValueCzk)}
+              />
+              <Preview
+                label="Δ peněženka"
+                value={money(pendingPreview.diff.walletCashCzk)}
+              />
+              <Preview
+                label="Δ investiční P/L"
+                value={money(pendingPreview.diff.investmentPnlCzk)}
+              />
+              <Preview
+                label="Δ odměny"
+                value={money(pendingPreview.diff.externalRewardsCzk)}
+              />
+              <Preview
+                label="Účetní rozdíl"
+                value={
+                  pendingPreview.reconciliation.differenceCzk === null
+                    ? "N/A"
+                    : money(pendingPreview.reconciliation.differenceCzk)
+                }
+              />
+            </div>
+            {pendingPreview.reconciliation.checked ? (
+              <p
+                className={[
+                  "mt-3 text-xs leading-5",
+                  pendingPreview.reconciliation.ok
+                    ? "text-[var(--muted)]"
+                    : "text-[var(--warning)]",
+                ].join(" ")}
+              >
+                Účetní kontrola: hodnota účtu má odpovídat vlastnímu kapitálu{" "}
+                {money(pendingPreview.reconciliation.ownerCapitalCzk)} + ziskům
+                a odměnám. Očekávaná hodnota{" "}
+                {money(pendingPreview.reconciliation.expectedValueCzk)}; rozdíl{" "}
+                {money(pendingPreview.reconciliation.differenceCzk)}.
+                {pendingPreview.reconciliation.ok
+                  ? " Kontrola sedí."
+                  : " Kontrola nesedí; potvrzený import se zablokuje, dokud není příčina vysvětlená."}
+              </p>
+            ) : pendingPreview.reconciliation.missingCzkRows > 0 ? (
+              <p className="mt-3 text-xs leading-5 text-[var(--warning)]">
+                Účetní kontrolu nelze dokončit:{" "}
+                {pendingPreview.reconciliation.missingCzkRows.toLocaleString("cs-CZ")}{" "}
+                řádků nemá bezpečný přepočet do CZK.
+              </p>
+            ) : null}
+            {pendingPreview.removedTransactions > 0 ? (
+              <p className="mt-3 text-xs leading-5 text-[var(--warning)]">
+                Tento plný výpis je autoritativní a odstraní{" "}
+                {pendingPreview.removedTransactions.toLocaleString("cs-CZ")}{" "}
+                historických řádků, které už Investown v novém výpisu neuvádí.
+                K odstranění dojde až po druhém potvrzení.
+              </p>
+            ) : (
+              <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+                Preview je pouze kontrola. Databáze zatím nebyla změněna.
+              </p>
+            )}
+          </div>
+        ) : null}
 
         {message ? (
           <p className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-xs leading-5">
@@ -851,16 +1083,23 @@ export function InvestownImporter({
           disabled={busy || !csv}
           className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? "Zpracovávám celý výpis…" : "Importovat Investown kompletně"}
+          {busy
+            ? pendingPreview
+              ? "Importuji…"
+              : "Kontroluji výpis…"
+            : pendingPreview
+              ? "Potvrdit a provést import"
+              : "Zkontrolovat import"}
         </button>
       </form>
 
       <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
-        Částečné novější výpisy se přidávají k uložené historii a překryv se
-        automaticky deduplikuje. Pokud ale nahraješ nový originální CSV výpis,
-        který pokrývá celý už známý časový rozsah, FinanceOS ho bere jako
-        autoritativní verzi historie Investownu. Tím se odstraní i staré řádky,
-        které Investown v novějším plném výpisu zpětně opravil nebo odebral.
+        Každý import nejdřív proběhne jako read-only preview. Částečné novější
+        výpisy se přidávají k uložené historii a překryv se automaticky
+        deduplikuje. Pokud nový originální CSV výpis pokrývá celý už známý
+        časový rozsah, FinanceOS ho bere jako autoritativní verzi historie.
+        Případné odstranění starých řádků se provede až po výslovném druhém
+        potvrzení.
       </p>
     </article>
   );

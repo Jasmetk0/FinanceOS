@@ -27,6 +27,9 @@ export async function POST(request: Request) {
       rows?: unknown;
       replaceExisting?: unknown;
       sourceFormat?: unknown;
+      dryRun?: unknown;
+      allowAuthoritativeRemovals?: unknown;
+      confirmationToken?: unknown;
     };
 
     const rows = Array.isArray(body.rows)
@@ -43,8 +46,14 @@ export async function POST(request: Request) {
       currentValue: optionalNumber(body.currentValue),
       walletCash: optionalNumber(body.walletCash),
       rows,
-      replaceExisting: body.replaceExisting !== false,
+      replaceExisting: body.replaceExisting === true,
       sourceFormat,
+      dryRun: body.dryRun === true,
+      allowAuthoritativeRemovals: body.allowAuthoritativeRemovals === true,
+      confirmationToken:
+        typeof body.confirmationToken === "string"
+          ? body.confirmationToken
+          : undefined,
     });
 
     return NextResponse.json({ ok: true, result });

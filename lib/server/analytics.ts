@@ -1,3 +1,4 @@
+import { isPerformanceExternalRewardCategory } from "@/lib/investown-semantics.mjs";
 import { getDb } from "@/lib/server/db";
 import { listConnections } from "@/lib/server/repository";
 
@@ -62,12 +63,26 @@ function nextIsoDate(date: string): string {
 }
 
 function isExternalRewardCategory(category: string) {
-  return (
-    category === "card_cashback" ||
-    category === "external_reward" ||
-    category === "referral_reward" ||
-    category === "campaign_reward"
-  );
+  return isPerformanceExternalRewardCategory(category);
+}
+
+function ownerCapitalDelta(
+  provider: string,
+  kind: string,
+  amountCzk: number,
+) {
+  if (kind !== "deposit" && kind !== "withdrawal") return 0;
+
+  // Native P2P statements carry the real economic sign. Preserve it so a
+  // provider correction/reversal undoes the original capital flow instead of
+  // being counted as a second deposit or withdrawal.
+  if (provider === "investown" || provider === "mintos") {
+    return amountCzk;
+  }
+
+  return kind === "deposit"
+    ? Math.abs(amountCzk)
+    : -Math.abs(amountCzk);
 }
 
 function transactionAccountingDate(row: {
@@ -118,10 +133,16 @@ function accountDataFreshness(row: {
     typeof raw.balanceMode === "string" ? raw.balanceMode : "";
   const importMode =
     typeof raw.importMode === "string" ? raw.importMode : "";
-  const statementLastAt =
-    typeof raw.statementLastAt === "string"
-      ? isoDate(raw.statementLastAt)
+  const statementLastDate =
+    typeof raw.statementLastDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(raw.statementLastDate)
+      ? raw.statementLastDate
       : null;
+  const statementLastAt =
+    statementLastDate ||
+    (typeof raw.statementLastAt === "string"
+      ? isoDate(raw.statementLastAt)
+      : null);
 
   if (balanceMode === "manual-override" || importMode === "balance-only") {
     source = "manual_override";
@@ -311,9 +332,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     .all();
 
   const accountActivity = accountActivityRows.map((row) => {
-    const transactionDate = row.first_transaction
-      ? String(row.first_transaction).slice(0, 10)
-      : null;
+    const provider = String(row.provider);
+    const raw = parseRawObject(row.raw_json);
+    const statementFirstDate =
+      provider === "investown" &&
+      typeof raw.statementFirstDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(raw.statementFirstDate)
+        ? raw.statementFirstDate
+        : null;
+    const transactionDate = statementFirstDate ||
+      (row.first_transaction
+        ? String(row.first_transaction).slice(0, 10)
+        : null);
     const snapshotDate = row.first_snapshot
       ? String(row.first_snapshot).slice(0, 10)
       : null;
@@ -328,7 +358,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
     return {
       accountId: String(row.account_id),
-      provider: String(row.provider),
+      provider,
       startDate,
       valueThroughDate:
         freshness.status === "manual" ? null : freshness.coverageThrough,
@@ -353,23 +383,25 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     .prepare(`
       SELECT
         t.provider,
-        MIN(substr(t.occurred_at, 1, 10)) AS first_gap
+        t.occurred_at,
+        t.raw_json
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
-      GROUP BY t.provider
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
+      ORDER BY t.occurred_at ASC
     `)
     .all();
 
   const performanceGapByProvider = new Map<string, string>();
   for (const row of unclassifiedPerformanceRows) {
-    if (!row.first_gap) continue;
-    performanceGapByProvider.set(
-      String(row.provider),
-      String(row.first_gap),
-    );
+    const provider = String(row.provider);
+    const date = transactionAccountingDate(row);
+    const current = performanceGapByProvider.get(provider);
+    if (!current || date < current) {
+      performanceGapByProvider.set(provider, date);
+    }
   }
   const firstPerformanceGap =
     [...performanceGapByProvider.values()].sort()[0] ?? null;
@@ -409,6 +441,10 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
                   'external_reward',
                   'referral_reward',
                   'campaign_reward'
+                )
+                AND (
+                  t.flow_scope = 'external'
+                  OR t.provider IN ('investown', 'mintos')
                 )
               )
             )
@@ -460,12 +496,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     const category = String(row.category || "");
     const isReward =
       kind === "income" && isExternalRewardCategory(category);
-    const ownContributionDelta =
-      kind === "deposit"
-        ? Math.abs(num(row.amount_czk))
-        : kind === "withdrawal"
-          ? -Math.abs(num(row.amount_czk))
-          : 0;
+    const ownContributionDelta = ownerCapitalDelta(
+      String(row.provider),
+      kind,
+      num(row.amount_czk),
+    );
     const rewardDelta = isReward ? num(row.amount_czk) : 0;
     const transferDelta =
       kind === "transfer" ? num(row.transfer_value_czk) : 0;
@@ -1045,11 +1080,20 @@ export function getCashFlowData(months = 18) {
         item.expensesCzk += Math.abs(amount);
       }
     } else {
-      if (kind === "income") item.incomeCzk += Math.max(0, amount);
+      const signedProvider =
+        provider === "investown" || provider === "mintos";
+      if (kind === "income") {
+        item.incomeCzk += signedProvider ? amount : Math.max(0, amount);
+      }
       if (kind === "gift") item.giftsCzk += Math.max(0, amount);
-      if (kind === "interest") item.interestCzk += Math.max(0, amount);
+      if (kind === "interest") {
+        item.interestCzk += signedProvider ? amount : Math.max(0, amount);
+      }
       if (kind === "expense" || kind === "fee") {
-        item.expensesCzk += Math.abs(amount);
+        item.expensesCzk +=
+          signedProvider && kind === "fee"
+            ? -amount
+            : Math.abs(amount);
       }
     }
 
@@ -1296,8 +1340,16 @@ export function getPerformanceData() {
             )
             OR (
               kind = 'income'
-              AND category = 'card_cashback'
-              AND flow_scope = 'external'
+              AND category IN (
+                'card_cashback',
+                'external_reward',
+                'referral_reward',
+                'campaign_reward'
+              )
+              AND (
+                flow_scope = 'external'
+                OR provider IN ('investown', 'mintos')
+              )
             )
           )
         ORDER BY occurred_at ASC
@@ -1330,7 +1382,7 @@ export function getPerformanceData() {
           COUNT(*) AS count,
           SUM(
             CASE
-              WHEN kind IN ('deposit', 'withdrawal')
+              WHEN kind IN ('deposit', 'withdrawal', 'adjustment')
                 AND amount_czk IS NOT NULL
               THEN ABS(amount_czk)
               ELSE 0
@@ -1340,7 +1392,7 @@ export function getPerformanceData() {
         WHERE account_id = ?
           AND flow_scope = 'unclassified'
           AND (
-            kind IN ('deposit', 'withdrawal')
+            kind IN ('deposit', 'withdrawal', 'adjustment')
             OR (
               kind = 'transfer'
               AND transfer_value_czk IS NULL
@@ -1358,20 +1410,26 @@ export function getPerformanceData() {
 
     for (const row of cashRows) {
       const kind = String(row.kind);
-      const amount = Math.abs(num(row.amount_czk));
+      const signedAmount = num(row.amount_czk);
+      const provider = String(account.provider);
+      const capitalDelta = ownerCapitalDelta(provider, kind, signedAmount);
       const date = new Date(String(row.occurred_at));
 
       if (kind === "deposit") {
-        deposits += amount;
-        flows.push({ date, amount: -amount });
+        deposits += capitalDelta;
+        flows.push({ date, amount: -capitalDelta });
       } else if (kind === "withdrawal") {
-        withdrawals += amount;
-        flows.push({ date, amount });
-      } else if (String(row.category || "") === "card_cashback") {
+        withdrawals += -capitalDelta;
+        flows.push({ date, amount: -capitalDelta });
+      } else if (
+        kind === "income" &&
+        isExternalRewardCategory(String(row.category || ""))
+      ) {
         const signedReward = num(row.amount_czk);
         externalRewards += signedReward;
-        // Positive reward is cash entering the portfolio; a cashback reversal
-        // is the opposite external flow.
+        // External rewards enter the account from outside the investor's own
+        // capital. Treat them as an external cash flow so they do not inflate
+        // investment P/L, Simple Return or XIRR.
         flows.push({ date, amount: -signedReward });
       }
     }
@@ -1516,7 +1574,7 @@ export function getPerformanceData() {
             WHEN t.kind = 'transfer'
               AND t.transfer_value_czk IS NOT NULL
             THEN ABS(t.transfer_value_czk)
-            WHEN t.kind IN ('deposit', 'withdrawal')
+            WHEN t.kind IN ('deposit', 'withdrawal', 'adjustment')
               AND t.amount_czk IS NOT NULL
             THEN ABS(t.amount_czk)
             ELSE 0
@@ -1535,7 +1593,7 @@ export function getPerformanceData() {
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
     `)
     .get();
   const unclassifiedFlowCount = num(portfolioGap?.count);
@@ -1549,7 +1607,7 @@ export function getPerformanceData() {
 
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
-      SELECT t.kind, t.category, t.occurred_at, t.amount_czk
+      SELECT t.provider, t.kind, t.category, t.occurred_at, t.amount_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
@@ -1567,22 +1625,37 @@ export function getPerformanceData() {
           )
           OR (
             t.kind = 'income'
-            AND t.category = 'card_cashback'
-            AND t.flow_scope = 'external'
+            AND t.category IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+            AND (
+              t.flow_scope = 'external'
+              OR t.provider IN ('investown', 'mintos')
+            )
           )
         )
       ORDER BY t.occurred_at ASC
     `)
     .all()
-    .map((row) => ({
-      date: new Date(String(row.occurred_at)),
-      amount:
-        String(row.kind) === "deposit"
-          ? -Math.abs(num(row.amount_czk))
-          : String(row.kind) === "withdrawal"
-            ? Math.abs(num(row.amount_czk))
-            : -num(row.amount_czk),
-    }));
+    .map((row) => {
+      const kind = String(row.kind);
+      const amountCzk = num(row.amount_czk);
+      const capitalDelta = ownerCapitalDelta(
+        String(row.provider),
+        kind,
+        amountCzk,
+      );
+      return {
+        date: new Date(String(row.occurred_at)),
+        amount:
+          kind === "deposit" || kind === "withdrawal"
+            ? -capitalDelta
+            : -amountCzk,
+      };
+    });
 
   if (totals.currentValueCzk > 0) {
     portfolioFlows.push({ date: now, amount: totals.currentValueCzk });
@@ -1850,7 +1923,7 @@ export function getAccountDetail(accountIdInput: string) {
       SELECT
         h.id, h.asset_id, h.quantity, h.average_price, h.current_price,
         h.currency, h.market_value, h.market_value_czk,
-        h.unrealized_pnl, h.unrealized_pnl_czk,
+        h.unrealized_pnl, h.unrealized_pnl_czk, h.raw_json,
         a.symbol, a.name, a.asset_class
       FROM holdings h
       JOIN assets a ON a.id = h.asset_id
@@ -1858,27 +1931,61 @@ export function getAccountDetail(accountIdInput: string) {
       ORDER BY h.market_value_czk DESC, a.symbol ASC
     `)
     .all(accountId)
-    .map((row) => ({
-      id: String(row.id),
-      assetId: String(row.asset_id),
-      symbol: String(row.symbol),
-      name: String(row.name),
-      assetClass: String(row.asset_class),
-      quantity: num(row.quantity),
-      averagePrice:
-        row.average_price === null ? null : num(row.average_price),
-      currentPrice:
-        row.current_price === null ? null : num(row.current_price),
-      currency: String(row.currency),
-      marketValue: num(row.market_value),
-      marketValueCzk: num(row.market_value_czk),
-      unrealizedPnl:
-        row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
-      unrealizedPnlCzk:
-        row.unrealized_pnl_czk === null
-          ? null
-          : num(row.unrealized_pnl_czk),
-    }));
+    .map((row) => {
+      const holdingRaw = parseRawObject(row.raw_json);
+      const rawNumber = (key: string) => {
+        const value = holdingRaw[key];
+        return value === null || value === undefined ? null : num(value);
+      };
+
+      return {
+        id: String(row.id),
+        assetId: String(row.asset_id),
+        symbol: String(row.symbol),
+        name: String(row.name),
+        assetClass: String(row.asset_class),
+        quantity: num(row.quantity),
+        averagePrice:
+          row.average_price === null ? null : num(row.average_price),
+        currentPrice:
+          row.current_price === null ? null : num(row.current_price),
+        currency: String(row.currency),
+        marketValue: num(row.market_value),
+        marketValueCzk: num(row.market_value_czk),
+        unrealizedPnl:
+          row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
+        unrealizedPnlCzk:
+          row.unrealized_pnl_czk === null
+            ? null
+            : num(row.unrealized_pnl_czk),
+        p2p:
+          provider === "investown"
+            ? {
+                principalCzk: rawNumber("principal"),
+                reservedOfferCzk: rawNumber("reservedOfferCzk"),
+                investedPrincipalCzk: rawNumber("investedPrincipal"),
+                returnedPrincipalCzk: rawNumber("returnedPrincipal"),
+                receivedInterestCzk: rawNumber("receivedInterestCzk"),
+                ordinaryYieldCzk: rawNumber("ordinaryYieldCzk"),
+                bonusYieldCzk: rawNumber("bonusYieldCzk"),
+                penaltyYieldCzk: rawNumber("penaltyYieldCzk"),
+                otherYieldCzk: rawNumber("otherYieldCzk"),
+                loanName:
+                  typeof holdingRaw.loanName === "string"
+                    ? holdingRaw.loanName
+                    : null,
+                projectUrl:
+                  typeof holdingRaw.projectUrl === "string"
+                    ? holdingRaw.projectUrl
+                    : null,
+                projectType:
+                  typeof holdingRaw.projectType === "string"
+                    ? holdingRaw.projectType
+                    : null,
+              }
+            : null,
+      };
+    });
 
   const transactions = db
     .prepare(`
@@ -2032,16 +2139,23 @@ export function getAccountDetail(accountIdInput: string) {
             : 0;
       return {
         date: transactionAccountingDate(row),
-        depositCzk: kind === "deposit" ? Math.abs(amount) : 0,
-        withdrawalCzk: kind === "withdrawal" ? Math.abs(amount) : 0,
-        ownContributionDelta:
+        depositCzk:
           kind === "deposit"
-            ? Math.abs(amount)
-            : kind === "withdrawal"
-              ? -Math.abs(amount)
-              : 0,
+            ? ownerCapitalDelta(provider, kind, amount)
+            : 0,
+        withdrawalCzk:
+          kind === "withdrawal"
+            ? -ownerCapitalDelta(provider, kind, amount)
+            : 0,
+        ownContributionDelta: ownerCapitalDelta(provider, kind, amount),
         rewardDelta:
-          kind === "income" && isExternalRewardCategory(category)
+          kind === "income" &&
+          isExternalRewardCategory(category) &&
+          (
+            String(row.flow_scope || "") === "external" ||
+            provider === "investown" ||
+            provider === "mintos"
+          )
             ? amount
             : 0,
         investmentIncomeCzk:
@@ -2050,7 +2164,12 @@ export function getAccountDetail(accountIdInput: string) {
           (kind === "income" && !isExternalRewardCategory(category))
             ? amount
             : 0,
-        feesCzk: kind === "fee" ? Math.abs(amount) : 0,
+        feesCzk:
+          kind === "fee"
+            ? provider === "investown"
+              ? -amount
+              : Math.abs(amount)
+            : 0,
         transferInCzk:
           kind === "transfer" && transferValue > 0 ? transferValue : 0,
         transferOutCzk:
@@ -2061,24 +2180,26 @@ export function getAccountDetail(accountIdInput: string) {
       };
     });
 
-  const performanceGapRow = db
+  const performanceGapRows = db
     .prepare(`
-      SELECT MIN(substr(occurred_at, 1, 10)) AS first_gap
+      SELECT provider, occurred_at, raw_json
       FROM transactions
       WHERE account_id = ?
         AND flow_scope = 'unclassified'
         AND (
-          kind IN ('deposit', 'withdrawal')
+          kind IN ('deposit', 'withdrawal', 'adjustment')
           OR (
             kind = 'transfer'
             AND transfer_value_czk IS NULL
           )
         )
+      ORDER BY occurred_at ASC
     `)
-    .get(accountId);
-  const firstPerformanceGap = performanceGapRow?.first_gap
-    ? String(performanceGapRow.first_gap)
-    : null;
+    .all(accountId);
+  const firstPerformanceGap =
+    performanceGapRows
+      .map((row) => transactionAccountingDate(row))
+      .sort()[0] ?? null;
 
   const dailyFlowByDate = new Map<
     string,
@@ -2171,11 +2292,11 @@ export function getAccountDetail(accountIdInput: string) {
 
     // Investown native statements explicitly tell us which cash movements are
     // yield/income/fees. For this provider there is no mark-to-market P/L: loan
-    // principal is carried at face value. Use the cumulative realized P/L that
-    // the importer persisted in each daily snapshot instead of inferring profit
-    // only as account value minus owner capital. This makes contractual
-    // penalties, statutory late interest, rewards and ordinary yield visible
-    // in the profit/return graph on the exact day they were credited.
+    // principal is carried at face value. Use the cumulative investment P/L
+    // persisted in each daily snapshot instead of inferring profit only as
+    // account value minus owner capital. Contractual penalties, statutory late
+    // interest and ordinary yield raise P/L; referral/promo rewards remain
+    // visible as external reward capital without inflating investment return.
     if (provider === "investown" && row.raw_json) {
       const snapshotRaw = parseRawObject(row.raw_json);
       const investownHistory =
@@ -2204,10 +2325,8 @@ export function getAccountDetail(accountIdInput: string) {
               : metric.externalRewardsCzk,
             profitCzk: explicitProfit,
             returnPct:
-              ownContribution + transferAttribution > 0
-                ? (explicitProfit /
-                    (ownContribution + transferAttribution)) *
-                  100
+              capitalAttributed > 0
+                ? (explicitProfit / capitalAttributed) * 100
                 : null,
           };
         }
@@ -2503,8 +2622,18 @@ export function getAssetDetail(symbolInput: string) {
       if (tx.kind === "buy") acc.buysCzk += Math.abs(amount);
       if (tx.kind === "sell") acc.sellsCzk += Math.abs(amount);
       if (tx.kind === "dividend") acc.dividendsCzk += Math.max(0, amount);
-      if (tx.kind === "interest") acc.interestCzk += Math.max(0, amount);
-      if (tx.kind === "fee") acc.feesCzk += Math.abs(amount);
+      if (tx.kind === "interest") {
+        acc.interestCzk +=
+          tx.provider === "investown" || tx.provider === "mintos"
+            ? amount
+            : Math.max(0, amount);
+      }
+      if (tx.kind === "fee") {
+        acc.feesCzk +=
+          tx.provider === "investown" || tx.provider === "mintos"
+            ? -amount
+            : Math.abs(amount);
+      }
       if (tx.kind === "transfer" && tx.quantity !== null && amount < 0) {
         acc.principalInCzk += Math.abs(amount);
       }
@@ -2646,15 +2775,12 @@ export function getHistoryData() {
   const flowRows = db
     .prepare(`
       SELECT
-        substr(t.occurred_at, 1, 10) AS day,
+        t.provider,
+        t.occurred_at,
+        t.raw_json,
         t.kind,
         t.category,
-        SUM(
-          CASE
-            WHEN t.kind IN ('deposit', 'withdrawal') THEN ABS(t.amount_czk)
-            ELSE t.amount_czk
-          END
-        ) AS amount
+        t.amount_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
@@ -2672,12 +2798,19 @@ export function getHistoryData() {
           )
           OR (
             t.kind = 'income'
-            AND t.category = 'card_cashback'
-            AND t.flow_scope = 'external'
+            AND t.category IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+            AND (
+              t.flow_scope = 'external'
+              OR t.provider IN ('investown', 'mintos')
+            )
           )
         )
-      GROUP BY day, t.kind, t.category
-      ORDER BY day ASC
+      ORDER BY t.occurred_at ASC
     `)
     .all();
 
@@ -2693,7 +2826,7 @@ export function getHistoryData() {
   >();
 
   for (const row of flowRows) {
-    const day = String(row.day);
+    const day = transactionAccountingDate(row);
     const current = flowByDay.get(day) ?? {
       depositsCzk: 0,
       withdrawalsCzk: 0,
@@ -2701,18 +2834,21 @@ export function getHistoryData() {
       cardRefundsCzk: 0,
       externalRewardsCzk: 0,
     };
+    const provider = String(row.provider);
     const kind = String(row.kind);
     const category = String(row.category || "");
+    const amount = num(row.amount_czk);
+    const capitalDelta = ownerCapitalDelta(provider, kind, amount);
     if (kind === "deposit" && category.startsWith("card_refund:")) {
-      current.cardRefundsCzk += num(row.amount);
+      current.cardRefundsCzk += Math.abs(amount);
     } else if (kind === "deposit") {
-      current.depositsCzk += num(row.amount);
+      current.depositsCzk += capitalDelta;
     } else if (kind === "withdrawal" && category.startsWith("card_spend:")) {
-      current.cardSpendCzk += num(row.amount);
+      current.cardSpendCzk += Math.abs(amount);
     } else if (kind === "withdrawal") {
-      current.withdrawalsCzk += num(row.amount);
-    } else if (kind === "income" && category === "card_cashback") {
-      current.externalRewardsCzk += num(row.amount);
+      current.withdrawalsCzk += -capitalDelta;
+    } else if (kind === "income" && isExternalRewardCategory(category)) {
+      current.externalRewardsCzk += amount;
     }
     flowByDay.set(day, current);
   }
@@ -2888,12 +3024,21 @@ export function getHistoryData() {
             ELSE 0
           END
         ) AS cash_value_czk,
-        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count
+        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count,
+        SUM(CASE WHEN t.kind = 'adjustment' THEN 1 ELSE 0 END) AS adjustment_count,
+        SUM(
+          CASE
+            WHEN t.kind = 'adjustment'
+              AND t.amount_czk IS NOT NULL
+            THEN ABS(t.amount_czk)
+            ELSE 0
+          END
+        ) AS adjustment_value_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
     `)
     .get();
 
@@ -2929,6 +3074,8 @@ export function getHistoryData() {
       unresolvedCashFlowCount: num(unresolvedHistory?.cash_count),
       unresolvedCashFlowCzk: num(unresolvedHistory?.cash_value_czk),
       unresolvedWalletTransferCount: num(unresolvedHistory?.transfer_count),
+      unresolvedAdjustmentCount: num(unresolvedHistory?.adjustment_count),
+      unresolvedAdjustmentCzk: num(unresolvedHistory?.adjustment_value_czk),
     },
   };
 }

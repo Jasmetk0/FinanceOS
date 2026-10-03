@@ -1,4 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
+import {
+  classifyInvestownKind,
+  investownIncomeCategory,
+  investownInterestBucket,
+  isPerformanceExternalRewardCategory,
+} from "@/lib/investown-semantics.mjs";
 import { getDatabasePath } from "@/lib/server/paths";
 import {
   canonicalCryptoIdentity,
@@ -439,17 +445,282 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   }
 }
 
+function repairInvestownClassificationAudit(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+  const rows = db.prepare(`
+    SELECT id, kind, category, flow_scope, raw_json
+    FROM transactions
+    WHERE account_id = ?
+    ORDER BY occurred_at ASC, external_id ASC
+  `);
+  const updateTransaction = db.prepare(
+    "UPDATE transactions SET kind = ?, category = ?, flow_scope = ?, raw_json = ? WHERE id = ?",
+  );
+  const updateAccount = db.prepare(
+    "UPDATE accounts SET raw_json = ? WHERE id = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const typeCounts = new Map<string, number>();
+    const unknownTypes = new Set<string>();
+
+    for (const row of rows.all(String(account.id))) {
+      const raw = parseJsonObject(row.raw_json);
+      const type =
+        typeof raw.type === "string" && raw.type.trim()
+          ? raw.type.trim()
+          : String(row.category || "Unknown");
+      typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
+
+      // Use the current production classifier for the audit. Older FinanceOS
+      // builds could flag provider wording such as "Smluvní pokuta z prodlení"
+      // as unknown even though the transaction itself was safely recognized.
+      const classified = classifyInvestownKind({
+        type,
+        description:
+          typeof raw.description === "string" ? raw.description : undefined,
+        projectType:
+          typeof raw.projectType === "string" ? raw.projectType : undefined,
+      });
+
+      const requiresPortfolioRebuild =
+        String(row.kind) === "adjustment" && classified === "transfer";
+
+      if (classified === "adjustment" || requiresPortfolioRebuild) {
+        // A newly learned principal/secondary-market movement cannot be safely
+        // repaired by changing one transaction row: holdings and historical
+        // principal snapshots must be rebuilt from the statement too. Keep it
+        // visibly unclassified until the next Investown re-import does that
+        // atomically.
+        unknownTypes.add(type);
+        if (
+          String(row.kind) !== "adjustment" ||
+          String(row.flow_scope) !== "unclassified"
+        ) {
+          updateTransaction.run(
+            "adjustment",
+            type,
+            "unclassified",
+            JSON.stringify({
+              ...raw,
+              financeOsClassification: "adjustment",
+            }),
+            String(row.id),
+          );
+        }
+        continue;
+      }
+
+      // Non-principal semantics can be repaired safely in place because the
+      // statement amount is already reflected in wallet/value history.
+      if (String(row.kind) === "adjustment") {
+        const repairedCategory =
+          classified === "income"
+            ? investownIncomeCategory({
+                type,
+                description:
+                  typeof raw.description === "string"
+                    ? raw.description
+                    : undefined,
+                projectType:
+                  typeof raw.projectType === "string"
+                    ? raw.projectType
+                    : undefined,
+              })
+            : type;
+        const repairedScope =
+          classified === "deposit" || classified === "withdrawal"
+            ? "external"
+            : classified === "transfer"
+              ? "internal"
+              : "not_applicable";
+
+        updateTransaction.run(
+          classified,
+          repairedCategory,
+          repairedScope,
+          JSON.stringify({
+            ...raw,
+            financeOsClassification: classified,
+          }),
+          String(row.id),
+        );
+      }
+    }
+
+    const accountingComplete = unknownTypes.size === 0;
+    updateAccount.run(
+      JSON.stringify({
+        ...accountRaw,
+        typeCounts: Object.fromEntries(
+          [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+        ),
+        unknownTypes: [...unknownTypes].sort(),
+        accountingComplete,
+      }),
+      String(account.id),
+    );
+  }
+}
+
+function repairInvestownProjectIncomeBreakdown(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+  const incomeRows = db.prepare(`
+    SELECT asset_id, amount_czk, category, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND kind = 'interest'
+      AND amount_czk IS NOT NULL
+      AND asset_id IS NOT NULL
+  `);
+  const holdingRows = db.prepare(
+    "SELECT id, asset_id, raw_json FROM holdings WHERE account_id = ?",
+  );
+  const assetRow = db.prepare(
+    "SELECT raw_json FROM assets WHERE id = ? LIMIT 1",
+  );
+  const updateHolding = db.prepare(
+    "UPDATE holdings SET raw_json = ? WHERE id = ?",
+  );
+  const updateAsset = db.prepare(
+    "UPDATE assets SET raw_json = ? WHERE id = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const byAsset = new Map<
+      string,
+      {
+        ordinaryYieldCzk: number;
+        bonusYieldCzk: number;
+        penaltyYieldCzk: number;
+        otherYieldCzk: number;
+        receivedInterestCzk: number;
+      }
+    >();
+
+    for (const row of incomeRows.all(String(account.id))) {
+      const id = String(row.asset_id || "");
+      if (!id) continue;
+      const raw = parseJsonObject(row.raw_json);
+      const type =
+        typeof raw.type === "string" && raw.type.trim()
+          ? raw.type
+          : String(row.category || "");
+      const amount = Number(row.amount_czk) || 0;
+      const bucket = investownInterestBucket(type);
+      const current = byAsset.get(id) ?? {
+        ordinaryYieldCzk: 0,
+        bonusYieldCzk: 0,
+        penaltyYieldCzk: 0,
+        otherYieldCzk: 0,
+        receivedInterestCzk: 0,
+      };
+
+      current.receivedInterestCzk += amount;
+      if (bucket === "ordinary") current.ordinaryYieldCzk += amount;
+      else if (bucket === "bonus") current.bonusYieldCzk += amount;
+      else if (bucket === "penalty") current.penaltyYieldCzk += amount;
+      else current.otherYieldCzk += amount;
+      byAsset.set(id, current);
+    }
+
+    for (const holding of holdingRows.all(String(account.id))) {
+      const id = String(holding.asset_id || "");
+      const breakdown = byAsset.get(id) ?? {
+        ordinaryYieldCzk: 0,
+        bonusYieldCzk: 0,
+        penaltyYieldCzk: 0,
+        otherYieldCzk: 0,
+        receivedInterestCzk: 0,
+      };
+      const holdingRaw = parseJsonObject(holding.raw_json);
+      updateHolding.run(
+        JSON.stringify({
+          ...holdingRaw,
+          ...breakdown,
+        }),
+        String(holding.id),
+      );
+
+      const asset = assetRow.get(id);
+      if (asset) {
+        const raw = parseJsonObject(asset.raw_json);
+        updateAsset.run(
+          JSON.stringify({
+            ...raw,
+            ...breakdown,
+          }),
+          id,
+        );
+      }
+    }
+  }
+}
+
 function backfillAccountCoverage(db: DatabaseSync) {
   const investownRows = db
     .prepare(
-      "SELECT id, raw_json, realized_pnl_status, unrealized_pnl_status " +
+      "SELECT id, currency, total_value_czk, raw_json, realized_pnl_status, unrealized_pnl_status " +
         "FROM accounts WHERE provider = 'investown'",
     )
     .all();
 
   const update = db.prepare(
-    "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ? WHERE id = ?",
+    "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ?, " +
+      "reconciliation_status = ?, reconciliation_difference = ? WHERE id = ?",
   );
+  const audit = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN kind = 'adjustment' THEN 1 ELSE 0 END), 0) AS unknown_count,
+      COALESCE(SUM(CASE WHEN amount_czk IS NULL THEN 1 ELSE 0 END), 0) AS missing_czk_count,
+      COALESCE(SUM(
+        CASE WHEN kind IN ('deposit', 'withdrawal') THEN amount_czk ELSE 0 END
+      ), 0) AS owner_capital_czk,
+      COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS external_rewards_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') NOT IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS investment_income_czk,
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN -amount_czk ELSE 0 END), 0) AS fees_czk
+    FROM transactions
+    WHERE account_id = ?
+  `);
 
   for (const row of investownRows) {
     const raw = parseJsonObject(row.raw_json);
@@ -459,16 +730,38 @@ function backfillAccountCoverage(db: DatabaseSync) {
 
     if (!isCompleteNativeStatement) continue;
 
-    const realized =
-      String(row.realized_pnl_status || "unknown") === "unknown"
-        ? "available"
-        : String(row.realized_pnl_status);
+    const values = audit.get(String(row.id));
+    const unresolvedTypes = Number(values?.unknown_count) || 0;
+    const missingCzkRows = Number(values?.missing_czk_count) || 0;
+    const ownerCapitalCzk = Number(values?.owner_capital_czk) || 0;
+    const investmentPnlCzk =
+      (Number(values?.interest_czk) || 0) +
+      (Number(values?.investment_income_czk) || 0) -
+      (Number(values?.fees_czk) || 0);
+    const totalGainCzk =
+      investmentPnlCzk + (Number(values?.external_rewards_czk) || 0);
+    const canCheckIdentity =
+      String(row.currency || "").toUpperCase() === "CZK" &&
+      missingCzkRows === 0;
+    const reconciliationDifference = canCheckIdentity
+      ? (Number(row.total_value_czk) || 0) - (ownerCapitalCzk + totalGainCzk)
+      : 0;
+    const accountingComplete =
+      unresolvedTypes === 0 &&
+      missingCzkRows === 0 &&
+      (!canCheckIdentity || Math.abs(reconciliationDifference) <= 0.05);
     const unrealized =
       String(row.unrealized_pnl_status || "unknown") === "unknown"
         ? "not_applicable"
         : String(row.unrealized_pnl_status);
 
-    update.run(realized, unrealized, String(row.id));
+    update.run(
+      accountingComplete ? "available" : "partial",
+      unrealized,
+      accountingComplete ? "reconciled" : "warning",
+      reconciliationDifference,
+      String(row.id),
+    );
   }
 }
 
@@ -482,11 +775,50 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
   const totals = db.prepare(`
     SELECT
       COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') NOT IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS investment_income_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS external_rewards_czk,
       COALESCE(SUM(CASE WHEN kind = 'income' THEN amount_czk ELSE 0 END), 0) AS income_czk,
-      COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN -amount_czk ELSE 0 END), 0) AS fees_czk
     FROM transactions
     WHERE account_id = ?
       AND amount_czk IS NOT NULL
+  `);
+  const yieldRows = db.prepare(`
+    SELECT category, amount_czk, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND kind = 'interest'
+      AND amount_czk IS NOT NULL
+  `);
+  const coverageRows = db.prepare(`
+    SELECT occurred_at, raw_json
+    FROM transactions
+    WHERE account_id = ?
+    ORDER BY occurred_at ASC
   `);
   const update = db.prepare(
     "UPDATE accounts SET realized_pnl = ?, realized_pnl_czk = ?, raw_json = ? WHERE id = ?",
@@ -499,22 +831,176 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
 
     const row = totals.get(String(account.id));
     const interestCzk = Number(row?.interest_czk) || 0;
+    const investmentIncomeCzk = Number(row?.investment_income_czk) || 0;
+    const externalRewardsCzk = Number(row?.external_rewards_czk) || 0;
     const incomeCzk = Number(row?.income_czk) || 0;
     const feesCzk = Number(row?.fees_czk) || 0;
-    const realizedPnlCzk = interestCzk + incomeCzk - feesCzk;
+    const investmentPnlCzk =
+      interestCzk + investmentIncomeCzk - feesCzk;
+    const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+    const statementDates = coverageRows
+      .all(String(account.id))
+      .map((coverageRow) => {
+        const rowRaw = parseJsonObject(coverageRow.raw_json);
+        for (const candidate of [rowRaw.sourceDate, rowRaw.occurredAt]) {
+          if (typeof candidate !== "string") continue;
+          const match = candidate.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (match?.[1]) return match[1];
+        }
+        return String(coverageRow.occurred_at || "").slice(0, 10);
+      })
+      .filter(Boolean)
+      .sort();
+    const statementFirstDate = statementDates[0] ?? null;
+    const statementLastDate = statementDates.at(-1) ?? null;
+    const yieldBreakdown = {
+      ordinary: 0,
+      bonus: 0,
+      penalty: 0,
+      other: 0,
+    };
+    for (const yieldRow of yieldRows.all(String(account.id))) {
+      const rowRaw = parseJsonObject(yieldRow.raw_json);
+      const type =
+        typeof rowRaw.type === "string"
+          ? rowRaw.type
+          : String(yieldRow.category || "");
+      const bucket = investownInterestBucket(type);
+      yieldBreakdown[bucket] += Number(yieldRow.amount_czk) || 0;
+    }
 
     update.run(
-      realizedPnlCzk,
-      realizedPnlCzk,
+      investmentPnlCzk,
+      investmentPnlCzk,
       JSON.stringify({
         ...raw,
         derivedInterest: interestCzk,
+        derivedOrdinaryYield: yieldBreakdown.ordinary,
+        derivedBonusYield: yieldBreakdown.bonus,
+        derivedPenaltyYield: yieldBreakdown.penalty,
+        derivedOtherYield: yieldBreakdown.other,
+        derivedOtherInvestmentIncome: investmentIncomeCzk,
+        derivedExternalRewards: externalRewardsCzk,
         derivedOtherIncome: incomeCzk,
         derivedFees: feesCzk,
-        derivedRealizedPnl: realizedPnlCzk,
+        derivedInvestmentPnl: investmentPnlCzk,
+        derivedTotalGain: totalGainCzk,
+        derivedRealizedPnl: investmentPnlCzk,
+        statementFirstDate,
+        statementLastDate,
       }),
       String(account.id),
     );
+  }
+}
+
+function repairInvestownSnapshotPerformance(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+
+  const transactionRows = db.prepare(`
+    SELECT occurred_at, kind, category, amount_czk, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND amount_czk IS NOT NULL
+      AND kind IN ('interest', 'income', 'fee')
+    ORDER BY occurred_at ASC
+  `);
+  const snapshotRows = db.prepare(`
+    SELECT recorded_at, raw_json
+    FROM snapshots
+    WHERE account_id = ?
+    ORDER BY recorded_at ASC
+  `);
+  const updateSnapshot = db.prepare(
+    "UPDATE snapshots SET raw_json = ? " +
+      "WHERE account_id = ? AND recorded_at = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const flows = transactionRows
+      .all(String(account.id))
+      .map((row) => {
+        const raw = parseJsonObject(row.raw_json);
+        const sourceDate =
+          typeof raw.sourceDate === "string" ? raw.sourceDate : "";
+        const localMatch = sourceDate.match(/^(\d{4}-\d{2}-\d{2})/);
+        return {
+          date:
+            localMatch?.[1] ||
+            String(row.occurred_at || "").slice(0, 10),
+          occurredAt: String(row.occurred_at || ""),
+          kind: String(row.kind || ""),
+          category: String(row.category || ""),
+          amountCzk: Number(row.amount_czk) || 0,
+        };
+      })
+      .sort(
+        (left, right) =>
+          left.date.localeCompare(right.date) ||
+          left.occurredAt.localeCompare(right.occurredAt),
+      );
+
+    let index = 0;
+    let interestCzk = 0;
+    let investmentIncomeCzk = 0;
+    let externalRewardsCzk = 0;
+    let feesCzk = 0;
+
+    for (const snapshot of snapshotRows.all(String(account.id))) {
+      const date = String(snapshot.recorded_at || "").slice(0, 10);
+      while (index < flows.length && flows[index].date <= date) {
+        const flow = flows[index];
+        if (flow.kind === "interest") {
+          interestCzk += flow.amountCzk;
+        } else if (flow.kind === "income") {
+          if (isPerformanceExternalRewardCategory(flow.category)) {
+            externalRewardsCzk += flow.amountCzk;
+          } else {
+            investmentIncomeCzk += flow.amountCzk;
+          }
+        } else if (flow.kind === "fee") {
+          feesCzk -= flow.amountCzk;
+        }
+        index += 1;
+      }
+
+      const investmentPnlCzk =
+        interestCzk + investmentIncomeCzk - feesCzk;
+      const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+      const raw = parseJsonObject(snapshot.raw_json);
+      const previousHistory =
+        raw.financeOsInvestownHistory &&
+        typeof raw.financeOsInvestownHistory === "object" &&
+        !Array.isArray(raw.financeOsInvestownHistory)
+          ? (raw.financeOsInvestownHistory as Record<string, unknown>)
+          : {};
+
+      updateSnapshot.run(
+        JSON.stringify({
+          ...raw,
+          financeOsInvestownHistory: {
+            ...previousHistory,
+            realizedPnlCzk: investmentPnlCzk,
+            investmentPnlCzk,
+            externalRewardsCzk,
+            totalGainCzk,
+            interestCzk,
+            otherIncomeCzk:
+              investmentIncomeCzk + externalRewardsCzk,
+            feesCzk,
+          },
+        }),
+        String(account.id),
+        String(snapshot.recorded_at),
+      );
+    }
   }
 }
 
@@ -579,8 +1065,11 @@ function backfillCanonicalAssets(db: DatabaseSync) {
 export function repairStoredData(db: DatabaseSync) {
   backfillLegacyFlowScopes(db);
   repairTrading212CashSemantics(db);
+  repairInvestownClassificationAudit(db);
+  repairInvestownProjectIncomeBreakdown(db);
   backfillAccountCoverage(db);
   repairInvestownRealizedPnl(db);
+  repairInvestownSnapshotPerformance(db);
   backfillCanonicalAssets(db);
 }
 

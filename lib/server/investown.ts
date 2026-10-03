@@ -1,5 +1,15 @@
 import crypto from "node:crypto";
 import type { TransactionKind } from "@/lib/domain";
+import {
+  classifyInvestownKind,
+  investownIncomeCategory,
+  investownInterestBucket,
+  investownInvestedPrincipalDelta,
+  investownPrincipalDelta,
+  investownReservationDelta,
+  investownReturnedPrincipalDelta,
+  summarizeInvestownPerformance,
+} from "@/lib/investown-semantics.mjs";
 import { getDb } from "@/lib/server/db";
 import { maybeToCzk, toCzk } from "@/lib/server/fx";
 import {
@@ -32,6 +42,9 @@ export interface InvestownImportInput {
   rows: InvestownImportRow[];
   replaceExisting?: boolean;
   sourceFormat?: "investown-native" | "mapped";
+  dryRun?: boolean;
+  allowAuthoritativeRemovals?: boolean;
+  confirmationToken?: string;
 }
 
 export interface InvestownImportStatus {
@@ -41,6 +54,13 @@ export interface InvestownImportStatus {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  ordinaryYieldCzk: number;
+  bonusYieldCzk: number;
+  penaltyYieldCzk: number;
+  otherYieldCzk: number;
+  investmentPnlCzk: number;
+  externalRewardsCzk: number;
+  totalGainCzk: number;
   realizedProfitCzk: number;
   transactions: number;
   projects: number;
@@ -48,6 +68,9 @@ export interface InvestownImportStatus {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  accountingComplete: boolean;
+  reconciliationStatus: string;
+  reconciliationDifferenceCzk: number;
   typeCounts: Array<{ type: string; count: number }>;
 }
 
@@ -56,7 +79,8 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
   const account = db
     .prepare(
       "SELECT total_value_czk, cash_value_czk, invested_value_czk, " +
-        "realized_pnl_czk, updated_at, raw_json " +
+        "realized_pnl_czk, reconciliation_status, reconciliation_difference, " +
+        "updated_at, raw_json " +
         "FROM accounts WHERE provider = 'investown' LIMIT 1",
     )
     .get();
@@ -85,7 +109,7 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     )
     .get();
 
-  const typeCounts = db
+  let typeCounts = db
     .prepare(
       "SELECT COALESCE(NULLIF(category, ''), 'Unknown') AS type, COUNT(*) AS count " +
         "FROM transactions WHERE provider = 'investown' " +
@@ -96,22 +120,91 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
       type: String(row.type),
       count: Number(row.count) || 0,
     }));
+  let unknownTypeCount = Number(transactionStats?.unknown) || 0;
 
   let mode = "unknown";
   let realizedYieldCzk = Number(account.realized_pnl_czk) || 0;
-  let realizedProfitCzk = Number(account.realized_pnl_czk) || 0;
+  let ordinaryYieldCzk = 0;
+  let bonusYieldCzk = 0;
+  let penaltyYieldCzk = 0;
+  let otherYieldCzk = 0;
+  let investmentPnlCzk = Number(account.realized_pnl_czk) || 0;
+  let externalRewardsCzk = 0;
+  let totalGainCzk = Number(account.realized_pnl_czk) || 0;
   try {
     const raw = account.raw_json
       ? (JSON.parse(String(account.raw_json)) as Record<string, unknown>)
       : {};
     if (typeof raw.importMode === "string") mode = raw.importMode;
+
+    if (
+      raw.typeCounts &&
+      typeof raw.typeCounts === "object" &&
+      !Array.isArray(raw.typeCounts)
+    ) {
+      typeCounts = Object.entries(raw.typeCounts as Record<string, unknown>)
+        .map(([type, count]) => ({
+          type,
+          count: Number(count) || 0,
+        }))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+    }
+    if (Array.isArray(raw.unknownTypes)) {
+      unknownTypeCount = raw.unknownTypes.length;
+    }
+
     const storedYield = Number(raw.derivedInterest);
     if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
-    const storedProfit = Number(raw.derivedRealizedPnl);
-    if (Number.isFinite(storedProfit)) realizedProfitCzk = storedProfit;
+    const storedOrdinaryYield = Number(raw.derivedOrdinaryYield);
+    if (Number.isFinite(storedOrdinaryYield)) ordinaryYieldCzk = storedOrdinaryYield;
+    const storedBonusYield = Number(raw.derivedBonusYield);
+    if (Number.isFinite(storedBonusYield)) bonusYieldCzk = storedBonusYield;
+    const storedPenaltyYield = Number(raw.derivedPenaltyYield);
+    if (Number.isFinite(storedPenaltyYield)) penaltyYieldCzk = storedPenaltyYield;
+    const storedOtherYield = Number(raw.derivedOtherYield);
+    if (Number.isFinite(storedOtherYield)) otherYieldCzk = storedOtherYield;
+
+    const storedInvestmentPnl = Number(raw.derivedInvestmentPnl);
+    if (Number.isFinite(storedInvestmentPnl)) {
+      investmentPnlCzk = storedInvestmentPnl;
+    } else {
+      // Backward compatibility: older FinanceOS builds stored referral/promo
+      // rewards inside derivedRealizedPnl. Their derivedInterest/derivedFees
+      // fields still let us recover the true investment-only P/L.
+      const storedFees = Number(raw.derivedFees);
+      if (Number.isFinite(storedYield)) {
+        investmentPnlCzk =
+          storedYield - (Number.isFinite(storedFees) ? storedFees : 0);
+      }
+    }
+
+    const storedRewards = Number(
+      raw.derivedExternalRewards ?? raw.derivedOtherIncome,
+    );
+    if (Number.isFinite(storedRewards)) {
+      externalRewardsCzk = storedRewards;
+    }
+
+    const storedTotalGain = Number(raw.derivedTotalGain);
+    if (Number.isFinite(storedTotalGain)) {
+      totalGainCzk = storedTotalGain;
+    } else {
+      totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+    }
   } catch {
     mode = "invalid metadata";
   }
+
+  const realizedProfitCzk = totalGainCzk;
+
+  const reconciliationStatus = String(
+    account.reconciliation_status || "unknown",
+  );
+  const reconciliationDifferenceCzk =
+    Number(account.reconciliation_difference) || 0;
+  const accountingComplete =
+    reconciliationStatus === "reconciled" && unknownTypeCount === 0;
 
   return {
     mode,
@@ -120,137 +213,41 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     walletCashCzk: Number(account.cash_value_czk) || 0,
     investedValueCzk: Number(account.invested_value_czk) || 0,
     realizedYieldCzk,
+    ordinaryYieldCzk,
+    bonusYieldCzk,
+    penaltyYieldCzk,
+    otherYieldCzk,
+    investmentPnlCzk,
+    externalRewardsCzk,
+    totalGainCzk,
     realizedProfitCzk,
     transactions: Number(transactionStats?.count) || 0,
     projects: Number(projectStats?.count) || 0,
     activeProjects: Number(activeStats?.count) || 0,
     firstAt: transactionStats?.first_at ? String(transactionStats.first_at) : null,
     lastAt: transactionStats?.last_at ? String(transactionStats.last_at) : null,
-    unknownTypes: Number(transactionStats?.unknown) || 0,
+    unknownTypes: unknownTypeCount,
+    accountingComplete,
+    reconciliationStatus,
+    reconciliationDifferenceCzk,
     typeCounts,
   };
 }
-
-const EXACT_TYPE_MAP: Record<string, TransactionKind> = {
-  "Vklad peněz": "deposit",
-  "Výběr peněz": "withdrawal",
-  "Výnos": "interest",
-  "Částečný výnos": "interest",
-  "Bonusový výnos": "interest",
-  "Smluvní pokuta": "interest",
-  "Zákonné úroky z prodlení": "interest",
-  "Odměna": "income",
-  "Investice": "transfer",
-  "Autoinvestice": "transfer",
-  "Nabídka ke koupi": "transfer",
-  "Vrácení nabídky": "transfer",
-  "Splacení jistiny": "transfer",
-  "Částečné splacení jistiny": "transfer",
-  "Odstoupení": "transfer",
-};
-
-const PRINCIPAL_IN_TYPES = new Set(["Investice", "Autoinvestice"]);
-const PRINCIPAL_OUT_TYPES = new Set([
-  "Splacení jistiny",
-  "Částečné splacení jistiny",
-  "Odstoupení",
-]);
-
-const OFFER_LOCK_TYPES = new Set(["Nabídka ke koupi"]);
-const OFFER_UNLOCK_TYPES = new Set(["Vrácení nabídky"]);
 
 function normalize(value: string | undefined) {
   return (value || "").trim();
 }
 
-function investownIncomeCategory(row: InvestownImportRow) {
-  const text = [row.type, row.description, row.projectType]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    text.includes("pozv") ||
-    text.includes("referral") ||
-    text.includes("invite")
-  ) return "referral_reward";
-
-  if (
-    text.includes("kampa") ||
-    text.includes("campaign") ||
-    text.includes("promo")
-  ) return "campaign_reward";
-
-  return "external_reward";
+function classifyInvestown(row: InvestownImportRow): TransactionKind {
+  return classifyInvestownKind(row) as TransactionKind;
 }
 
-function classifyInvestown(row: InvestownImportRow): TransactionKind {
-  const exact = EXACT_TYPE_MAP[normalize(row.type)];
-  if (exact) return exact;
+function principalDelta(row: InvestownImportRow) {
+  return investownPrincipalDelta(row);
+}
 
-  const text = [row.type, row.description, row.projectType]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (
-    text.includes("vklad") ||
-    text.includes("dobití") ||
-    text.includes("dobiti") ||
-    text.includes("příchozí platba") ||
-    text.includes("prichozi platba") ||
-    text.includes("deposit")
-  ) return "deposit";
-
-  if (
-    text.includes("výběr") ||
-    text.includes("vyber") ||
-    text.includes("withdraw")
-  ) return "withdrawal";
-
-  if (
-    text.includes("výnos") ||
-    text.includes("vynos") ||
-    text.includes("úrok") ||
-    text.includes("urok") ||
-    text.includes("pokuta") ||
-    text.includes("interest")
-  ) return "interest";
-
-  if (
-    text.includes("poplatek") ||
-    text.includes("fee") ||
-    text.includes("commission")
-  ) return "fee";
-
-  if (
-    text.includes("bonus") ||
-    text.includes("odměna") ||
-    text.includes("odmena") ||
-    text.includes("cashback") ||
-    text.includes("referral")
-  ) return "income";
-
-  if (
-    text.includes("investice") ||
-    text.includes("investování") ||
-    text.includes("investovani") ||
-    text.includes("nákup") ||
-    text.includes("nakup") ||
-    text.includes("nabídka") ||
-    text.includes("nabidka") ||
-    text.includes("prodej") ||
-    text.includes("tržiště") ||
-    text.includes("trziste") ||
-    text.includes("jistiny") ||
-    text.includes("odstoupení") ||
-    text.includes("odstoupeni") ||
-    text.includes("principal") ||
-    text.includes("repayment") ||
-    text.includes("investment")
-  ) return "transfer";
-
-  return "adjustment";
+function reservationDelta(row: InvestownImportRow) {
+  return investownReservationDelta(row);
 }
 
 function stableBase(row: InvestownImportRow): string {
@@ -283,22 +280,6 @@ function projectExternalId(row: InvestownImportRow) {
   return "project:" + [normalize(row.loanName), normalize(row.projectName)]
     .filter(Boolean)
     .join("|");
-}
-
-function principalDelta(row: InvestownImportRow) {
-  const type = normalize(row.type);
-  const amount = Math.abs(Number(row.amount));
-  if (PRINCIPAL_IN_TYPES.has(type)) return amount;
-  if (PRINCIPAL_OUT_TYPES.has(type)) return -amount;
-  return 0;
-}
-
-function reservationDelta(row: InvestownImportRow) {
-  const type = normalize(row.type);
-  const amount = Math.abs(Number(row.amount));
-  if (OFFER_LOCK_TYPES.has(type)) return amount;
-  if (OFFER_UNLOCK_TYPES.has(type)) return -amount;
-  return 0;
 }
 
 function transactionQuantity(row: InvestownImportRow) {
@@ -388,7 +369,15 @@ function readStoredInvestownRow(
 }
 
 export async function importInvestown(input: InvestownImportInput) {
-  const accountCurrency = input.accountCurrency?.trim().toUpperCase() || "CZK";
+  const requestedAccountCurrency =
+    input.accountCurrency?.trim().toUpperCase() || "CZK";
+  // The official Investown export explicitly labels its amount column as CZK.
+  // Never let an editable form field reinterpret those numbers as another
+  // currency and silently corrupt every balance.
+  const accountCurrency =
+    input.sourceFormat === "investown-native"
+      ? "CZK"
+      : requestedAccountCurrency;
 
   if (!Array.isArray(input.rows)) throw new Error("Investown rows must be an array.");
   if (!input.rows.length) throw new Error("Investown import does not contain any data rows.");
@@ -403,7 +392,10 @@ export async function importInvestown(input: InvestownImportInput) {
 
   for (const row of input.rows) {
     const amount = Number(row.amount);
-    const currency = String(row.currency || accountCurrency).trim().toUpperCase();
+    const currency =
+      input.sourceFormat === "investown-native"
+        ? "CZK"
+        : String(row.currency || accountCurrency).trim().toUpperCase();
     const occurredAt = new Date(row.occurredAt);
 
     if (!Number.isFinite(amount) || !currency || Number.isNaN(occurredAt.getTime())) {
@@ -416,10 +408,7 @@ export async function importInvestown(input: InvestownImportInput) {
     const type = normalize(row.type) || "Unknown";
 
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
-    if (
-      !EXACT_TYPE_MAP[type] &&
-      (input.sourceFormat === "investown-native" || kind === "adjustment")
-    ) {
+    if (kind === "adjustment") {
       unknownTypes.add(type);
     }
 
@@ -553,10 +542,7 @@ export async function importInvestown(input: InvestownImportInput) {
   for (const item of prepared) {
     const type = normalize(item.row.type) || "Unknown";
     typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
-    if (
-      !EXACT_TYPE_MAP[type] &&
-      (input.sourceFormat === "investown-native" || item.kind === "adjustment")
-    ) {
+    if (item.kind === "adjustment") {
       unknownTypes.add(type);
     }
   }
@@ -572,6 +558,10 @@ export async function importInvestown(input: InvestownImportInput) {
     invested: number;
     returned: number;
     interest: number;
+    ordinaryYield: number;
+    bonusYield: number;
+    penaltyYield: number;
+    otherYield: number;
     reserved: number;
   }>();
 
@@ -595,20 +585,31 @@ export async function importInvestown(input: InvestownImportInput) {
       invested: 0,
       returned: 0,
       interest: 0,
+      ordinaryYield: 0,
+      bonusYield: 0,
+      penaltyYield: 0,
+      otherYield: 0,
       reserved: 0,
     };
 
-    if (item.principalDelta > 0) {
-      project.principal += item.principalDelta;
-      project.invested += item.principalDelta;
-    } else if (item.principalDelta < 0) {
-      const returned = Math.abs(item.principalDelta);
-      project.principal -= returned;
-      project.returned += returned;
-    }
+    project.principal += item.principalDelta;
+    project.invested += investownInvestedPrincipalDelta(item.row);
+    project.returned += investownReturnedPrincipalDelta(item.row);
 
     if (item.kind === "interest" && item.amountCzk !== null) {
-      project.interest += Math.max(0, item.amountCzk);
+      // Preserve the provider sign so a future yield/penalty correction or
+      // reversal cannot silently overstate lifetime project income.
+      const bucket = investownInterestBucket(item.row.type);
+      project.interest += item.amountCzk;
+      if (bucket === "ordinary") {
+        project.ordinaryYield += item.amountCzk;
+      } else if (bucket === "bonus") {
+        project.bonusYield += item.amountCzk;
+      } else if (bucket === "penalty") {
+        project.penaltyYield += item.amountCzk;
+      } else {
+        project.otherYield += item.amountCzk;
+      }
     }
 
     if (item.reservationDelta !== 0) {
@@ -616,6 +617,8 @@ export async function importInvestown(input: InvestownImportInput) {
     }
 
     if (project.principal < 0 && project.principal > -0.02) project.principal = 0;
+    if (project.invested < 0 && project.invested > -0.02) project.invested = 0;
+    if (project.returned < 0 && project.returned > -0.02) project.returned = 0;
     if (project.reserved < 0 && project.reserved > -0.02) project.reserved = 0;
     projects.set(externalId, project);
   }
@@ -628,6 +631,14 @@ export async function importInvestown(input: InvestownImportInput) {
     .filter((project) => project.reserved < -0.02)
     .map((project) => project.name)
     .sort();
+  const negativeInvestedProjects = [...projects.values()]
+    .filter((project) => project.invested < -0.02)
+    .map((project) => project.name)
+    .sort();
+  const negativeReturnedProjects = [...projects.values()]
+    .filter((project) => project.returned < -0.02)
+    .map((project) => project.name)
+    .sort();
 
   const derivedPrincipal = [...projects.values()].reduce(
     (sum, project) => sum + Math.max(0, project.principal),
@@ -638,29 +649,41 @@ export async function importInvestown(input: InvestownImportInput) {
     0,
   );
   const derivedInvested = derivedPrincipal + derivedReserved;
-  const derivedInterest = prepared.reduce(
-    (sum, item) =>
-      item.kind === "interest" && item.amountCzk !== null
-        ? sum + item.amountCzk
-        : sum,
-    0,
+  const performanceSummary = summarizeInvestownPerformance(
+    prepared.map((item) => ({
+      kind: item.kind,
+      amountCzk: item.amountCzk,
+      category:
+        item.kind === "income"
+          ? investownIncomeCategory(item.row)
+          : normalize(item.row.type),
+    })),
   );
-  const derivedOtherIncome = prepared.reduce(
-    (sum, item) =>
-      item.kind === "income" && item.amountCzk !== null
-        ? sum + item.amountCzk
-        : sum,
-    0,
+  const yieldBreakdown = prepared.reduce(
+    (acc, item) => {
+      if (item.kind !== "interest" || item.amountCzk === null) return acc;
+      const bucket = investownInterestBucket(item.row.type);
+      acc[bucket] += item.amountCzk;
+      return acc;
+    },
+    { ordinary: 0, bonus: 0, penalty: 0, other: 0 },
   );
-  const derivedFees = prepared.reduce(
-    (sum, item) =>
-      item.kind === "fee" && item.amountCzk !== null
-        ? sum + Math.abs(item.amountCzk)
-        : sum,
-    0,
-  );
-  const derivedRealizedPnl =
-    derivedInterest + derivedOtherIncome - derivedFees;
+  const derivedInterest = performanceSummary.interestCzk;
+  const derivedOrdinaryYield = yieldBreakdown.ordinary;
+  const derivedBonusYield = yieldBreakdown.bonus;
+  const derivedPenaltyYield = yieldBreakdown.penalty;
+  const derivedOtherYield = yieldBreakdown.other;
+  const derivedExternalRewards = performanceSummary.externalRewardsCzk;
+  const derivedOtherInvestmentIncome =
+    performanceSummary.otherInvestmentIncomeCzk;
+  const derivedOtherIncome =
+    derivedExternalRewards + derivedOtherInvestmentIncome;
+  const derivedFees = performanceSummary.feesCzk;
+  const derivedInvestmentPnl = performanceSummary.investmentPnlCzk;
+  const derivedTotalGain = performanceSummary.totalGainCzk;
+  // Canonical account realized P/L means investment performance. Referral,
+  // campaign and other external rewards are reported separately.
+  const derivedRealizedPnl = derivedInvestmentPnl;
 
   const overrideCash = finiteOptional(input.walletCash);
   const overrideTotal = finiteOptional(input.currentValue);
@@ -670,14 +693,22 @@ export async function importInvestown(input: InvestownImportInput) {
     overrideCash === null &&
     overrideTotal === null &&
     (negativePrincipalProjects.length > 0 ||
-      negativeReservationProjects.length > 0)
+      negativeReservationProjects.length > 0 ||
+      negativeInvestedProjects.length > 0 ||
+      negativeReturnedProjects.length > 0)
   ) {
     throw new Error(
       "Investown statement cannot be reconstructed as a complete history. " +
-        "Some projects return more principal/reservations than the file contains. " +
-        "Export the full account history or use the current-balance override.",
+        "Some project principal/reservation or reversal counters require transactions " +
+        "that are missing from the file. Export the full account history or use the " +
+        "current-balance override.",
     );
   }
+
+  const nativeDerivedStatement =
+    input.sourceFormat === "investown-native" &&
+    overrideCash === null &&
+    overrideTotal === null;
 
   const walletCash = overrideCash ?? derivedWallet;
   const totalValue = overrideTotal ?? Math.max(0, walletCash + derivedInvested);
@@ -699,28 +730,257 @@ export async function importInvestown(input: InvestownImportInput) {
     toCzk(totalValue, accountCurrency),
   ]);
 
+  const missingCzkRows = prepared.filter(
+    (item) => item.amountCzk === null,
+  ).length;
+  const derivedOwnerCapitalCzk = prepared.reduce((sum, item) => {
+    if (item.amountCzk === null) return sum;
+    if (item.kind === "deposit" || item.kind === "withdrawal") {
+      // Native statement amounts already carry the economic sign. Preserving
+      // it makes deposit/withdrawal corrections reconcile automatically.
+      return sum + item.amountCzk;
+    }
+    return sum;
+  }, 0);
+  const accountingExpectedValueCzk =
+    derivedOwnerCapitalCzk + derivedTotalGain;
+  const accountingDifferenceCzk =
+    nativeDerivedStatement &&
+    accountCurrency === "CZK" &&
+    missingCzkRows === 0
+      ? totalValueCzk - accountingExpectedValueCzk
+      : null;
+  const accountingIdentityOk =
+    accountingDifferenceCzk === null ||
+    Math.abs(accountingDifferenceCzk) <= 0.05;
+  const nativeAccountingComplete =
+    nativeDerivedStatement &&
+    unknownTypes.size === 0 &&
+    missingCzkRows === 0 &&
+    accountingIdentityOk;
+
   // All asynchronous currency work is complete before opening the SQLite
   // transaction. The import itself is atomic: a failed row cannot leave a
   // half-replaced Investown portfolio behind.
+  const statementFirstDate = prepared[0]
+    ? statementDate(prepared[0].row, prepared[0].occurredIso)
+    : null;
+  const statementLastDate = prepared.at(-1)
+    ? statementDate(prepared.at(-1)!.row, prepared.at(-1)!.occurredIso)
+    : null;
   const statementLastAt = prepared[prepared.length - 1]?.occurredIso || null;
+  const previousAccount = db
+    .prepare(
+      "SELECT total_value_czk, cash_value_czk, realized_pnl_czk, raw_json " +
+        "FROM accounts WHERE provider = 'investown' AND external_id = 'main' LIMIT 1",
+    )
+    .get();
+
   let previousStatementLastAt: string | null = null;
-  if (input.sourceFormat === "investown-native") {
-    const previous = db
-      .prepare(
-        "SELECT raw_json FROM accounts WHERE provider = 'investown' AND external_id = 'main' LIMIT 1",
-      )
-      .get();
-    if (previous?.raw_json) {
-      try {
-        const raw = JSON.parse(String(previous.raw_json)) as Record<string, unknown>;
-        if (typeof raw.statementLastAt === "string") {
-          previousStatementLastAt = raw.statementLastAt;
-        }
-      } catch {
-        // Invalid legacy metadata must never block a fresh import.
+  let previousInvestmentPnlCzk = previousAccount
+    ? Number(previousAccount.realized_pnl_czk) || 0
+    : 0;
+  let previousExternalRewardsCzk = 0;
+  if (input.sourceFormat === "investown-native" && previousAccount?.raw_json) {
+    try {
+      const raw = JSON.parse(
+        String(previousAccount.raw_json),
+      ) as Record<string, unknown>;
+      if (typeof raw.statementLastAt === "string") {
+        previousStatementLastAt = raw.statementLastAt;
       }
+      const storedInvestmentPnl = Number(raw.derivedInvestmentPnl);
+      if (Number.isFinite(storedInvestmentPnl)) {
+        previousInvestmentPnlCzk = storedInvestmentPnl;
+      } else {
+        const storedInterest = Number(raw.derivedInterest);
+        const storedFees = Number(raw.derivedFees);
+        if (Number.isFinite(storedInterest)) {
+          previousInvestmentPnlCzk =
+            storedInterest - (Number.isFinite(storedFees) ? storedFees : 0);
+        }
+      }
+      const storedRewards = Number(
+        raw.derivedExternalRewards ?? raw.derivedOtherIncome,
+      );
+      if (Number.isFinite(storedRewards)) {
+        previousExternalRewardsCzk = storedRewards;
+      }
+    } catch {
+      // Invalid legacy metadata must never block a fresh import.
     }
   }
+
+  const projectedActiveProjects = [...projects.values()].filter(
+    (project) => project.principal > 0.005 || project.reserved > 0.005,
+  ).length;
+  const previewToken = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        prepared: prepared.map((item) => ({
+          identity: stableBase(item.row),
+          occurredIso: item.occurredIso,
+          amount: item.amount,
+          amountCzk: item.amountCzk,
+          kind: item.kind,
+          principalDelta: item.principalDelta,
+          reservationDelta: item.reservationDelta,
+        })),
+        removedTransactions,
+        authoritativeNativeSnapshot,
+        previousStatementLastAt,
+        effective: {
+          cashValueCzk,
+          investedValueCzk,
+          totalValueCzk,
+        },
+        accounting: {
+          derivedOwnerCapitalCzk,
+          derivedInvestmentPnl,
+          derivedExternalRewards,
+          derivedTotalGain,
+          derivedOrdinaryYield,
+          derivedBonusYield,
+          derivedPenaltyYield,
+          derivedOtherYield,
+          accountingExpectedValueCzk,
+          accountingDifferenceCzk,
+          missingCzkRows,
+        },
+      }),
+    )
+    .digest("hex");
+
+  const projectedResult = {
+    previewToken,
+    imported: incomingPrepared.length,
+    newTransactions,
+    matchedTransactions,
+    removedTransactions,
+    authoritativeNativeSnapshot,
+    storedTransactions: prepared.length,
+    skipped: input.rows.length - incomingPrepared.length,
+    totalRows: input.rows.length,
+    sourceFormat: input.sourceFormat || "mapped",
+    derived: {
+      walletCashCzk: derivedWallet,
+      investedPrincipalCzk: derivedPrincipal,
+      reservedOffersCzk: derivedReserved,
+      receivedInterestCzk: derivedInterest,
+      ordinaryYieldCzk: derivedOrdinaryYield,
+      bonusYieldCzk: derivedBonusYield,
+      penaltyYieldCzk: derivedPenaltyYield,
+      otherYieldCzk: derivedOtherYield,
+      otherInvestmentIncomeCzk: derivedOtherInvestmentIncome,
+      externalRewardsCzk: derivedExternalRewards,
+      otherIncomeCzk: derivedOtherIncome,
+      feesCzk: derivedFees,
+      investmentPnlCzk: derivedInvestmentPnl,
+      totalGainCzk: derivedTotalGain,
+      realizedPnlCzk: derivedInvestmentPnl,
+      totalValueCzk: derivedWallet + derivedInvested,
+      activeProjects: projectedActiveProjects,
+      allProjects: projects.size,
+    },
+    reconciliation: {
+      checked:
+        nativeDerivedStatement &&
+        accountCurrency === "CZK" &&
+        missingCzkRows === 0,
+      ownerCapitalCzk: derivedOwnerCapitalCzk,
+      expectedValueCzk: accountingExpectedValueCzk,
+      differenceCzk: accountingDifferenceCzk,
+      ok: nativeAccountingComplete,
+      missingCzkRows,
+    },
+    effective: {
+      walletCashCzk: cashValueCzk,
+      investedValueCzk,
+      totalValueCzk,
+    },
+    diff: {
+      transactions:
+        prepared.length - existingPrepared.length,
+      totalValueCzk:
+        totalValueCzk -
+        (previousAccount ? Number(previousAccount.total_value_czk) || 0 : 0),
+      walletCashCzk:
+        cashValueCzk -
+        (previousAccount ? Number(previousAccount.cash_value_czk) || 0 : 0),
+      investmentPnlCzk:
+        derivedInvestmentPnl - previousInvestmentPnlCzk,
+      externalRewardsCzk:
+        derivedExternalRewards - previousExternalRewardsCzk,
+    },
+    coverage: {
+      firstAt: prepared[0]?.occurredIso || null,
+      firstDate: statementFirstDate,
+      lastAt: statementLastAt,
+      lastDate: statementLastDate,
+      previousLastAt: previousStatementLastAt,
+      advanced:
+        previousStatementLastAt === null ||
+        (statementLastAt !== null &&
+          statementLastAt > previousStatementLastAt),
+      typeCounts: Object.fromEntries(
+        [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+      ),
+      unknownTypes: [...unknownTypes].sort(),
+      negativePrincipalProjects,
+      negativeReservationProjects,
+      negativeInvestedProjects,
+      negativeReturnedProjects,
+    },
+  };
+
+  if (input.dryRun) {
+    return {
+      accountId: null,
+      dryRun: true,
+      ...projectedResult,
+    };
+  }
+
+  if (!input.confirmationToken || input.confirmationToken !== previewToken) {
+    throw new Error(
+      "Investown import vyžaduje potvrzení přesného aktuálního preview. Proveď nejdřív kontrolu a potom potvrď stejný náhled.",
+    );
+  }
+
+  if (
+    nativeDerivedStatement &&
+    accountCurrency === "CZK" &&
+    missingCzkRows === 0 &&
+    unknownTypes.size === 0 &&
+    accountingDifferenceCzk !== null &&
+    Math.abs(accountingDifferenceCzk) > 0.05
+  ) {
+    throw new Error(
+      "Investown účetní kontrola nesedí o " +
+        accountingDifferenceCzk.toLocaleString("cs-CZ", {
+          maximumFractionDigits: 2,
+        }) +
+        " Kč. Import nebyl proveden, protože hodnota účtu neodpovídá " +
+        "vlastním vkladům/výběrům + investičnímu P/L + externím odměnám.",
+    );
+  }
+
+  if (removedTransactions > 0) {
+    if (input.allowAuthoritativeRemovals !== true) {
+      throw new Error(
+        "Novější plný Investown výpis by odstranil " +
+          removedTransactions.toLocaleString("cs-CZ") +
+          " dříve uložených řádků. Nejprve proveď preview a změnu výslovně potvrď.",
+      );
+    }
+    if (!input.confirmationToken || input.confirmationToken !== previewToken) {
+      throw new Error(
+        "Odstranění historických Investown řádků vyžaduje potvrzení přesného aktuálního preview.",
+      );
+    }
+  }
+
   db.exec("BEGIN IMMEDIATE;");
   try {
     const accountId = upsertAccount({
@@ -734,13 +994,14 @@ export async function importInvestown(input: InvestownImportInput) {
     totalValue,
     realizedPnl: derivedRealizedPnl,
     unrealizedPnl: 0,
-    realizedPnlStatus:
-      input.sourceFormat === "investown-native" &&
-      overrideCash === null &&
-      overrideTotal === null
-        ? "available"
-        : "partial",
+    realizedPnlStatus: nativeAccountingComplete ? "available" : "partial",
     unrealizedPnlStatus: "not_applicable",
+    reconciliationDifference: accountingDifferenceCzk ?? 0,
+    reconciliationStatus: nativeAccountingComplete
+      ? "reconciled"
+      : nativeDerivedStatement
+        ? "warning"
+        : "unknown",
     cashValueCzk,
     investedValueCzk,
     totalValueCzk,
@@ -758,17 +1019,46 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedReserved,
       derivedInvested,
       derivedInterest,
+      derivedOrdinaryYield,
+      derivedBonusYield,
+      derivedPenaltyYield,
+      derivedOtherYield,
+      derivedOtherInvestmentIncome,
+      derivedExternalRewards,
       derivedOtherIncome,
       derivedFees,
+      derivedInvestmentPnl,
+      derivedTotalGain,
       derivedRealizedPnl,
       statementRows: prepared.length,
+      typeCounts: Object.fromEntries(
+        [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+      ),
+      unknownTypes: [...unknownTypes].sort(),
+      negativePrincipalProjects,
+      negativeReservationProjects,
+      negativeInvestedProjects,
+      negativeReturnedProjects,
+      accountingComplete: nativeAccountingComplete,
+      accountingReconciliation: {
+        checked:
+          nativeDerivedStatement &&
+          accountCurrency === "CZK" &&
+          missingCzkRows === 0,
+        ownerCapitalCzk: derivedOwnerCapitalCzk,
+        expectedValueCzk: accountingExpectedValueCzk,
+        differenceCzk: accountingDifferenceCzk,
+        missingCzkRows,
+      },
       lastImportRows: incomingPrepared.length,
       lastImportNewTransactions: newTransactions,
       lastImportMatchedTransactions: matchedTransactions,
       lastImportRemovedTransactions: removedTransactions,
       lastImportAuthoritativeSnapshot: authoritativeNativeSnapshot,
       statementFirstAt: prepared[0]?.occurredIso || null,
+      statementFirstDate,
       statementLastAt,
+      statementLastDate,
     },
   });
 
@@ -797,6 +1087,10 @@ export async function importInvestown(input: InvestownImportInput) {
         investedPrincipal: project.invested,
         returnedPrincipal: project.returned,
         receivedInterestCzk: project.interest,
+        ordinaryYieldCzk: project.ordinaryYield,
+        bonusYieldCzk: project.bonusYield,
+        penaltyYieldCzk: project.penaltyYield,
+        otherYieldCzk: project.otherYield,
         reservedOfferCzk: Math.max(0, project.reserved),
         imported: true,
       },
@@ -845,7 +1139,9 @@ export async function importInvestown(input: InvestownImportInput) {
           ? "external"
           : item.kind === "transfer"
             ? "internal"
-            : "not_applicable",
+            : item.kind === "adjustment"
+              ? "unclassified"
+              : "not_applicable",
       raw: {
         ...row,
         originalTimezone: row.timezone || null,
@@ -883,6 +1179,10 @@ export async function importInvestown(input: InvestownImportInput) {
           investedPrincipal: project.invested,
           returnedPrincipal: project.returned,
           receivedInterestCzk: project.interest,
+          ordinaryYieldCzk: project.ordinaryYield,
+          bonusYieldCzk: project.bonusYield,
+          penaltyYieldCzk: project.penaltyYield,
+          otherYieldCzk: project.otherYield,
           loanName: project.loanName || null,
           projectUrl: project.url || null,
           projectType: project.projectType || null,
@@ -896,9 +1196,10 @@ export async function importInvestown(input: InvestownImportInput) {
     let runningWallet = 0;
     let runningPrincipal = 0;
     let runningReserved = 0;
-    let runningRealizedPnl = 0;
+    let runningTotalGain = 0;
     let runningInvestmentPnl = 0;
     let runningInterest = 0;
+    let runningExternalRewards = 0;
     let runningOtherIncome = 0;
     let runningFees = 0;
     const snapshots = new Map<
@@ -907,8 +1208,9 @@ export async function importInvestown(input: InvestownImportInput) {
         cash: number;
         invested: number;
         total: number;
-        realizedPnl: number;
         investmentPnl: number;
+        externalRewards: number;
+        totalGain: number;
         interest: number;
         otherIncome: number;
         fees: number;
@@ -923,18 +1225,26 @@ export async function importInvestown(input: InvestownImportInput) {
 
       if (item.kind === "interest") {
         runningInterest += amountCzk;
-        runningRealizedPnl += amountCzk;
         runningInvestmentPnl += amountCzk;
+        runningTotalGain += amountCzk;
       } else if (item.kind === "income") {
-        // Referral/campaign rewards increase account value, but they are
-        // not investment performance and must not inflate percentage return.
+        const category = investownIncomeCategory(item.row);
         runningOtherIncome += amountCzk;
-        runningRealizedPnl += amountCzk;
+        if (
+          category === "external_reward" ||
+          category === "referral_reward" ||
+          category === "campaign_reward"
+        ) {
+          runningExternalRewards += amountCzk;
+        } else {
+          runningInvestmentPnl += amountCzk;
+        }
+        runningTotalGain += amountCzk;
       } else if (item.kind === "fee") {
-        const fee = Math.abs(amountCzk);
-        runningFees += fee;
-        runningRealizedPnl -= fee;
-        runningInvestmentPnl -= fee;
+        const feeCost = -amountCzk;
+        runningFees += feeCost;
+        runningInvestmentPnl += amountCzk;
+        runningTotalGain += amountCzk;
       }
 
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
@@ -948,8 +1258,9 @@ export async function importInvestown(input: InvestownImportInput) {
           0,
           runningWallet + runningPrincipal + runningReserved,
         ),
-        realizedPnl: runningRealizedPnl,
         investmentPnl: runningInvestmentPnl,
+        externalRewards: runningExternalRewards,
+        totalGain: runningTotalGain,
         interest: runningInterest,
         otherIncome: runningOtherIncome,
         fees: runningFees,
@@ -975,9 +1286,10 @@ export async function importInvestown(input: InvestownImportInput) {
         snapshot.invested,
         JSON.stringify({
           financeOsInvestownHistory: {
-            realizedPnlCzk: snapshot.realizedPnl,
+            realizedPnlCzk: snapshot.investmentPnl,
             investmentPnlCzk: snapshot.investmentPnl,
-            externalRewardsCzk: snapshot.otherIncome,
+            externalRewardsCzk: snapshot.externalRewards,
+            totalGainCzk: snapshot.totalGain,
             interestCzk: snapshot.interest,
             otherIncomeCzk: snapshot.otherIncome,
             feesCzk: snapshot.fees,
@@ -1000,9 +1312,10 @@ export async function importInvestown(input: InvestownImportInput) {
         investedValueCzk,
         JSON.stringify({
           financeOsInvestownHistory: {
-            realizedPnlCzk: derivedRealizedPnl,
-            investmentPnlCzk: derivedInterest - derivedFees,
-            externalRewardsCzk: derivedOtherIncome,
+            realizedPnlCzk: derivedInvestmentPnl,
+            investmentPnlCzk: derivedInvestmentPnl,
+            externalRewardsCzk: derivedExternalRewards,
+            totalGainCzk: derivedTotalGain,
             interestCzk: derivedInterest,
             otherIncomeCzk: derivedOtherIncome,
             feesCzk: derivedFees,
@@ -1016,46 +1329,13 @@ export async function importInvestown(input: InvestownImportInput) {
 
     const result = {
       accountId,
-      imported: incomingPrepared.length,
-      newTransactions,
-      matchedTransactions,
-      removedTransactions,
-      authoritativeNativeSnapshot,
+      dryRun: false,
+      ...projectedResult,
+      // The write path should agree with the preview exactly.
       storedTransactions,
-      skipped: input.rows.length - incomingPrepared.length,
-      totalRows: input.rows.length,
-      sourceFormat: input.sourceFormat || "mapped",
       derived: {
-        walletCashCzk: derivedWallet,
-        investedPrincipalCzk: derivedPrincipal,
-        reservedOffersCzk: derivedReserved,
-        receivedInterestCzk: derivedInterest,
-        otherIncomeCzk: derivedOtherIncome,
-        feesCzk: derivedFees,
-        realizedPnlCzk: derivedRealizedPnl,
-        totalValueCzk: derivedWallet + derivedInvested,
+        ...projectedResult.derived,
         activeProjects: holdings.length,
-        allProjects: projects.size,
-      },
-      effective: {
-        walletCashCzk: cashValueCzk,
-        investedValueCzk,
-        totalValueCzk,
-      },
-      coverage: {
-        firstAt: prepared[0]?.occurredIso || null,
-        lastAt: statementLastAt,
-        previousLastAt: previousStatementLastAt,
-        advanced:
-          previousStatementLastAt === null ||
-          (statementLastAt !== null &&
-            statementLastAt > previousStatementLastAt),
-        typeCounts: Object.fromEntries(
-          [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
-        ),
-        unknownTypes: [...unknownTypes].sort(),
-        negativePrincipalProjects,
-        negativeReservationProjects,
       },
     };
 
