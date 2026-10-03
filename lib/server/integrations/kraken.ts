@@ -474,9 +474,22 @@ function pageAlreadyImported(
   );
 }
 
-async function fetchAllTrades(credentials: KrakenCredentials) {
+type KrakenHistoryFetch = {
+  entries: Array<[string, JsonObject]>;
+  pagesScanned: number;
+  providerCount: number;
+  complete: boolean;
+};
+
+async function fetchAllTrades(
+  credentials: KrakenCredentials,
+  options: { stopAtKnownPage: boolean },
+): Promise<KrakenHistoryFetch> {
   const all: Array<[string, JsonObject]> = [];
   let offset = 0;
+  let pagesScanned = 0;
+  let providerCount = 0;
+  let complete = false;
 
   while (true) {
     const result = await privateRequest<JsonObject>(
@@ -484,25 +497,40 @@ async function fetchAllTrades(credentials: KrakenCredentials) {
       credentials,
       { ofs: offset },
     );
+    pagesScanned += 1;
     const trades = asObject(result.trades);
     const entries = Object.entries(trades).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+    providerCount = numberValue(result.count, all.length + entries.length);
 
-    if (pageAlreadyImported("trade", entries)) break;
+    if (
+      options.stopAtKnownPage &&
+      pageAlreadyImported("trade", entries)
+    ) {
+      break;
+    }
+
     all.push(...entries);
-
-    const count = numberValue(result.count, all.length);
     offset += entries.length;
-    if (!entries.length || offset >= count) break;
+    if (!entries.length || offset >= providerCount) {
+      complete = true;
+      break;
+    }
   }
 
-  return all;
+  return { entries: all, pagesScanned, providerCount, complete };
 }
 
-async function fetchAllLedgers(credentials: KrakenCredentials) {
+async function fetchAllLedgers(
+  credentials: KrakenCredentials,
+  options: { stopAtKnownPage: boolean },
+): Promise<KrakenHistoryFetch> {
   const all: Array<[string, JsonObject]> = [];
   let offset = 0;
+  let pagesScanned = 0;
+  let providerCount = 0;
+  let complete = false;
 
   while (true) {
     const result = await privateRequest<JsonObject>(
@@ -510,20 +538,38 @@ async function fetchAllLedgers(credentials: KrakenCredentials) {
       credentials,
       { ofs: offset, type: "all" },
     );
+    pagesScanned += 1;
     const ledger = asObject(result.ledger);
     const entries = Object.entries(ledger).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+    providerCount = numberValue(result.count, all.length + entries.length);
 
-    if (pageAlreadyImported("ledger", entries)) break;
+    if (
+      options.stopAtKnownPage &&
+      pageAlreadyImported("ledger", entries)
+    ) {
+      break;
+    }
+
     all.push(...entries);
-
-    const count = numberValue(result.count, all.length);
     offset += entries.length;
-    if (!entries.length || offset >= count) break;
+    if (!entries.length || offset >= providerCount) {
+      complete = true;
+      break;
+    }
   }
 
-  return all;
+  return { entries: all, pagesScanned, providerCount, complete };
+}
+
+function shouldRunKrakenDeepAudit(raw: JsonObject) {
+  const v2 = asObject(raw.financeOsKrakenV2);
+  const last = stringValue(v2.lastDeepAuditAt);
+  if (!last) return true;
+  const parsed = new Date(last).getTime();
+  if (!Number.isFinite(parsed)) return true;
+  return Date.now() - parsed >= 7 * 24 * 60 * 60 * 1000;
 }
 
 function ledgerKind(type: string, currency: string): TransactionKind {
@@ -1091,6 +1137,20 @@ export async function syncKraken() {
     if (!connection) throw new Error("Kraken is not connected.");
 
     const { credentials } = connection;
+    const previousAccount = getDb()
+      .prepare(
+        "SELECT raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1",
+      )
+      .get();
+    let previousRaw: JsonObject = {};
+    try {
+      previousRaw = previousAccount?.raw_json
+        ? asObject(JSON.parse(String(previousAccount.raw_json)))
+        : {};
+    } catch {
+      previousRaw = {};
+    }
+    const deepAudit = shouldRunKrakenDeepAudit(previousRaw);
 
     // Private requests are intentionally sequential. Kraken nonces are scoped
     // to the API key, so parallel requests can arrive out of order even if
@@ -1111,8 +1171,14 @@ export async function syncKraken() {
       credentials,
       keyDiagnostics.marginQueryEnabled,
     );
-    const trades = await fetchAllTrades(credentials);
-    const ledgers = await fetchAllLedgers(credentials);
+    const tradeHistory = await fetchAllTrades(credentials, {
+      stopAtKnownPage: !deepAudit,
+    });
+    const ledgerHistory = await fetchAllLedgers(credentials, {
+      stopAtKnownPage: !deepAudit,
+    });
+    const trades = tradeHistory.entries;
+    const ledgers = ledgerHistory.entries;
     const depositStatuses = await fetchRecentLegacyFundingStatuses(
       credentials,
       "deposit",
@@ -1206,6 +1272,20 @@ export async function syncKraken() {
           legacyWithdrawalStatusError: withdrawalStatuses.error,
           api: "legacy_status_fallback",
         },
+        historyAudit: {
+          mode: deepAudit ? "full" : "incremental",
+          trades: {
+            pagesScanned: tradeHistory.pagesScanned,
+            providerCount: tradeHistory.providerCount,
+            complete: tradeHistory.complete,
+          },
+          ledgers: {
+            pagesScanned: ledgerHistory.pagesScanned,
+            providerCount: ledgerHistory.providerCount,
+            complete: ledgerHistory.complete,
+          },
+        },
+        lastDeepAuditAt: deepAudit ? new Date().toISOString() : null,
       },
     },
   });
@@ -1376,6 +1456,9 @@ export async function syncKraken() {
       earnAllocations: earn.activeStrategies,
       openMarginPositions: margin.openPositions,
       balanceSource: "BalanceEx",
+      historyAuditMode: deepAudit ? "full" : "incremental",
+      tradeHistoryComplete: tradeHistory.complete,
+      ledgerHistoryComplete: ledgerHistory.complete,
     };
   });
 }
