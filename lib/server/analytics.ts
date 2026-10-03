@@ -408,7 +408,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
                 )
                 AND (
                   t.flow_scope = 'external'
-                  OR t.provider = 'investown'
+                  OR t.provider IN ('investown', 'mintos')
                 )
               )
             )
@@ -1304,7 +1304,7 @@ export function getPerformanceData() {
               )
               AND (
                 flow_scope = 'external'
-                OR provider = 'investown'
+                OR provider IN ('investown', 'mintos')
               )
             )
           )
@@ -1587,7 +1587,7 @@ export function getPerformanceData() {
             )
             AND (
               t.flow_scope = 'external'
-              OR t.provider = 'investown'
+              OR t.provider IN ('investown', 'mintos')
             )
           )
         )
@@ -2725,7 +2725,7 @@ export function getHistoryData() {
             )
             AND (
               t.flow_scope = 'external'
-              OR t.provider = 'investown'
+              OR t.provider IN ('investown', 'mintos')
             )
           )
         )
