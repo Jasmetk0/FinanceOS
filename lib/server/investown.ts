@@ -66,6 +66,9 @@ export interface InvestownImportStatus {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  accountingComplete: boolean;
+  reconciliationStatus: string;
+  reconciliationDifferenceCzk: number;
   typeCounts: Array<{ type: string; count: number }>;
 }
 
@@ -74,7 +77,8 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
   const account = db
     .prepare(
       "SELECT total_value_czk, cash_value_czk, invested_value_czk, " +
-        "realized_pnl_czk, updated_at, raw_json " +
+        "realized_pnl_czk, reconciliation_status, reconciliation_difference, " +
+        "updated_at, raw_json " +
         "FROM accounts WHERE provider = 'investown' LIMIT 1",
     )
     .get();
@@ -192,6 +196,14 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
 
   const realizedProfitCzk = totalGainCzk;
 
+  const reconciliationStatus = String(
+    account.reconciliation_status || "unknown",
+  );
+  const reconciliationDifferenceCzk =
+    Number(account.reconciliation_difference) || 0;
+  const accountingComplete =
+    reconciliationStatus === "reconciled" && unknownTypeCount === 0;
+
   return {
     mode,
     updatedAt: String(account.updated_at),
@@ -213,6 +225,9 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     firstAt: transactionStats?.first_at ? String(transactionStats.first_at) : null,
     lastAt: transactionStats?.last_at ? String(transactionStats.last_at) : null,
     unknownTypes: unknownTypeCount,
+    accountingComplete,
+    reconciliationStatus,
+    reconciliationDifferenceCzk,
     typeCounts,
   };
 }
