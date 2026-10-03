@@ -192,6 +192,10 @@ type InvestownStatus = {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  ordinaryYieldCzk: number;
+  bonusYieldCzk: number;
+  penaltyYieldCzk: number;
+  otherYieldCzk: number;
   investmentPnlCzk: number;
   externalRewardsCzk: number;
   totalGainCzk: number;
@@ -221,6 +225,10 @@ type InvestownImportResult = {
     investedPrincipalCzk: number;
     reservedOffersCzk: number;
     receivedInterestCzk: number;
+    ordinaryYieldCzk: number;
+    bonusYieldCzk: number;
+    penaltyYieldCzk: number;
+    otherYieldCzk: number;
     otherInvestmentIncomeCzk: number;
     externalRewardsCzk: number;
     otherIncomeCzk: number;
@@ -632,7 +640,13 @@ export function InvestownImporter({
           money(result.effective.totalValueCzk) +
           " · investiční P/L " +
           money(result.derived.investmentPnlCzk) +
-          " · externí odměny " +
+          " (běžné " +
+          money(result.derived.ordinaryYieldCzk) +
+          ", bonusové " +
+          money(result.derived.bonusYieldCzk) +
+          ", pokuty/prodlení " +
+          money(result.derived.penaltyYieldCzk) +
+          ") · externí odměny " +
           money(result.derived.externalRewardsCzk) +
           " · celkový přírůstek " +
           money(result.derived.totalGainCzk) +
@@ -729,6 +743,22 @@ export function InvestownImporter({
             <Preview
               label="Investováno"
               value={money(initialStatus.investedValueCzk)}
+            />
+            <Preview
+              label="Běžné výnosy"
+              value={money(initialStatus.ordinaryYieldCzk)}
+            />
+            <Preview
+              label="Bonusové výnosy"
+              value={money(initialStatus.bonusYieldCzk)}
+            />
+            <Preview
+              label="Pokuty + prodlení"
+              value={money(initialStatus.penaltyYieldCzk)}
+            />
+            <Preview
+              label="Jiné investiční výnosy"
+              value={money(initialStatus.otherYieldCzk)}
             />
             <Preview
               label="Investiční P/L"
