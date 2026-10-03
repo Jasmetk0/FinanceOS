@@ -215,22 +215,6 @@ function projectExternalId(row: InvestownImportRow) {
     .join("|");
 }
 
-function principalDelta(row: InvestownImportRow) {
-  const type = normalize(row.type);
-  const amount = Math.abs(Number(row.amount));
-  if (PRINCIPAL_IN_TYPES.has(type)) return amount;
-  if (PRINCIPAL_OUT_TYPES.has(type)) return -amount;
-  return 0;
-}
-
-function reservationDelta(row: InvestownImportRow) {
-  const type = normalize(row.type);
-  const amount = Math.abs(Number(row.amount));
-  if (OFFER_LOCK_TYPES.has(type)) return amount;
-  if (OFFER_UNLOCK_TYPES.has(type)) return -amount;
-  return 0;
-}
-
 function transactionQuantity(row: InvestownImportRow) {
   const delta = principalDelta(row);
   return delta === 0 ? null : delta;
