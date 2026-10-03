@@ -208,6 +208,7 @@ type InvestownStatus = {
 type InvestownImportResult = {
   accountId: string | null;
   dryRun: boolean;
+  previewToken: string;
   imported: number;
   newTransactions: number;
   matchedTransactions: number;
@@ -529,6 +530,7 @@ export function InvestownImporter({
     async function requestImport(
       dryRun: boolean,
       allowAuthoritativeRemovals: boolean,
+      confirmationToken?: string,
     ) {
       const response = await fetch("/api/import/investown", {
         method: "POST",
@@ -542,6 +544,7 @@ export function InvestownImporter({
           sourceFormat: nativeFormat ? "investown-native" : "mapped",
           dryRun,
           allowAuthoritativeRemovals,
+          confirmationToken,
         }),
       });
 
@@ -592,6 +595,7 @@ export function InvestownImporter({
       const result = await requestImport(
         false,
         pendingPreview.removedTransactions > 0,
+        pendingPreview.previewToken,
       );
       const unknown = result.coverage.unknownTypes;
       setPendingPreview(null);
