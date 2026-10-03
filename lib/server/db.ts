@@ -674,7 +674,7 @@ function repairInvestownProjectIncomeBreakdown(db: DatabaseSync) {
 function backfillAccountCoverage(db: DatabaseSync) {
   const investownRows = db
     .prepare(
-      "SELECT id, raw_json, realized_pnl_status, unrealized_pnl_status " +
+      "SELECT id, currency, total_value_czk, raw_json, realized_pnl_status, unrealized_pnl_status " +
         "FROM accounts WHERE provider = 'investown'",
     )
     .all();
@@ -683,10 +683,43 @@ function backfillAccountCoverage(db: DatabaseSync) {
     "UPDATE accounts SET realized_pnl_status = ?, unrealized_pnl_status = ?, " +
       "reconciliation_status = ?, reconciliation_difference = ? WHERE id = ?",
   );
-  const unknownTypeCount = db.prepare(
-    "SELECT COUNT(*) AS count FROM transactions " +
-      "WHERE account_id = ? AND kind = 'adjustment'",
-  );
+  const audit = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN kind = 'adjustment' THEN 1 ELSE 0 END), 0) AS unknown_count,
+      COALESCE(SUM(CASE WHEN amount_czk IS NULL THEN 1 ELSE 0 END), 0) AS missing_czk_count,
+      COALESCE(SUM(CASE WHEN kind = 'deposit' THEN ABS(amount_czk) ELSE 0 END), 0) AS deposits_czk,
+      COALESCE(SUM(CASE WHEN kind = 'withdrawal' THEN ABS(amount_czk) ELSE 0 END), 0) AS withdrawals_czk,
+      COALESCE(SUM(CASE WHEN kind = 'interest' THEN amount_czk ELSE 0 END), 0) AS interest_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS external_rewards_czk,
+      COALESCE(SUM(
+        CASE
+          WHEN kind = 'income'
+            AND COALESCE(category, '') NOT IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
+          THEN amount_czk
+          ELSE 0
+        END
+      ), 0) AS investment_income_czk,
+      COALESCE(SUM(CASE WHEN kind = 'fee' THEN ABS(amount_czk) ELSE 0 END), 0) AS fees_czk
+    FROM transactions
+    WHERE account_id = ?
+  `);
 
   for (const row of investownRows) {
     const raw = parseJsonObject(row.raw_json);
@@ -696,22 +729,38 @@ function backfillAccountCoverage(db: DatabaseSync) {
 
     if (!isCompleteNativeStatement) continue;
 
-    const unresolvedTypes =
-      Number(unknownTypeCount.get(String(row.id))?.count) || 0;
-    const accountingComplete = unresolvedTypes === 0;
-    const realized = accountingComplete
-      ? "available"
-      : "partial";
+    const values = audit.get(String(row.id));
+    const unresolvedTypes = Number(values?.unknown_count) || 0;
+    const missingCzkRows = Number(values?.missing_czk_count) || 0;
+    const ownerCapitalCzk =
+      (Number(values?.deposits_czk) || 0) -
+      (Number(values?.withdrawals_czk) || 0);
+    const investmentPnlCzk =
+      (Number(values?.interest_czk) || 0) +
+      (Number(values?.investment_income_czk) || 0) -
+      (Number(values?.fees_czk) || 0);
+    const totalGainCzk =
+      investmentPnlCzk + (Number(values?.external_rewards_czk) || 0);
+    const canCheckIdentity =
+      String(row.currency || "").toUpperCase() === "CZK" &&
+      missingCzkRows === 0;
+    const reconciliationDifference = canCheckIdentity
+      ? (Number(row.total_value_czk) || 0) - (ownerCapitalCzk + totalGainCzk)
+      : 0;
+    const accountingComplete =
+      unresolvedTypes === 0 &&
+      missingCzkRows === 0 &&
+      (!canCheckIdentity || Math.abs(reconciliationDifference) <= 0.05);
     const unrealized =
       String(row.unrealized_pnl_status || "unknown") === "unknown"
         ? "not_applicable"
         : String(row.unrealized_pnl_status);
 
     update.run(
-      realized,
+      accountingComplete ? "available" : "partial",
       unrealized,
       accountingComplete ? "reconciled" : "warning",
-      0,
+      reconciliationDifference,
       String(row.id),
     );
   }
