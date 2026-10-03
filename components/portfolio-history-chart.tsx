@@ -74,10 +74,11 @@ function providerColorsServerSnapshot() {
 }
 
 function netDepositedCzk(data: PortfolioChartMetricData) {
-  // Total portfolio: external deposits - external withdrawals.
-  // Provider series: also move known carried capital across owned-wallet
-  // transfers (for example Kraken -> Phantom), while rewards stay separate.
-  return data.capitalAttributedCzk - data.externalRewardsCzk;
+  // "Čisté vklady" are strictly the owner's external capital:
+  // external deposits - external withdrawals. Internal transfers (including
+  // Kraken <-> owned wallet and Trading 212 Invest <-> CFD/FX movements) must
+  // never change this metric.
+  return data.contributedCzk;
 }
 
 function metricValue(
@@ -88,6 +89,15 @@ function metricValue(
   if (metric === "profit") return data.profitCzk;
   if (metric === "return") return data.returnPct;
   return netDepositedCzk(data);
+}
+
+function metricValueForPoint(
+  metric: PortfolioChartMetric,
+  data: PortfolioChartMetricData,
+  performanceComplete: boolean | undefined,
+) {
+  if (metric === "contributions" && performanceComplete === false) return null;
+  return metricValue(metric, data);
 }
 
 function metricLabel(metric: PortfolioChartMetric) {
@@ -337,8 +347,18 @@ export function PortfolioHistoryChart({
             const providerData = point.providers[statementEstimateProvider];
             return (
               providerData &&
-              metricValue(metric, providerData) !== null &&
-              Number.isFinite(metricValue(metric, providerData))
+              metricValueForPoint(
+                metric,
+                providerData,
+                point.coverage.performanceComplete,
+              ) !== null &&
+              Number.isFinite(
+                metricValueForPoint(
+                  metric,
+                  providerData,
+                  point.coverage.performanceComplete,
+                ),
+              )
             );
           }) ?? null
       : null;
@@ -357,7 +377,11 @@ export function PortfolioHistoryChart({
 
     if (showTotal) {
       for (const point of filtered) {
-        const value = metricValue(metric, point.total);
+        const value = metricValueForPoint(
+          metric,
+          point.total,
+          point.coverage.performanceComplete,
+        );
         if (value !== null && Number.isFinite(value)) values.push(value);
       }
     }
@@ -366,7 +390,11 @@ export function PortfolioHistoryChart({
       for (const point of filtered) {
         const providerData = point.providers[provider];
         if (!providerData) continue;
-        const value = metricValue(metric, providerData);
+        const value = metricValueForPoint(
+          metric,
+          providerData,
+          point.coverage.performanceComplete,
+        );
         if (value !== null && Number.isFinite(value)) values.push(value);
       }
     }
@@ -448,9 +476,12 @@ export function PortfolioHistoryChart({
   const firstPoint = filtered[0] ?? null;
   const lastPoint = filtered.at(-1) ?? null;
   const periodNetContribution =
-    firstPoint && lastPoint
+    firstPoint &&
+    lastPoint &&
+    firstPoint.coverage.performanceComplete !== false &&
+    lastPoint.coverage.performanceComplete !== false
       ? netDepositedCzk(lastPoint.total) - netDepositedCzk(firstPoint.total)
-      : 0;
+      : null;
   const periodExternalRewards =
     firstPoint && lastPoint
       ? lastPoint.total.externalRewardsCzk -
@@ -695,8 +726,21 @@ export function PortfolioHistoryChart({
             value={formatValue(lastPoint.total.valueCzk, "value")}
           />
           <MiniStat
-            label="Čisté vklady celkem"
-            value={formatValue(netDepositedCzk(lastPoint.total), "contributions")}
+            label={
+              lastPoint.coverage.performanceComplete === false
+                ? "Čisté vklady"
+                : "Čisté vklady celkem"
+            }
+            value={
+              lastPoint.coverage.performanceComplete === false
+                ? "—"
+                : formatValue(netDepositedCzk(lastPoint.total), "contributions")
+            }
+            hint={
+              lastPoint.coverage.performanceComplete === false
+                ? "Cash-flow historie obsahuje nevyřešené vklady/výběry."
+                : undefined
+            }
           />
           <MiniStat
             label="Externí odměny celkem"
@@ -743,7 +787,14 @@ export function PortfolioHistoryChart({
               <TooltipRow
                 label="Celkem"
                 color="#f6fbf8"
-                value={formatValue(metricValue(metric, hoverPoint.total), metric)}
+                value={formatValue(
+                  metricValueForPoint(
+                    metric,
+                    hoverPoint.total,
+                    hoverPoint.coverage.performanceComplete,
+                  ),
+                  metric,
+                )}
               />
             ) : null}
             {displayProviders.map((provider) => (
@@ -753,14 +804,20 @@ export function PortfolioHistoryChart({
                 color={colors[provider] || providerColor(provider)}
                 value={formatValue(
                   hoverPoint.providers[provider]
-                    ? metricValue(metric, hoverPoint.providers[provider])
+                    ? metricValueForPoint(
+                        metric,
+                        hoverPoint.providers[provider],
+                        hoverPoint.coverage.performanceComplete,
+                      )
                     : null,
                   metric,
                 )}
               />
             ))}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
-              Čisté vklady:{" "}
+              {hoverPoint.coverage.performanceComplete === false
+                ? "Známé čisté vklady"
+                : "Čisté vklady"}:{" "}
               {formatCurrency(netDepositedCzk(hoverPoint.total))}
               <br />
               Externí odměny:{" "}
@@ -957,7 +1014,12 @@ export function PortfolioHistoryChart({
               <path
                 d={buildPath(
                   filtered,
-                  (point) => metricValue(metric, point.total),
+                  (point) =>
+                    metricValueForPoint(
+                      metric,
+                      point.total,
+                      point.coverage.performanceComplete,
+                    ),
                   chart.xScale,
                   chart.yScale,
                   statementStepProvider ? "step" : "linear",
@@ -976,7 +1038,11 @@ export function PortfolioHistoryChart({
                   filtered,
                   (point) =>
                     point.providers[provider]
-                      ? metricValue(metric, point.providers[provider])
+                      ? metricValueForPoint(
+                          metric,
+                          point.providers[provider],
+                          point.coverage.performanceComplete,
+                        )
                       : null,
                   chart.xScale,
                   chart.yScale,
@@ -1050,11 +1116,19 @@ export function PortfolioHistoryChart({
                   vectorEffect="non-scaling-stroke"
                 />
                 {showTotal &&
-                metricValue(metric, hoverPoint.total) !== null ? (
+                metricValueForPoint(
+                  metric,
+                  hoverPoint.total,
+                  hoverPoint.coverage.performanceComplete,
+                ) !== null ? (
                   <circle
                     cx={chart.xScale(hoverPoint.date)}
                     cy={chart.yScale(
-                      metricValue(metric, hoverPoint.total) as number,
+                      metricValueForPoint(
+                        metric,
+                        hoverPoint.total,
+                        hoverPoint.coverage.performanceComplete,
+                      ) as number,
                     )}
                     r="4"
                     fill="#f6fbf8"
