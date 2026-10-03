@@ -357,6 +357,15 @@ test("Investown imports are cumulative and deduplicated", () => {
   assert.ok(importer.includes("po výslovném druhém"));
 });
 
+test("legacy Investown accounts backfill provider-local coverage dates", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("const coverageRows = db.prepare"));
+  assert.ok(db.includes("rowRaw.sourceDate"));
+  assert.ok(db.includes("statementFirstDate"));
+  assert.ok(db.includes("statementLastDate"));
+});
+
 test("Investown freshness uses provider-local coverage dates", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
