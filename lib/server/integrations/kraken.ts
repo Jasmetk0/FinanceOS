@@ -1495,6 +1495,9 @@ export function getKrakenStatus() {
   const earn = asObject(v2.earn);
   const margin = asObject(v2.margin);
   const funding = asObject(v2.funding);
+  const historyAudit = asObject(v2.historyAudit);
+  const tradeHistoryAudit = asObject(historyAudit.trades);
+  const ledgerHistoryAudit = asObject(historyAudit.ledgers);
 
   const transferAudit = db
     .prepare(
@@ -1599,6 +1602,22 @@ export function getKrakenStatus() {
       exportDataEnabled: key.exportDataEnabled === true,
       marginQueryEnabled: key.marginQueryEnabled === true,
       ipAllowlistCount: numberValue(key.ipAllowlistCount),
+    },
+    historyAudit: {
+      mode:
+        typeof historyAudit.mode === "string" ? historyAudit.mode : null,
+      lastDeepAuditAt:
+        typeof v2.lastDeepAuditAt === "string" ? v2.lastDeepAuditAt : null,
+      trades: {
+        pagesScanned: numberValue(tradeHistoryAudit.pagesScanned),
+        providerCount: numberValue(tradeHistoryAudit.providerCount),
+        complete: tradeHistoryAudit.complete === true,
+      },
+      ledgers: {
+        pagesScanned: numberValue(ledgerHistoryAudit.pagesScanned),
+        providerCount: numberValue(ledgerHistoryAudit.providerCount),
+        complete: ledgerHistoryAudit.complete === true,
+      },
     },
     funding: {
       ownedTransfers: numberValue(transferAudit?.owned_count),
