@@ -182,10 +182,33 @@ function flowScope(kind: TransactionKind) {
 
 function categoryFor(row: MintosImportRow) {
   const type = normalized(row.type);
+  const text = [row.type, row.description]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
   if (type === "Srážková daň") return "withholding_tax";
   if (type === "Mintos Core fee") return "mintos_core_fee";
   if (type === "Poplatek za neaktivitu") return "inactivity_fee";
-  if (type === "Cashback bonus") return "cashback_bonus";
+
+  if (
+    text.includes("referral") ||
+    text.includes("invite") ||
+    text.includes("pozv")
+  ) return "referral_reward";
+
+  if (
+    text.includes("campaign") ||
+    text.includes("promo") ||
+    text.includes("kampa")
+  ) return "campaign_reward";
+
+  if (
+    type === "Cashback bonus" ||
+    text.includes("cashback") ||
+    text.includes("bonus")
+  ) return "external_reward";
+
   return type || null;
 }
 
