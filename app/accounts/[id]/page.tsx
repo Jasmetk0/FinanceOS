@@ -347,6 +347,21 @@ export default async function AccountDetailPage({
                   : detail.reconciliationStatus}
               </dd>
             </div>
+            {isInvestown ? (
+              <div>
+                <dt className="text-xs text-[var(--muted)]">Účetní rozdíl</dt>
+                <dd
+                  className={[
+                    "mt-1 font-mono",
+                    Math.abs(detail.reconciliationDifferenceCzk) > 0.05
+                      ? "text-[var(--warning)]"
+                      : "",
+                  ].join(" ")}
+                >
+                  {money(detail.reconciliationDifferenceCzk)}
+                </dd>
+              </div>
+            ) : null}
           </dl>
 
           {detail.sourceMetadata.importMode ||
