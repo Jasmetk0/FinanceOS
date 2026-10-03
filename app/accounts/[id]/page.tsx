@@ -133,7 +133,10 @@ export default async function AccountDetailPage({
           label="Investováno"
           value={detail.investedValueCzk}
           format="currency"
-          hint={detail.holdings.length.toLocaleString("cs-CZ") + " aktuálních pozic"}
+          hint={
+            detail.holdings.length.toLocaleString("cs-CZ") +
+            (isInvestown ? " aktivních projektů" : " aktuálních pozic")
+          }
         />
         {isInvestown ? (
           <>
