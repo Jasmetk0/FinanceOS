@@ -168,6 +168,173 @@ function isFiat(asset: string) {
   );
 }
 
+function balanceBucket(rawAsset: string) {
+  const parts = rawAsset.toUpperCase().split(".");
+  if (parts.length < 2) return "spot";
+  const suffix = parts.at(-1);
+  if (suffix === "B") return "yield_bearing";
+  if (suffix === "F") return "auto_rewards";
+  if (suffix === "S") return "legacy_staking";
+  if (suffix === "M") return "opt_in_rewards";
+  if (suffix === "T") return "tokenized";
+  return "other";
+}
+
+type KrakenExtendedBalance = {
+  balance: number;
+  holdTrade: number;
+  credit: number;
+  creditUsed: number;
+  available: number;
+  bucket: string;
+};
+
+function parseExtendedBalances(raw: Record<string, unknown>) {
+  const result = new Map<string, KrakenExtendedBalance>();
+
+  for (const [asset, value] of Object.entries(raw)) {
+    const object = asObject(value);
+    const balance =
+      typeof value === "string" || typeof value === "number"
+        ? numberValue(value)
+        : numberValue(object.balance);
+    const holdTrade = numberValue(object.hold_trade);
+    const credit = numberValue(object.credit);
+    const creditUsed = numberValue(object.credit_used);
+    result.set(asset, {
+      balance,
+      holdTrade,
+      credit,
+      creditUsed,
+      available: balance + credit - creditUsed - holdTrade,
+      bucket: balanceBucket(asset),
+    });
+  }
+
+  return result;
+}
+
+function safeKrakenKeyDiagnostics(keyInfo: JsonObject) {
+  const permissions = Array.isArray(keyInfo.permissions)
+    ? keyInfo.permissions.map(String)
+    : [];
+  const epochOrNull = (value: unknown) => {
+    const raw = stringValue(value);
+    const seconds = Number(raw);
+    return raw && raw !== "0" && Number.isFinite(seconds)
+      ? new Date(seconds * 1000).toISOString()
+      : null;
+  };
+
+  return {
+    name: stringValue(keyInfo.apiKeyName) || null,
+    permissions,
+    validUntil: epochOrNull(keyInfo.validUntil),
+    queryFrom: epochOrNull(keyInfo.queryFrom),
+    queryTo: epochOrNull(keyInfo.queryTo),
+    createdAt: epochOrNull(keyInfo.createdTime),
+    modifiedAt: epochOrNull(keyInfo.modifiedTime),
+    lastUsedAt: epochOrNull(keyInfo.lastUsed),
+    ipAllowlistCount: Array.isArray(keyInfo.ipAllowlist)
+      ? keyInfo.ipAllowlist.length
+      : 0,
+    hasHistoryRestriction:
+      (stringValue(keyInfo.queryFrom) &&
+        stringValue(keyInfo.queryFrom) !== "0") ||
+      (stringValue(keyInfo.queryTo) &&
+        stringValue(keyInfo.queryTo) !== "0"),
+    hasExpiry:
+      Boolean(stringValue(keyInfo.validUntil)) &&
+      stringValue(keyInfo.validUntil) !== "0",
+    exportDataEnabled: permissions.includes("export-data"),
+    marginQueryEnabled: permissions.includes("query-open-trades"),
+  };
+}
+
+async function fetchEarnAllocations(credentials: KrakenCredentials) {
+  try {
+    const result = await privateRequest<JsonObject>(
+      "/0/private/Earn/Allocations",
+      credentials,
+      {
+        converted_asset: "CZK",
+        hide_zero_allocations: true,
+      },
+    );
+    const items = Array.isArray(result.items) ? result.items : [];
+    return {
+      available: true,
+      convertedAsset: stringValue(result.converted_asset, "CZK"),
+      totalAllocatedCzk: numberValue(result.total_allocated),
+      totalRewardedCzk: numberValue(result.total_rewarded),
+      activeStrategies: items.length,
+      items: items.map((value) => {
+        const item = asObject(value);
+        const allocated = asObject(item.amount_allocated);
+        const total = asObject(allocated.total);
+        const rewarded = asObject(item.total_rewarded);
+        const bonding = asObject(allocated.bonding);
+        const unbonding = asObject(allocated.unbonding);
+        const exitQueue = asObject(allocated.exit_queue);
+        return {
+          strategyId: stringValue(item.strategy_id),
+          asset: normalizeAssetCode(stringValue(item.native_asset)),
+          allocatedNative: numberValue(total.native),
+          allocatedCzk: numberValue(total.converted),
+          rewardedNative: numberValue(rewarded.native),
+          rewardedCzk: numberValue(rewarded.converted),
+          bondingNative: numberValue(bonding.native),
+          unbondingNative: numberValue(unbonding.native),
+          exitQueueNative: numberValue(exitQueue.native),
+        };
+      }),
+      error: null as string | null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      convertedAsset: "CZK",
+      totalAllocatedCzk: 0,
+      totalRewardedCzk: 0,
+      activeStrategies: 0,
+      items: [] as Array<Record<string, unknown>>,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function fetchMarginStatus(
+  credentials: KrakenCredentials,
+  enabled: boolean,
+) {
+  if (!enabled) {
+    return {
+      queryEnabled: false,
+      openPositions: 0,
+      error: null as string | null,
+    };
+  }
+
+  try {
+    const positions = await privateRequest<JsonObject>(
+      "/0/private/OpenPositions",
+      credentials,
+      { docalcs: true },
+    );
+    return {
+      queryEnabled: true,
+      openPositions: Object.keys(positions).length,
+      error: null as string | null,
+    };
+  } catch (error) {
+    return {
+      queryEnabled: true,
+      openPositions: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function getAssetPairs(): Promise<Record<string, JsonObject>> {
   if (assetPairsCache && Date.now() - assetPairsCache.fetchedAt < 60 * 60 * 1000) {
     return assetPairsCache.pairs;
@@ -284,9 +451,13 @@ export async function validateKraken(credentials: KrakenCredentials) {
       );
     }
 
-    await privateRequest("/0/private/Balance", credentials);
+    await privateRequest("/0/private/BalanceEx", credentials);
     await privateRequest("/0/private/TradesHistory", credentials, { ofs: 0 });
     await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
+    // Earn uses the same Query Funds permission. It is product-dependent, so
+    // validation does not fail if the endpoint is unavailable for an account.
+    await fetchEarnAllocations(credentials);
+    return safeKrakenKeyDiagnostics(keyInfo);
   });
 }
 
