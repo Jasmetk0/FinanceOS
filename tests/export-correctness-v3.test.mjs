@@ -227,6 +227,8 @@ test("Investown native imports are previewed before destructive statement reconc
   assert.ok(importer.includes("dryRun"));
   assert.ok(route.includes("allowAuthoritativeRemovals"));
   assert.ok(route.includes("confirmationToken"));
+  assert.ok(route.includes("replaceExisting: body.replaceExisting === true"));
+  assert.equal(route.includes("replaceExisting: body.replaceExisting !== false"), false);
 });
 
 test("full native Investown statements remove rows deleted by the provider", () => {
