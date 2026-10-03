@@ -2,6 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  investownPrincipalDelta,
+  investownReservationDelta,
+} from "@/lib/investown-semantics.mjs";
 
 type CsvData = {
   headers: string[];
@@ -21,15 +25,6 @@ const INVESTOWN_HEADERS = [
   "Odkaz na projekt",
   "Typ projektu",
 ] as const;
-
-const PRINCIPAL_IN = new Set(["Investice", "Autoinvestice"]);
-const PRINCIPAL_OUT = new Set([
-  "Splacení jistiny",
-  "Částečné splacení jistiny",
-  "Odstoupení",
-]);
-const OFFER_LOCK = new Set(["Nabídka ke koupi"]);
-const OFFER_UNLOCK = new Set(["Vrácení nabídky"]);
 
 const inputClass =
   "mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
@@ -443,10 +438,8 @@ export function InvestownImporter({
       if (date && (!earliest || date < earliest)) earliest = date;
       if (date && (!latest || date > latest)) latest = date;
 
-      if (PRINCIPAL_IN.has(type)) principal += Math.abs(amount);
-      if (PRINCIPAL_OUT.has(type)) principal -= Math.abs(amount);
-      if (OFFER_LOCK.has(type)) reserved += Math.abs(amount);
-      if (OFFER_UNLOCK.has(type)) reserved -= Math.abs(amount);
+      principal += investownPrincipalDelta({ type, amount });
+      reserved += investownReservationDelta({ type, amount });
     }
 
     if (Math.abs(wallet) < 0.005) wallet = 0;
