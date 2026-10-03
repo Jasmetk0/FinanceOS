@@ -202,6 +202,9 @@ type InvestownStatus = {
   firstAt: string | null;
   lastAt: string | null;
   unknownTypes: number;
+  accountingComplete: boolean;
+  reconciliationStatus: string;
+  reconciliationDifferenceCzk: number;
   typeCounts: Array<{ type: string; count: number }>;
 };
 
@@ -715,14 +718,16 @@ export function InvestownImporter({
             <span
               className={[
                 "w-fit rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider",
-                initialStatus.unknownTypes
+                !initialStatus.accountingComplete
                   ? "border-[var(--warning)]/25 bg-[var(--warning)]/8 text-[var(--warning)]"
                   : "border-[var(--accent)]/25 bg-[var(--accent)]/8 text-[var(--accent)]",
               ].join(" ")}
             >
-              {initialStatus.unknownTypes
-                ? initialStatus.unknownTypes + " unknown"
-                : "fully classified"}
+              {initialStatus.accountingComplete
+                ? "accounting verified"
+                : initialStatus.unknownTypes
+                  ? initialStatus.unknownTypes + " unknown types"
+                  : "accounting review"}
             </span>
           </div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -774,7 +779,24 @@ export function InvestownImporter({
               label="Transakce"
               value={initialStatus.transactions.toLocaleString("cs-CZ")}
             />
+            <Preview
+              label="Účetní rozdíl"
+              value={money(initialStatus.reconciliationDifferenceCzk)}
+            />
           </div>
+          {!initialStatus.accountingComplete ? (
+            <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+              Investown historie zatím není účetně ověřená. Stav:{" "}
+              <strong className="text-[var(--text)]">
+                {initialStatus.reconciliationStatus}
+              </strong>
+              {initialStatus.unknownTypes
+                ? " · neznámé typy: " + initialStatus.unknownTypes.toLocaleString("cs-CZ")
+                : ""}
+              {" · rozdíl "}
+              {money(initialStatus.reconciliationDifferenceCzk)}.
+            </p>
+          ) : null}
 
           {initialStatus.lastAt ? (
             <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
