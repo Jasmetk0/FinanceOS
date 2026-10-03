@@ -41,6 +41,7 @@ export interface InvestownImportInput {
   sourceFormat?: "investown-native" | "mapped";
   dryRun?: boolean;
   allowAuthoritativeRemovals?: boolean;
+  confirmationToken?: string;
 }
 
 export interface InvestownImportStatus {
@@ -692,7 +693,38 @@ export async function importInvestown(input: InvestownImportInput) {
   const projectedActiveProjects = [...projects.values()].filter(
     (project) => project.principal > 0.005 || project.reserved > 0.005,
   ).length;
+  const previewToken = crypto
+    .createHash("sha256")
+    .update(
+      JSON.stringify({
+        prepared: prepared.map((item) => ({
+          identity: stableBase(item.row),
+          occurredIso: item.occurredIso,
+          amount: item.amount,
+          amountCzk: item.amountCzk,
+          kind: item.kind,
+          principalDelta: item.principalDelta,
+          reservationDelta: item.reservationDelta,
+        })),
+        removedTransactions,
+        authoritativeNativeSnapshot,
+        previousStatementLastAt,
+        effective: {
+          cashValueCzk,
+          investedValueCzk,
+          totalValueCzk,
+        },
+        accounting: {
+          derivedInvestmentPnl,
+          derivedExternalRewards,
+          derivedTotalGain,
+        },
+      }),
+    )
+    .digest("hex");
+
   const projectedResult = {
+    previewToken,
     imported: incomingPrepared.length,
     newTransactions,
     matchedTransactions,
@@ -762,12 +794,25 @@ export async function importInvestown(input: InvestownImportInput) {
     };
   }
 
-  if (removedTransactions > 0 && input.allowAuthoritativeRemovals !== true) {
+  if (input.confirmationToken && input.confirmationToken !== previewToken) {
     throw new Error(
-      "Novější plný Investown výpis by odstranil " +
-        removedTransactions.toLocaleString("cs-CZ") +
-        " dříve uložených řádků. Nejprve proveď preview a změnu výslovně potvrď.",
+      "Investown preview už neodpovídá aktuálním datům. Proveď novou kontrolu před importem.",
     );
+  }
+
+  if (removedTransactions > 0) {
+    if (input.allowAuthoritativeRemovals !== true) {
+      throw new Error(
+        "Novější plný Investown výpis by odstranil " +
+          removedTransactions.toLocaleString("cs-CZ") +
+          " dříve uložených řádků. Nejprve proveď preview a změnu výslovně potvrď.",
+      );
+    }
+    if (!input.confirmationToken || input.confirmationToken !== previewToken) {
+      throw new Error(
+        "Odstranění historických Investown řádků vyžaduje potvrzení přesného aktuálního preview.",
+      );
+    }
   }
 
   db.exec("BEGIN IMMEDIATE;");
