@@ -406,6 +406,10 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
                   'referral_reward',
                   'campaign_reward'
                 )
+                AND (
+                  t.flow_scope = 'external'
+                  OR t.provider = 'investown'
+                )
               )
             )
           )
@@ -1297,6 +1301,10 @@ export function getPerformanceData() {
                 'external_reward',
                 'referral_reward',
                 'campaign_reward'
+              )
+              AND (
+                flow_scope = 'external'
+                OR provider = 'investown'
               )
             )
           )
