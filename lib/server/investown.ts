@@ -726,6 +726,12 @@ export async function importInvestown(input: InvestownImportInput) {
   // All asynchronous currency work is complete before opening the SQLite
   // transaction. The import itself is atomic: a failed row cannot leave a
   // half-replaced Investown portfolio behind.
+  const statementFirstDate = prepared[0]
+    ? statementDate(prepared[0].row, prepared[0].occurredIso)
+    : null;
+  const statementLastDate = prepared.at(-1)
+    ? statementDate(prepared.at(-1)!.row, prepared.at(-1)!.occurredIso)
+    : null;
   const statementLastAt = prepared[prepared.length - 1]?.occurredIso || null;
   const previousAccount = db
     .prepare(
@@ -873,7 +879,9 @@ export async function importInvestown(input: InvestownImportInput) {
     },
     coverage: {
       firstAt: prepared[0]?.occurredIso || null,
+      firstDate: statementFirstDate,
       lastAt: statementLastAt,
+      lastDate: statementLastDate,
       previousLastAt: previousStatementLastAt,
       advanced:
         previousStatementLastAt === null ||
@@ -1008,7 +1016,9 @@ export async function importInvestown(input: InvestownImportInput) {
       lastImportRemovedTransactions: removedTransactions,
       lastImportAuthoritativeSnapshot: authoritativeNativeSnapshot,
       statementFirstAt: prepared[0]?.occurredIso || null,
+      statementFirstDate,
       statementLastAt,
+      statementLastDate,
     },
   });
 
