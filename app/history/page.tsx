@@ -77,7 +77,8 @@ export default function HistoryPage() {
       </section>
 
       {data.summary.unresolvedCashFlowCount > 0 ||
-      data.summary.unresolvedWalletTransferCount > 0 ? (
+      data.summary.unresolvedWalletTransferCount > 0 ||
+      data.summary.unresolvedAdjustmentCount > 0 ? (
         <div className="mt-4 rounded-2xl border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-4">
           <p className="text-sm font-semibold text-[var(--warning)]">
             Část historie ještě není bezpečně klasifikovaná
@@ -90,6 +91,14 @@ export default function HistoryPage() {
                   maximumFractionDigits: 0,
                 }) +
                 " Kč známé hodnoty) zatím FinanceOS nevydává za vlastní vklad ani výběr. "
+              : ""}
+            {data.summary.unresolvedAdjustmentCount > 0
+              ? data.summary.unresolvedAdjustmentCount +
+                " nerozpoznaných transakčních typů (" +
+                data.summary.unresolvedAdjustmentCzk.toLocaleString("cs-CZ", {
+                  maximumFractionDigits: 2,
+                }) +
+                " Kč známé absolutní hodnoty) blokuje P/L a výnos od prvního takového záznamu, dokud není jejich význam bezpečně určen. "
               : ""}
             {data.summary.unresolvedWalletTransferCount > 0
               ? data.summary.unresolvedWalletTransferCount +
