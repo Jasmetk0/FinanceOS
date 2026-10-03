@@ -97,7 +97,7 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     )
     .get();
 
-  const typeCounts = db
+  let typeCounts = db
     .prepare(
       "SELECT COALESCE(NULLIF(category, ''), 'Unknown') AS type, COUNT(*) AS count " +
         "FROM transactions WHERE provider = 'investown' " +
@@ -108,6 +108,7 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
       type: String(row.type),
       count: Number(row.count) || 0,
     }));
+  let unknownTypeCount = Number(transactionStats?.unknown) || 0;
 
   let mode = "unknown";
   let realizedYieldCzk = Number(account.realized_pnl_czk) || 0;
@@ -119,6 +120,24 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
       ? (JSON.parse(String(account.raw_json)) as Record<string, unknown>)
       : {};
     if (typeof raw.importMode === "string") mode = raw.importMode;
+
+    if (
+      raw.typeCounts &&
+      typeof raw.typeCounts === "object" &&
+      !Array.isArray(raw.typeCounts)
+    ) {
+      typeCounts = Object.entries(raw.typeCounts as Record<string, unknown>)
+        .map(([type, count]) => ({
+          type,
+          count: Number(count) || 0,
+        }))
+        .filter((item) => item.count > 0)
+        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+    }
+    if (Array.isArray(raw.unknownTypes)) {
+      unknownTypeCount = raw.unknownTypes.length;
+    }
+
     const storedYield = Number(raw.derivedInterest);
     if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
 
@@ -171,7 +190,7 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     activeProjects: Number(activeStats?.count) || 0,
     firstAt: transactionStats?.first_at ? String(transactionStats.first_at) : null,
     lastAt: transactionStats?.last_at ? String(transactionStats.last_at) : null,
-    unknownTypes: Number(transactionStats?.unknown) || 0,
+    unknownTypes: unknownTypeCount,
     typeCounts,
   };
 }
