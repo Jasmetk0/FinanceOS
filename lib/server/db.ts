@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   classifyInvestownKind,
   investownIncomeCategory,
+  investownInterestBucket,
   isPerformanceExternalRewardCategory,
 } from "@/lib/investown-semantics.mjs";
 import { getDatabasePath } from "@/lib/server/paths";
@@ -569,6 +570,107 @@ function repairInvestownClassificationAudit(db: DatabaseSync) {
   }
 }
 
+function repairInvestownProjectIncomeBreakdown(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+  const incomeRows = db.prepare(`
+    SELECT asset_id, amount_czk, category, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND kind = 'interest'
+      AND amount_czk IS NOT NULL
+      AND asset_id IS NOT NULL
+  `);
+  const holdingRows = db.prepare(
+    "SELECT id, asset_id, raw_json FROM holdings WHERE account_id = ?",
+  );
+  const assetRow = db.prepare(
+    "SELECT raw_json FROM assets WHERE id = ? LIMIT 1",
+  );
+  const updateHolding = db.prepare(
+    "UPDATE holdings SET raw_json = ? WHERE id = ?",
+  );
+  const updateAsset = db.prepare(
+    "UPDATE assets SET raw_json = ? WHERE id = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const byAsset = new Map<
+      string,
+      {
+        ordinaryYieldCzk: number;
+        bonusYieldCzk: number;
+        penaltyYieldCzk: number;
+        otherYieldCzk: number;
+        receivedInterestCzk: number;
+      }
+    >();
+
+    for (const row of incomeRows.all(String(account.id))) {
+      const id = String(row.asset_id || "");
+      if (!id) continue;
+      const raw = parseJsonObject(row.raw_json);
+      const type =
+        typeof raw.type === "string" && raw.type.trim()
+          ? raw.type
+          : String(row.category || "");
+      const amount = Number(row.amount_czk) || 0;
+      const bucket = investownInterestBucket(type);
+      const current = byAsset.get(id) ?? {
+        ordinaryYieldCzk: 0,
+        bonusYieldCzk: 0,
+        penaltyYieldCzk: 0,
+        otherYieldCzk: 0,
+        receivedInterestCzk: 0,
+      };
+
+      current.receivedInterestCzk += amount;
+      if (bucket === "ordinary") current.ordinaryYieldCzk += amount;
+      else if (bucket === "bonus") current.bonusYieldCzk += amount;
+      else if (bucket === "penalty") current.penaltyYieldCzk += amount;
+      else current.otherYieldCzk += amount;
+      byAsset.set(id, current);
+    }
+
+    for (const holding of holdingRows.all(String(account.id))) {
+      const id = String(holding.asset_id || "");
+      const breakdown = byAsset.get(id) ?? {
+        ordinaryYieldCzk: 0,
+        bonusYieldCzk: 0,
+        penaltyYieldCzk: 0,
+        otherYieldCzk: 0,
+        receivedInterestCzk: 0,
+      };
+      const holdingRaw = parseJsonObject(holding.raw_json);
+      updateHolding.run(
+        JSON.stringify({
+          ...holdingRaw,
+          ...breakdown,
+        }),
+        String(holding.id),
+      );
+
+      const asset = assetRow.get(id);
+      if (asset) {
+        const raw = parseJsonObject(asset.raw_json);
+        updateAsset.run(
+          JSON.stringify({
+            ...raw,
+            ...breakdown,
+          }),
+          id,
+        );
+      }
+    }
+  }
+}
+
 function backfillAccountCoverage(db: DatabaseSync) {
   const investownRows = db
     .prepare(
@@ -867,6 +969,7 @@ export function repairStoredData(db: DatabaseSync) {
   backfillLegacyFlowScopes(db);
   repairTrading212CashSemantics(db);
   repairInvestownClassificationAudit(db);
+  repairInvestownProjectIncomeBreakdown(db);
   backfillAccountCoverage(db);
   repairInvestownRealizedPnl(db);
   repairInvestownSnapshotPerformance(db);
