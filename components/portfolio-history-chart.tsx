@@ -272,11 +272,17 @@ export function PortfolioHistoryChart({
 
   const earliest = data.points[0]?.date ?? "";
   const latest = data.points.at(-1)?.date ?? "";
-  const investownOnly =
-    data.providers.length === 1 && data.providers[0] === "investown";
+  const statementEstimateProvider =
+    data.providers.length === 1 &&
+    (data.providers[0] === "investown" || data.providers[0] === "mintos")
+      ? data.providers[0]
+      : null;
+  const statementStepProvider =
+    statementEstimateProvider === "investown" ||
+    statementEstimateProvider === "mintos";
   const today = localIsoDate();
   const estimateEndDate =
-    investownOnly && latest && today > latest
+    statementEstimateProvider && latest && today > latest
       ? period === "CUSTOM"
         ? customEnd && customEnd < today
           ? customEnd
@@ -317,11 +323,11 @@ export function PortfolioHistoryChart({
   );
 
   const estimateSourcePoint =
-    investownOnly && estimateEndDate && filtered.length
+    statementEstimateProvider && estimateEndDate && filtered.length
       ? [...filtered]
           .reverse()
           .find((point) => {
-            const providerData = point.providers.investown;
+            const providerData = point.providers[statementEstimateProvider];
             return (
               providerData &&
               metricValue(metric, providerData) !== null &&
@@ -876,7 +882,7 @@ export function PortfolioHistoryChart({
                       : null,
                   chart.xScale,
                   chart.yScale,
-                  investownOnly ? "step" : "linear",
+                  statementStepProvider ? "step" : "linear",
                 )}
                 fill="none"
                 stroke="rgba(237,247,242,0.34)"
@@ -947,7 +953,7 @@ export function PortfolioHistoryChart({
                   (point) => metricValue(metric, point.total),
                   chart.xScale,
                   chart.yScale,
-                  investownOnly ? "step" : "linear",
+                  statementStepProvider ? "step" : "linear",
                 )}
                 fill="none"
                 stroke="#f6fbf8"
@@ -967,7 +973,9 @@ export function PortfolioHistoryChart({
                       : null,
                   chart.xScale,
                   chart.yScale,
-                  provider === "investown" ? "step" : "linear",
+                  provider === "investown" || provider === "mintos"
+                    ? "step"
+                    : "linear",
                 )}
                 fill="none"
                 stroke={colors[provider] || providerColor(provider)}
@@ -979,11 +987,12 @@ export function PortfolioHistoryChart({
 
             {estimateSourcePoint &&
             estimateEndDate &&
-            displayProviders.includes("investown") &&
-            estimateSourcePoint.providers.investown &&
+            statementEstimateProvider &&
+            displayProviders.includes(statementEstimateProvider) &&
+            estimateSourcePoint.providers[statementEstimateProvider] &&
             metricValue(
               metric,
-              estimateSourcePoint.providers.investown,
+              estimateSourcePoint.providers[statementEstimateProvider],
             ) !== null ? (
               <path
                 d={
@@ -994,7 +1003,7 @@ export function PortfolioHistoryChart({
                     .yScale(
                       metricValue(
                         metric,
-                        estimateSourcePoint.providers.investown,
+                        estimateSourcePoint.providers[statementEstimateProvider],
                       ) as number,
                     )
                     .toFixed(2) +
@@ -1005,13 +1014,16 @@ export function PortfolioHistoryChart({
                     .yScale(
                       metricValue(
                         metric,
-                        estimateSourcePoint.providers.investown,
+                        estimateSourcePoint.providers[statementEstimateProvider],
                       ) as number,
                     )
                     .toFixed(2)
                 }
                 fill="none"
-                stroke={colors.investown || providerColor("investown")}
+                stroke={
+                  colors[statementEstimateProvider] ||
+                  providerColor(statementEstimateProvider)
+                }
                 strokeWidth="2.4"
                 strokeDasharray="7 6"
                 strokeLinecap="round"
@@ -1065,7 +1077,7 @@ export function PortfolioHistoryChart({
         </span>
         <span>
           {estimateEndDate
-            ? "Přerušovaná část Investownu je odhad: drží poslední importovanou hodnotu beze změny."
+            ? "Přerušovaná část je odhad: drží poslední importovanou hodnotu beze změny."
             : "Najetím na graf zobrazíš přesné datum, hodnotu, vklady, P/L a pokrytí dat."}
         </span>
       </div>
