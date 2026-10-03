@@ -157,6 +157,16 @@ test("Investown realized P/L is investment-only while external rewards stay sepa
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
+test("legacy Investown classification audit is repaired with current semantics", () => {
+  const db = source("lib/server/db.ts");
+
+  assert.ok(db.includes("function repairInvestownClassificationAudit"));
+  assert.ok(db.includes("classifyInvestownKind"));
+  assert.ok(db.includes("unknownTypes"));
+  assert.ok(db.includes('"unclassified"'));
+  assert.ok(db.includes("repairInvestownClassificationAudit(db)"));
+});
+
 test("legacy Investown snapshots are repaired to investment-only P/L", () => {
   const db = source("lib/server/db.ts");
 
