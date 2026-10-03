@@ -130,6 +130,120 @@ async function privateRequest<T>(
   }
 }
 
+async function fundingRequest<T>(
+  path: string,
+  credentials: KrakenCredentials,
+  params: Record<string, string | number | boolean | undefined> = {},
+): Promise<T> {
+  const queueKey = credentials.apiKey;
+  const previous = privateQueues.get(queueKey) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const queued = previous.catch(() => undefined).then(() => gate);
+  privateQueues.set(queueKey, queued);
+
+  await previous.catch(() => undefined);
+
+  try {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) query.set(key, String(value));
+    }
+
+    const queryString = query.toString();
+    const signedPath = queryString ? path + "?" + queryString : path;
+    const nonce = nextNonce();
+    const bodyBytes = Buffer.alloc(0);
+    const digest = crypto
+      .createHash("sha256")
+      .update(Buffer.concat([Buffer.from(nonce, "utf8"), bodyBytes]))
+      .digest();
+    const signature = crypto
+      .createHmac("sha512", Buffer.from(credentials.apiSecret, "base64"))
+      .update(
+        Buffer.concat([Buffer.from(signedPath, "utf8"), digest]),
+      )
+      .digest("base64");
+
+    const response = await fetch("https://api.kraken.com" + signedPath, {
+      method: "GET",
+      headers: {
+        "API-Key": credentials.apiKey,
+        "API-Sign": signature,
+        "API-Nonce": nonce,
+        Accept: "application/json",
+      },
+      cache: "no-store",
+    });
+
+    const json = (await response.json()) as T & {
+      error?: unknown;
+      errors?: unknown;
+    };
+    if (!response.ok) {
+      throw new Error(
+        "Kraken Funding request failed with HTTP " + response.status + ".",
+      );
+    }
+    return json;
+  } finally {
+    release();
+    if (privateQueues.get(queueKey) === queued) {
+      privateQueues.delete(queueKey);
+    }
+  }
+}
+
+type KrakenFundingBetaAudit = {
+  rows: JsonObject[];
+  pages: number;
+  error: string | null;
+};
+
+async function fetchFundingBetaHistory(
+  credentials: KrakenCredentials,
+  direction: "deposit" | "withdrawal",
+): Promise<KrakenFundingBetaAudit> {
+  const rows: JsonObject[] = [];
+  let cursor = "";
+  let pages = 0;
+
+  try {
+    while (true) {
+      const path =
+        direction === "deposit"
+          ? "/funding/v1/deposits"
+          : "/funding/v1/withdrawals";
+      const response = await fundingRequest<JsonObject>(
+        path,
+        credentials,
+        cursor ? { cursor } : { limit: 500 },
+      );
+      pages += 1;
+      const list =
+        direction === "deposit"
+          ? response.deposits
+          : response.withdrawals;
+      if (Array.isArray(list)) {
+        rows.push(...list.map((item) => asObject(item)));
+      }
+      const next = stringValue(response.next_cursor);
+      if (!next || next === cursor) break;
+      cursor = next;
+    }
+
+    return { rows, pages, error: null };
+  } catch (error) {
+    return {
+      rows,
+      pages,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function publicRequest<T>(path: string): Promise<T> {
   const response = await fetch(`https://api.kraken.com${path}`, {
     cache: "no-store",
@@ -166,6 +280,173 @@ function isFiat(asset: string) {
   return ["CZK", "EUR", "USD", "GBP", "JPY", "CHF", "CAD", "AUD"].includes(
     normalizeAssetCode(asset),
   );
+}
+
+function balanceBucket(rawAsset: string) {
+  const parts = rawAsset.toUpperCase().split(".");
+  if (parts.length < 2) return "spot";
+  const suffix = parts.at(-1);
+  if (suffix === "B") return "yield_bearing";
+  if (suffix === "F") return "auto_rewards";
+  if (suffix === "S") return "legacy_staking";
+  if (suffix === "M") return "opt_in_rewards";
+  if (suffix === "T") return "tokenized";
+  return "other";
+}
+
+type KrakenExtendedBalance = {
+  balance: number;
+  holdTrade: number;
+  credit: number;
+  creditUsed: number;
+  available: number;
+  bucket: string;
+};
+
+function parseExtendedBalances(raw: Record<string, unknown>) {
+  const result = new Map<string, KrakenExtendedBalance>();
+
+  for (const [asset, value] of Object.entries(raw)) {
+    const object = asObject(value);
+    const balance =
+      typeof value === "string" || typeof value === "number"
+        ? numberValue(value)
+        : numberValue(object.balance);
+    const holdTrade = numberValue(object.hold_trade);
+    const credit = numberValue(object.credit);
+    const creditUsed = numberValue(object.credit_used);
+    result.set(asset, {
+      balance,
+      holdTrade,
+      credit,
+      creditUsed,
+      available: balance + credit - creditUsed - holdTrade,
+      bucket: balanceBucket(asset),
+    });
+  }
+
+  return result;
+}
+
+function safeKrakenKeyDiagnostics(keyInfo: JsonObject) {
+  const permissions = Array.isArray(keyInfo.permissions)
+    ? keyInfo.permissions.map(String)
+    : [];
+  const epochOrNull = (value: unknown) => {
+    const raw = stringValue(value);
+    const seconds = Number(raw);
+    return raw && raw !== "0" && Number.isFinite(seconds)
+      ? new Date(seconds * 1000).toISOString()
+      : null;
+  };
+
+  return {
+    name: stringValue(keyInfo.apiKeyName) || null,
+    permissions,
+    validUntil: epochOrNull(keyInfo.validUntil),
+    queryFrom: epochOrNull(keyInfo.queryFrom),
+    queryTo: epochOrNull(keyInfo.queryTo),
+    createdAt: epochOrNull(keyInfo.createdTime),
+    modifiedAt: epochOrNull(keyInfo.modifiedTime),
+    lastUsedAt: epochOrNull(keyInfo.lastUsed),
+    ipAllowlistCount: Array.isArray(keyInfo.ipAllowlist)
+      ? keyInfo.ipAllowlist.length
+      : 0,
+    hasHistoryRestriction:
+      (Boolean(stringValue(keyInfo.queryFrom)) &&
+        stringValue(keyInfo.queryFrom) !== "0") ||
+      (Boolean(stringValue(keyInfo.queryTo)) &&
+        stringValue(keyInfo.queryTo) !== "0"),
+    hasExpiry:
+      Boolean(stringValue(keyInfo.validUntil)) &&
+      stringValue(keyInfo.validUntil) !== "0",
+    exportDataEnabled: permissions.includes("export-data"),
+    marginQueryEnabled: permissions.includes("query-open-trades"),
+  };
+}
+
+async function fetchEarnAllocations(credentials: KrakenCredentials) {
+  try {
+    const result = await privateRequest<JsonObject>(
+      "/0/private/Earn/Allocations",
+      credentials,
+      {
+        converted_asset: "CZK",
+        hide_zero_allocations: true,
+      },
+    );
+    const items = Array.isArray(result.items) ? result.items : [];
+    return {
+      available: true,
+      convertedAsset: stringValue(result.converted_asset, "CZK"),
+      totalAllocatedCzk: numberValue(result.total_allocated),
+      totalRewardedCzk: numberValue(result.total_rewarded),
+      activeStrategies: items.length,
+      items: items.map((value) => {
+        const item = asObject(value);
+        const allocated = asObject(item.amount_allocated);
+        const total = asObject(allocated.total);
+        const rewarded = asObject(item.total_rewarded);
+        const bonding = asObject(allocated.bonding);
+        const unbonding = asObject(allocated.unbonding);
+        const exitQueue = asObject(allocated.exit_queue);
+        return {
+          strategyId: stringValue(item.strategy_id),
+          asset: normalizeAssetCode(stringValue(item.native_asset)),
+          allocatedNative: numberValue(total.native),
+          allocatedCzk: numberValue(total.converted),
+          rewardedNative: numberValue(rewarded.native),
+          rewardedCzk: numberValue(rewarded.converted),
+          bondingNative: numberValue(bonding.native),
+          unbondingNative: numberValue(unbonding.native),
+          exitQueueNative: numberValue(exitQueue.native),
+        };
+      }),
+      error: null as string | null,
+    };
+  } catch (error) {
+    return {
+      available: false,
+      convertedAsset: "CZK",
+      totalAllocatedCzk: 0,
+      totalRewardedCzk: 0,
+      activeStrategies: 0,
+      items: [] as Array<Record<string, unknown>>,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function fetchMarginStatus(
+  credentials: KrakenCredentials,
+  enabled: boolean,
+) {
+  if (!enabled) {
+    return {
+      queryEnabled: false,
+      openPositions: 0,
+      error: null as string | null,
+    };
+  }
+
+  try {
+    const positions = await privateRequest<JsonObject>(
+      "/0/private/OpenPositions",
+      credentials,
+      { docalcs: true },
+    );
+    return {
+      queryEnabled: true,
+      openPositions: Object.keys(positions).length,
+      error: null as string | null,
+    };
+  } catch (error) {
+    return {
+      queryEnabled: true,
+      openPositions: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 async function getAssetPairs(): Promise<Record<string, JsonObject>> {
@@ -284,9 +565,13 @@ export async function validateKraken(credentials: KrakenCredentials) {
       );
     }
 
-    await privateRequest("/0/private/Balance", credentials);
+    await privateRequest("/0/private/BalanceEx", credentials);
     await privateRequest("/0/private/TradesHistory", credentials, { ofs: 0 });
     await privateRequest("/0/private/Ledgers", credentials, { ofs: 0 });
+    // Earn uses the same Query Funds permission. It is product-dependent, so
+    // validation does not fail if the endpoint is unavailable for an account.
+    await fetchEarnAllocations(credentials);
+    return safeKrakenKeyDiagnostics(keyInfo);
   });
 }
 
@@ -303,9 +588,22 @@ function pageAlreadyImported(
   );
 }
 
-async function fetchAllTrades(credentials: KrakenCredentials) {
+type KrakenHistoryFetch = {
+  entries: Array<[string, JsonObject]>;
+  pagesScanned: number;
+  providerCount: number;
+  complete: boolean;
+};
+
+async function fetchAllTrades(
+  credentials: KrakenCredentials,
+  options: { stopAtKnownPage: boolean },
+): Promise<KrakenHistoryFetch> {
   const all: Array<[string, JsonObject]> = [];
   let offset = 0;
+  let pagesScanned = 0;
+  let providerCount = 0;
+  let complete = false;
 
   while (true) {
     const result = await privateRequest<JsonObject>(
@@ -313,25 +611,40 @@ async function fetchAllTrades(credentials: KrakenCredentials) {
       credentials,
       { ofs: offset },
     );
+    pagesScanned += 1;
     const trades = asObject(result.trades);
     const entries = Object.entries(trades).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+    providerCount = numberValue(result.count, all.length + entries.length);
 
-    if (pageAlreadyImported("trade", entries)) break;
+    if (
+      options.stopAtKnownPage &&
+      pageAlreadyImported("trade", entries)
+    ) {
+      break;
+    }
+
     all.push(...entries);
-
-    const count = numberValue(result.count, all.length);
     offset += entries.length;
-    if (!entries.length || offset >= count) break;
+    if (!entries.length || offset >= providerCount) {
+      complete = true;
+      break;
+    }
   }
 
-  return all;
+  return { entries: all, pagesScanned, providerCount, complete };
 }
 
-async function fetchAllLedgers(credentials: KrakenCredentials) {
+async function fetchAllLedgers(
+  credentials: KrakenCredentials,
+  options: { stopAtKnownPage: boolean },
+): Promise<KrakenHistoryFetch> {
   const all: Array<[string, JsonObject]> = [];
   let offset = 0;
+  let pagesScanned = 0;
+  let providerCount = 0;
+  let complete = false;
 
   while (true) {
     const result = await privateRequest<JsonObject>(
@@ -339,20 +652,38 @@ async function fetchAllLedgers(credentials: KrakenCredentials) {
       credentials,
       { ofs: offset, type: "all" },
     );
+    pagesScanned += 1;
     const ledger = asObject(result.ledger);
     const entries = Object.entries(ledger).map(
       ([id, value]) => [id, asObject(value)] as [string, JsonObject],
     );
+    providerCount = numberValue(result.count, all.length + entries.length);
 
-    if (pageAlreadyImported("ledger", entries)) break;
+    if (
+      options.stopAtKnownPage &&
+      pageAlreadyImported("ledger", entries)
+    ) {
+      break;
+    }
+
     all.push(...entries);
-
-    const count = numberValue(result.count, all.length);
     offset += entries.length;
-    if (!entries.length || offset >= count) break;
+    if (!entries.length || offset >= providerCount) {
+      complete = true;
+      break;
+    }
   }
 
-  return all;
+  return { entries: all, pagesScanned, providerCount, complete };
+}
+
+function shouldRunKrakenDeepAudit(raw: JsonObject) {
+  const v2 = asObject(raw.financeOsKrakenV2);
+  const last = stringValue(v2.lastDeepAuditAt);
+  if (!last) return true;
+  const parsed = new Date(last).getTime();
+  if (!Number.isFinite(parsed)) return true;
+  return Date.now() - parsed >= 7 * 24 * 60 * 60 * 1000;
 }
 
 function ledgerKind(type: string, currency: string): TransactionKind {
@@ -418,7 +749,7 @@ function ledgerCategory(type: string, currency: string, subtype: string) {
   return subtype || null;
 }
 
-interface KrakenWithdrawalStatus {
+interface KrakenFundingStatus {
   asset?: string;
   refid?: string;
   txid?: string | null;
@@ -429,46 +760,85 @@ interface KrakenWithdrawalStatus {
   status?: string;
   method?: string;
   network?: string;
+  originators?: unknown[];
 }
 
-async function fetchRecentWithdrawalStatuses(
+async function fetchRecentLegacyFundingStatuses(
   credentials: KrakenCredentials,
-): Promise<KrakenWithdrawalStatus[]> {
+  direction: "deposit" | "withdrawal",
+): Promise<{
+  rows: KrakenFundingStatus[];
+  error: string | null;
+}> {
   try {
+    const path =
+      direction === "deposit"
+        ? "/0/private/DepositStatus"
+        : "/0/private/WithdrawStatus";
     const result = await privateRequest<unknown>(
-      "/0/private/WithdrawStatus",
+      path,
       credentials,
       { cursor: true },
     );
     if (Array.isArray(result)) {
-      return result.map((item) => asObject(item) as KrakenWithdrawalStatus);
+      return {
+        rows: result.map((item) => asObject(item) as KrakenFundingStatus),
+        error: null,
+      };
     }
     const object = asObject(result);
-    const withdrawals = object.withdrawals;
-    return Array.isArray(withdrawals)
-      ? withdrawals.map((item) => asObject(item) as KrakenWithdrawalStatus)
-      : [];
-  } catch {
-    // Ledger sync still remains useful if Kraken does not expose funding status
-    // for this account/key. The transfer stays explicitly unclassified.
-    return [];
+    const list =
+      direction === "deposit" ? object.deposits : object.withdrawals;
+    return {
+      rows: Array.isArray(list)
+        ? list.map((item) => asObject(item) as KrakenFundingStatus)
+        : [],
+      error: null,
+    };
+  } catch (error) {
+    // These are deprecated Kraken funding endpoints. They remain a best-effort
+    // enrichment fallback while the ledger remains the accounting source of
+    // truth. Failing enrichment must never erase or invent cash flow.
+    return {
+      rows: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
 function enrichKrakenWalletTransfers(
-  statuses: KrakenWithdrawalStatus[],
+  deposits: KrakenFundingStatus[],
+  withdrawals: KrakenFundingStatus[],
+  betaDeposits: JsonObject[],
+  betaWithdrawals: JsonObject[],
 ) {
   const db = getDb();
-  const byRef = new Map(
-    statuses
+  const depositByRef = new Map(
+    deposits
       .filter((item) => item.refid)
       .map((item) => [String(item.refid), item]),
+  );
+  const withdrawalByRef = new Map(
+    withdrawals
+      .filter((item) => item.refid)
+      .map((item) => [String(item.refid), item]),
+  );
+  const betaDepositByRef = new Map(
+    betaDeposits
+      .map((item) => [stringValue(item.deposit_id), item] as const)
+      .filter(([id]) => Boolean(id)),
+  );
+  const betaWithdrawalByRef = new Map(
+    betaWithdrawals
+      .map((item) => [stringValue(item.withdrawal_id), item] as const)
+      .filter(([id]) => Boolean(id)),
   );
 
   const rows = db
     .prepare(
-      "SELECT id, raw_json FROM transactions " +
-        "WHERE provider = 'kraken' AND category = 'wallet_transfer_out_unclassified'",
+      "SELECT id, category, counterparty_ref, raw_json FROM transactions " +
+        "WHERE provider = 'kraken' AND category IN (" +
+        "'wallet_transfer_in_unclassified', 'wallet_transfer_out_unclassified')",
     )
     .all();
 
@@ -485,23 +855,53 @@ function enrichKrakenWalletTransfers(
     }
 
     const refid = stringValue(raw.refid);
-    const status = byRef.get(refid);
-    if (!status) continue;
+    const direction = String(row.category).includes("_in_")
+      ? "deposit"
+      : "withdrawal";
+    const status =
+      direction === "deposit"
+        ? depositByRef.get(refid)
+        : withdrawalByRef.get(refid);
+    const betaStatus =
+      direction === "deposit"
+        ? betaDepositByRef.get(refid)
+        : betaWithdrawalByRef.get(refid);
+    if (!status && !betaStatus) continue;
 
-    const destination = stringValue(status.info);
-    const txid = status.txid ? String(status.txid) : "";
-    const counterparty = destination || txid || null;
-    const sourceLabel = [status.network, status.method]
-      .filter(Boolean)
-      .map(String)
-      .join(" · ");
+    const address = status ? stringValue(status.info) : "";
+    const txid = status?.txid ? String(status.txid) : "";
+    const originators =
+      status && Array.isArray(status.originators)
+        ? status.originators.map(String).filter(Boolean)
+        : [];
+    const counterparty =
+      address ||
+      originators[0] ||
+      txid ||
+      stringValue(row.counterparty_ref) ||
+      null;
+    const sourceLabel = status
+      ? [status.network, status.method]
+          .filter(Boolean)
+          .map(String)
+          .join(" · ")
+      : "";
 
     update.run(
       counterparty,
-      sourceLabel || "Kraken on-chain withdrawal",
+      sourceLabel ||
+        (direction === "deposit"
+          ? "Kraken Funding Beta deposit"
+          : "Kraken Funding Beta withdrawal"),
       JSON.stringify({
         ...raw,
-        financeOsWithdrawalStatus: status,
+        [direction === "deposit"
+          ? "financeOsDepositStatus"
+          : "financeOsWithdrawalStatus"]: status ?? null,
+        financeOsFundingBeta: betaStatus ?? null,
+        financeOsFundingTxid: txid || null,
+        financeOsFundingAddress: address || null,
+        financeOsFundingOriginators: originators,
       }),
       String(row.id),
     );
@@ -875,18 +1275,64 @@ export async function syncKraken() {
     if (!connection) throw new Error("Kraken is not connected.");
 
     const { credentials } = connection;
+    const previousAccount = getDb()
+      .prepare(
+        "SELECT raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1",
+      )
+      .get();
+    let previousRaw: JsonObject = {};
+    try {
+      previousRaw = previousAccount?.raw_json
+        ? asObject(JSON.parse(String(previousAccount.raw_json)))
+        : {};
+    } catch {
+      previousRaw = {};
+    }
+    const deepAudit = shouldRunKrakenDeepAudit(previousRaw);
 
     // Private requests are intentionally sequential. Kraken nonces are scoped
     // to the API key, so parallel requests can arrive out of order even if
     // locally generated nonce values are unique.
-    const balances = await privateRequest<Record<string, string>>(
-      "/0/private/Balance",
+    const keyInfo = await privateRequest<JsonObject>(
+      "/0/private/GetApiKeyInfo",
       credentials,
     );
+    const keyDiagnostics = safeKrakenKeyDiagnostics(keyInfo);
+    const rawExtendedBalances = await privateRequest<Record<string, unknown>>(
+      "/0/private/BalanceEx",
+      credentials,
+    );
+    const extendedBalances = parseExtendedBalances(rawExtendedBalances);
     const pairs = await getAssetPairs();
-    const trades = await fetchAllTrades(credentials);
-    const ledgers = await fetchAllLedgers(credentials);
-    const withdrawalStatuses = await fetchRecentWithdrawalStatuses(credentials);
+    const earn = await fetchEarnAllocations(credentials);
+    const margin = await fetchMarginStatus(
+      credentials,
+      keyDiagnostics.marginQueryEnabled,
+    );
+    const tradeHistory = await fetchAllTrades(credentials, {
+      stopAtKnownPage: !deepAudit,
+    });
+    const ledgerHistory = await fetchAllLedgers(credentials, {
+      stopAtKnownPage: !deepAudit,
+    });
+    const trades = tradeHistory.entries;
+    const ledgers = ledgerHistory.entries;
+    const fundingBetaDeposits = await fetchFundingBetaHistory(
+      credentials,
+      "deposit",
+    );
+    const fundingBetaWithdrawals = await fetchFundingBetaHistory(
+      credentials,
+      "withdrawal",
+    );
+    const depositStatuses = await fetchRecentLegacyFundingStatuses(
+      credentials,
+      "deposit",
+    );
+    const withdrawalStatuses = await fetchRecentLegacyFundingStatuses(
+      credentials,
+      "withdrawal",
+    );
 
   const accountExternalId = "spot";
   let cashValueCzk = 0;
@@ -895,14 +1341,17 @@ export async function syncKraken() {
     rawAsset: string;
     normalized: string;
     quantity: number;
+    availableQuantity: number;
+    heldTradeQuantity: number;
+    balanceBucket: string;
     currentPrice: number | null;
     quote: string;
     valueQuote: number;
     valueCzk: number;
   }> = [];
 
-  for (const [rawAsset, rawQuantity] of Object.entries(balances)) {
-    const quantity = numberValue(rawQuantity, 0);
+  for (const [rawAsset, extended] of extendedBalances.entries()) {
+    const quantity = extended.balance;
     if (!quantity) continue;
 
     const normalized = normalizeAssetCode(rawAsset);
@@ -914,6 +1363,9 @@ export async function syncKraken() {
       rawAsset,
       normalized,
       quantity,
+      availableQuantity: extended.available,
+      heldTradeQuantity: extended.holdTrade,
+      balanceBucket: extended.bucket,
       currentPrice: priced.price,
       quote: priced.quote || normalized,
       valueQuote: priced.valueQuote,
@@ -940,7 +1392,61 @@ export async function syncKraken() {
     totalValueCzk,
     realizedPnlCzk: 0,
     unrealizedPnlCzk: 0,
-    raw: { balances },
+    raw: {
+      balances: Object.fromEntries(
+        [...extendedBalances.entries()].map(([asset, value]) => [
+          asset,
+          {
+            balance: value.balance,
+            holdTrade: value.holdTrade,
+            credit: value.credit,
+            creditUsed: value.creditUsed,
+            available: value.available,
+            bucket: value.bucket,
+          },
+        ]),
+      ),
+      financeOsKrakenV2: {
+        balanceSource: "BalanceEx",
+        key: keyDiagnostics,
+        earn,
+        margin,
+        funding: {
+          betaDepositRows: fundingBetaDeposits.rows.length,
+          betaWithdrawalRows: fundingBetaWithdrawals.rows.length,
+          betaDepositPages: fundingBetaDeposits.pages,
+          betaWithdrawalPages: fundingBetaWithdrawals.pages,
+          betaDepositError: fundingBetaDeposits.error,
+          betaWithdrawalError: fundingBetaWithdrawals.error,
+          legacyDepositStatusRows: depositStatuses.rows.length,
+          legacyWithdrawalStatusRows: withdrawalStatuses.rows.length,
+          legacyDepositStatusError: depositStatuses.error,
+          legacyWithdrawalStatusError: withdrawalStatuses.error,
+          api:
+            fundingBetaDeposits.error || fundingBetaWithdrawals.error
+              ? "funding_beta_with_legacy_fallback"
+              : "funding_beta",
+        },
+        historyAudit: {
+          mode: deepAudit ? "full" : "incremental",
+          trades: {
+            pagesScanned: tradeHistory.pagesScanned,
+            providerCount: tradeHistory.providerCount,
+            complete: tradeHistory.complete,
+          },
+          ledgers: {
+            pagesScanned: ledgerHistory.pagesScanned,
+            providerCount: ledgerHistory.providerCount,
+            complete: ledgerHistory.complete,
+          },
+        },
+        lastDeepAuditAt: deepAudit
+          ? new Date().toISOString()
+          : stringValue(
+              asObject(previousRaw.financeOsKrakenV2).lastDeepAuditAt,
+            ) || null,
+      },
+    },
   });
 
   const holdings = [];
@@ -971,7 +1477,15 @@ export async function syncKraken() {
       marketValueCzk: item.valueCzk,
       unrealizedPnl: null,
       unrealizedPnlCzk: null,
-      raw: { rawAsset: item.rawAsset },
+      raw: {
+        rawAsset: item.rawAsset,
+        financeOsKrakenBalance: {
+          bucket: item.balanceBucket,
+          totalQuantity: item.quantity,
+          availableQuantity: item.availableQuantity,
+          heldTradeQuantity: item.heldTradeQuantity,
+        },
+      },
     });
   }
   replaceHoldings(accountIdValue, holdings);
@@ -1084,7 +1598,12 @@ export async function syncKraken() {
 
     reclassifyLegacyKrakenWalletFlows();
     repairLegacyKrakenLedgerQuantities();
-    enrichKrakenWalletTransfers(withdrawalStatuses);
+    enrichKrakenWalletTransfers(
+      depositStatuses.rows,
+      withdrawalStatuses.rows,
+      fundingBetaDeposits.rows,
+      fundingBetaWithdrawals.rows,
+    );
     rebuildKrakenTransferBookValuesAndCostBasis();
     recordSnapshot(accountIdValue);
 
@@ -1093,7 +1612,216 @@ export async function syncKraken() {
       holdings: holdings.length,
       trades: trades.length,
       ledgers: ledgers.length,
-      enrichedWithdrawals: withdrawalStatuses.length,
+      fundingBetaDeposits: fundingBetaDeposits.rows.length,
+      fundingBetaWithdrawals: fundingBetaWithdrawals.rows.length,
+      enrichedDeposits: depositStatuses.rows.length,
+      enrichedWithdrawals: withdrawalStatuses.rows.length,
+      earnAllocations: earn.activeStrategies,
+      openMarginPositions: margin.openPositions,
+      balanceSource: "BalanceEx",
+      historyAuditMode: deepAudit ? "full" : "incremental",
+      tradeHistoryComplete: tradeHistory.complete,
+      ledgerHistoryComplete: ledgerHistory.complete,
     };
   });
+}
+
+
+export function getKrakenStatus() {
+  const db = getDb();
+  const connection = db
+    .prepare(
+      "SELECT status, last_synced_at, last_error FROM connections WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+  const account = db
+    .prepare(
+      "SELECT id, total_value_czk, raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+
+  let raw: JsonObject = {};
+  try {
+    raw = account?.raw_json
+      ? asObject(JSON.parse(String(account.raw_json)))
+      : {};
+  } catch {
+    raw = {};
+  }
+
+  const v2 = asObject(raw.financeOsKrakenV2);
+  const key = asObject(v2.key);
+  const earn = asObject(v2.earn);
+  const margin = asObject(v2.margin);
+  const funding = asObject(v2.funding);
+  const historyAudit = asObject(v2.historyAudit);
+  const tradeHistoryAudit = asObject(historyAudit.trades);
+  const ledgerHistoryAudit = asObject(historyAudit.ledgers);
+
+  const transferAudit = db
+    .prepare(
+      "SELECT " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_unclassified' THEN 1 ELSE 0 END) AS unclassified_count, " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_owned' THEN 1 ELSE 0 END) AS owned_count, " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_unclassified' AND transfer_value_czk IS NOT NULL THEN 1 ELSE 0 END) AS unclassified_with_book_value " +
+        "FROM transactions WHERE provider = 'kraken'",
+    )
+    .get();
+
+  const costBasis = db
+    .prepare(
+      "SELECT realized_pnl_status, unrealized_pnl_status, raw_json " +
+        "FROM accounts WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+  let costRaw: JsonObject = {};
+  try {
+    costRaw = costBasis?.raw_json
+      ? asObject(JSON.parse(String(costBasis.raw_json)))
+      : {};
+  } catch {
+    costRaw = {};
+  }
+  const incompleteSymbols = Array.isArray(costRaw.incompleteCostBasisSymbols)
+    ? costRaw.incompleteCostBasisSymbols.map(String)
+    : [];
+
+  const holdingRows = account?.id
+    ? db
+        .prepare(
+          "SELECT market_value_czk, raw_json FROM holdings WHERE account_id = ?",
+        )
+        .all(String(account.id))
+    : [];
+  let heldValueCzk = 0;
+  let availableValueCzk = 0;
+  const balanceBuckets = new Map<string, number>();
+  for (const row of holdingRows) {
+    const holdingRaw = (() => {
+      try {
+        return row.raw_json
+          ? asObject(JSON.parse(String(row.raw_json)))
+          : {};
+      } catch {
+        return {};
+      }
+    })();
+    const balance = asObject(holdingRaw.financeOsKrakenBalance);
+    const totalQuantity = numberValue(balance.totalQuantity);
+    const heldQuantity = numberValue(balance.heldTradeQuantity);
+    const availableQuantity = numberValue(balance.availableQuantity);
+    const valueCzk = numberValue(row.market_value_czk);
+    if (totalQuantity > 0) {
+      heldValueCzk += valueCzk * (heldQuantity / totalQuantity);
+      availableValueCzk += valueCzk * (availableQuantity / totalQuantity);
+    }
+    const bucket = stringValue(balance.bucket, "unknown");
+    balanceBuckets.set(
+      bucket,
+      (balanceBuckets.get(bucket) ?? 0) + valueCzk,
+    );
+  }
+
+  return {
+    connected: Boolean(connection),
+    status: connection?.status ? String(connection.status) : "not_connected",
+    lastSyncedAt: connection?.last_synced_at
+      ? String(connection.last_synced_at)
+      : null,
+    lastError: connection?.last_error ? String(connection.last_error) : null,
+    totalValueCzk:
+      account?.total_value_czk === null ||
+      account?.total_value_czk === undefined
+        ? null
+        : numberValue(account.total_value_czk),
+    balanceSource:
+      typeof v2.balanceSource === "string" ? v2.balanceSource : null,
+    heldValueCzk,
+    availableValueCzk,
+    balanceBuckets: Object.fromEntries(balanceBuckets),
+    earn: {
+      available: earn.available === true,
+      allocatedCzk: numberValue(earn.totalAllocatedCzk),
+      rewardedCzk: numberValue(earn.totalRewardedCzk),
+      activeStrategies: numberValue(earn.activeStrategies),
+      error: typeof earn.error === "string" ? earn.error : null,
+    },
+    margin: {
+      queryEnabled: margin.queryEnabled === true,
+      openPositions: numberValue(margin.openPositions),
+      error: typeof margin.error === "string" ? margin.error : null,
+    },
+    key: {
+      name: typeof key.name === "string" ? key.name : null,
+      hasHistoryRestriction: key.hasHistoryRestriction === true,
+      hasExpiry: key.hasExpiry === true,
+      validUntil: typeof key.validUntil === "string" ? key.validUntil : null,
+      queryFrom: typeof key.queryFrom === "string" ? key.queryFrom : null,
+      queryTo: typeof key.queryTo === "string" ? key.queryTo : null,
+      exportDataEnabled: key.exportDataEnabled === true,
+      marginQueryEnabled: key.marginQueryEnabled === true,
+      ipAllowlistCount: numberValue(key.ipAllowlistCount),
+    },
+    historyAudit: {
+      mode:
+        typeof historyAudit.mode === "string" ? historyAudit.mode : null,
+      lastDeepAuditAt:
+        typeof v2.lastDeepAuditAt === "string" ? v2.lastDeepAuditAt : null,
+      trades: {
+        pagesScanned: numberValue(tradeHistoryAudit.pagesScanned),
+        providerCount: numberValue(tradeHistoryAudit.providerCount),
+        complete: tradeHistoryAudit.complete === true,
+      },
+      ledgers: {
+        pagesScanned: numberValue(ledgerHistoryAudit.pagesScanned),
+        providerCount: numberValue(ledgerHistoryAudit.providerCount),
+        complete: ledgerHistoryAudit.complete === true,
+      },
+    },
+    funding: {
+      ownedTransfers: numberValue(transferAudit?.owned_count),
+      unclassifiedTransfers: numberValue(transferAudit?.unclassified_count),
+      unclassifiedTransfersWithBookValue: numberValue(
+        transferAudit?.unclassified_with_book_value,
+      ),
+      betaDepositRows: numberValue(funding.betaDepositRows),
+      betaWithdrawalRows: numberValue(funding.betaWithdrawalRows),
+      betaDepositPages: numberValue(funding.betaDepositPages),
+      betaWithdrawalPages: numberValue(funding.betaWithdrawalPages),
+      betaDepositError:
+        typeof funding.betaDepositError === "string"
+          ? funding.betaDepositError
+          : null,
+      betaWithdrawalError:
+        typeof funding.betaWithdrawalError === "string"
+          ? funding.betaWithdrawalError
+          : null,
+      depositStatusRows: numberValue(funding.legacyDepositStatusRows),
+      withdrawalStatusRows: numberValue(
+        funding.legacyWithdrawalStatusRows,
+      ),
+      depositStatusError:
+        typeof funding.legacyDepositStatusError === "string"
+          ? funding.legacyDepositStatusError
+          : null,
+      withdrawalStatusError:
+        typeof funding.legacyWithdrawalStatusError === "string"
+          ? funding.legacyWithdrawalStatusError
+          : null,
+      api: typeof funding.api === "string" ? funding.api : null,
+    },
+    costBasis: {
+      status:
+        typeof costRaw.costBasisStatus === "string"
+          ? costRaw.costBasisStatus
+          : null,
+      incompleteSymbols,
+      realizedStatus: costBasis?.realized_pnl_status
+        ? String(costBasis.realized_pnl_status)
+        : null,
+      unrealizedStatus: costBasis?.unrealized_pnl_status
+        ? String(costBasis.unrealized_pnl_status)
+        : null,
+    },
+  };
 }

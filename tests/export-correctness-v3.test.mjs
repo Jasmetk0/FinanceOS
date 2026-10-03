@@ -893,6 +893,82 @@ test("History page exposes unresolved flow gaps instead of folding them into dep
 });
 
 
+test("Kraken v2 uses BalanceEx, Earn and read-only key diagnostics", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes('"/0/private/BalanceEx"'));
+  assert.ok(kraken.includes('"/0/private/Earn/Allocations"'));
+  assert.ok(kraken.includes("safeKrakenKeyDiagnostics"));
+  assert.ok(kraken.includes("holdTrade"));
+  assert.ok(kraken.includes("available: balance + credit - creditUsed - holdTrade"));
+  assert.ok(kraken.includes("balanceBucket"));
+  assert.ok(kraken.includes("fetchMarginStatus"));
+  assert.ok(kraken.includes("financeOsKrakenV2"));
+  assert.ok(connections.includes("Kraken Pro accounting coverage"));
+  assert.ok(connections.includes("BalanceEx"));
+  assert.ok(connections.includes("API historie"));
+});
+
+test("Kraken performs a periodic full history audit instead of trusting only the first known page", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes("function shouldRunKrakenDeepAudit"));
+  assert.ok(kraken.includes("7 * 24 * 60 * 60 * 1000"));
+  assert.ok(kraken.includes("stopAtKnownPage: !deepAudit"));
+  assert.ok(kraken.includes('mode: deepAudit ? "full" : "incremental"'));
+  assert.ok(kraken.includes("lastDeepAuditAt"));
+  assert.ok(kraken.includes("providerCount"));
+  assert.ok(connections.includes("History audit"));
+  assert.ok(connections.includes("Plný scan"));
+});
+
+test("Kraken uses Funding Beta as the primary funding-history audit", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes("async function fundingRequest"));
+  assert.ok(kraken.includes('"/funding/v1/deposits"'));
+  assert.ok(kraken.includes('"/funding/v1/withdrawals"'));
+  assert.ok(kraken.includes('"API-Nonce": nonce'));
+  assert.ok(kraken.includes("Buffer.from(signedPath"));
+  assert.ok(kraken.includes("fetchFundingBetaHistory"));
+  assert.ok(kraken.includes('api:'));
+  assert.ok(kraken.includes('"funding_beta"'));
+  assert.ok(connections.includes("funding záznamů"));
+});
+
+test("Kraken enriches both deposit and withdrawal wallet metadata without changing accounting scope", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+
+  assert.ok(kraken.includes('"/0/private/DepositStatus"'));
+  assert.ok(kraken.includes('"/0/private/WithdrawStatus"'));
+  assert.ok(kraken.includes('"wallet_transfer_in_unclassified"'));
+  assert.ok(kraken.includes('"wallet_transfer_out_unclassified"'));
+  assert.ok(kraken.includes("financeOsFundingBeta"));
+  assert.ok(kraken.includes("financeOsFundingTxid"));
+  assert.ok(kraken.includes("financeOsFundingAddress"));
+  assert.ok(kraken.includes("financeOsFundingOriginators"));
+  assert.ok(kraken.includes("fundingBetaDeposits.rows"));
+  assert.ok(kraken.includes("fundingBetaWithdrawals.rows"));
+  assert.ok(kraken.includes("depositStatuses.rows"));
+  assert.ok(kraken.includes("withdrawalStatuses.rows"));
+});
+
+test("Kraken status never exposes API key material", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const statusStart = kraken.indexOf("export function getKrakenStatus");
+  const statusBlock = kraken.slice(statusStart);
+
+  assert.ok(statusStart >= 0);
+  assert.ok(statusBlock.includes("exportDataEnabled"));
+  assert.ok(statusBlock.includes("hasHistoryRestriction"));
+  assert.ok(statusBlock.includes("ipAllowlistCount"));
+  assert.equal(statusBlock.includes("apiSecret"), false);
+  assert.equal(statusBlock.includes("credentials.apiKey"), false);
+});
+
 test("Kraken resync preserves owned Phantom links and wallet lot movements", () => {
   const kraken = source("lib/server/integrations/kraken.ts");
   assert.ok(kraken.includes("ownedWalletLink"));
