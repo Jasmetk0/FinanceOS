@@ -759,6 +759,13 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
     WHERE account_id = ?
       AND amount_czk IS NOT NULL
   `);
+  const yieldRows = db.prepare(`
+    SELECT category, amount_czk, raw_json
+    FROM transactions
+    WHERE account_id = ?
+      AND kind = 'interest'
+      AND amount_czk IS NOT NULL
+  `);
   const update = db.prepare(
     "UPDATE accounts SET realized_pnl = ?, realized_pnl_czk = ?, raw_json = ? WHERE id = ?",
   );
@@ -777,6 +784,21 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
     const investmentPnlCzk =
       interestCzk + investmentIncomeCzk - feesCzk;
     const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+    const yieldBreakdown = {
+      ordinary: 0,
+      bonus: 0,
+      penalty: 0,
+      other: 0,
+    };
+    for (const yieldRow of yieldRows.all(String(account.id))) {
+      const rowRaw = parseJsonObject(yieldRow.raw_json);
+      const type =
+        typeof rowRaw.type === "string"
+          ? rowRaw.type
+          : String(yieldRow.category || "");
+      const bucket = investownInterestBucket(type);
+      yieldBreakdown[bucket] += Number(yieldRow.amount_czk) || 0;
+    }
 
     update.run(
       investmentPnlCzk,
@@ -784,6 +806,10 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
       JSON.stringify({
         ...raw,
         derivedInterest: interestCzk,
+        derivedOrdinaryYield: yieldBreakdown.ordinary,
+        derivedBonusYield: yieldBreakdown.bonus,
+        derivedPenaltyYield: yieldBreakdown.penalty,
+        derivedOtherYield: yieldBreakdown.other,
         derivedOtherInvestmentIncome: investmentIncomeCzk,
         derivedExternalRewards: externalRewardsCzk,
         derivedOtherIncome: incomeCzk,
