@@ -411,10 +411,33 @@ function cardClassification(actionRaw: string, merchantCategory: string) {
   return null;
 }
 
+function nearestUnambiguousCandidate(
+  candidates: Array<Record<string, unknown>>,
+  occurredAt: string,
+) {
+  if (candidates.length === 1) return candidates[0];
+  if (candidates.length < 2) return null;
+
+  const firstAt = new Date(String(candidates[0].occurred_at)).getTime();
+  const secondAt = new Date(String(candidates[1].occurred_at)).getTime();
+  const target = new Date(occurredAt).getTime();
+  const firstDistance = Math.abs(firstAt - target);
+  const secondDistance = Math.abs(secondAt - target);
+
+  // Only pick the nearest row when it is materially closer. Equal/similar
+  // candidates remain unresolved instead of attaching provider metadata to the
+  // wrong cash movement.
+  return firstDistance + 60 * 60 * 1000 < secondDistance
+    ? candidates[0]
+    : null;
+}
+
 function findExistingTransaction(
   id: string,
   classification: NonNullable<ReturnType<typeof cardClassification>>,
   occurredAt: string | null,
+  signedAmount: number,
+  currency: string,
   amountCzk: number | null,
 ) {
   const db = getDb();
@@ -429,7 +452,7 @@ function findExistingTransaction(
     if (exact) return exact;
   }
 
-  if (!occurredAt || amountCzk === null) return null;
+  if (!occurredAt) return null;
   const kindCandidates =
     classification.category === "card_cashback"
       ? ["deposit", "withdrawal", "income"]
@@ -444,14 +467,49 @@ function findExistingTransaction(
           : [classification.kind];
   const placeholders = kindCandidates.map(() => "?").join(",");
 
-  const candidates = db
+  // Match the provider's native/account-currency amount first. The previous
+  // implementation compared independently converted CZK values with a 0.02 Kč
+  // tolerance. Historical FX rounding made legitimate CSV rows miss their
+  // coarse API counterparts, leaving real deposits unresolved.
+  const nativeTolerance = Math.max(0.02, Math.abs(signedAmount) * 0.000001);
+  const nativeCandidates = db
+    .prepare(
+      "SELECT * FROM transactions WHERE provider = 'trading212' " +
+        `AND kind IN (${placeholders}) ` +
+        "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
+        "AND amount IS NOT NULL " +
+        "AND UPPER(currency) = UPPER(?) " +
+        "AND ABS(ABS(amount) - ?) <= ? " +
+        "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
+    )
+    .all(
+      ...kindCandidates,
+      occurredAt,
+      occurredAt,
+      currency,
+      Math.abs(signedAmount),
+      nativeTolerance,
+      occurredAt,
+    );
+  const nativeMatch = nearestUnambiguousCandidate(
+    nativeCandidates as Array<Record<string, unknown>>,
+    occurredAt,
+  );
+  if (nativeMatch) return nativeMatch;
+
+  if (amountCzk === null) return null;
+
+  // CZK is only a fallback for legacy rows whose native currency metadata is
+  // incomplete. Allow ordinary rounding noise, but keep the time/kind guards
+  // and ambiguity check so unrelated transactions cannot be merged.
+  const czkTolerance = Math.max(0.5, Math.abs(amountCzk) * 0.00001);
+  const czkCandidates = db
     .prepare(
       "SELECT * FROM transactions WHERE provider = 'trading212' " +
         `AND kind IN (${placeholders}) ` +
         "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
         "AND amount_czk IS NOT NULL " +
-        "AND ABS(ABS(amount_czk) - ?) <= 0.02 " +
-        "AND COALESCE(category, '') NOT LIKE 'card_%' " +
+        "AND ABS(ABS(amount_czk) - ?) <= ? " +
         "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
     )
     .all(
@@ -459,25 +517,14 @@ function findExistingTransaction(
       occurredAt,
       occurredAt,
       Math.abs(amountCzk),
+      czkTolerance,
       occurredAt,
     );
 
-  if (candidates.length === 1) return candidates[0];
-  if (candidates.length === 2) {
-    const firstAt = new Date(String(candidates[0].occurred_at)).getTime();
-    const secondAt = new Date(String(candidates[1].occurred_at)).getTime();
-    const target = new Date(occurredAt).getTime();
-    const firstDistance = Math.abs(firstAt - target);
-    const secondDistance = Math.abs(secondAt - target);
-    // Only pick the nearest candidate automatically when it is materially
-    // closer. Equal/similar candidates stay unresolved rather than attaching
-    // the wrong merchant to a payment.
-    if (firstDistance + 60 * 60 * 1000 < secondDistance) {
-      return candidates[0];
-    }
-  }
-
-  return null;
+  return nearestUnambiguousCandidate(
+    czkCandidates as Array<Record<string, unknown>>,
+    occurredAt,
+  );
 }
 
 async function enrichReportRows(input: {
@@ -532,6 +579,8 @@ async function enrichReportRows(input: {
       id,
       classification,
       occurredAt,
+      signedAmount,
+      money.currency,
       amountCzk,
     );
 
