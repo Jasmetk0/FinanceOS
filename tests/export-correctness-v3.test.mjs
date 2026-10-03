@@ -924,6 +924,21 @@ test("Kraken performs a periodic full history audit instead of trusting only the
   assert.ok(connections.includes("Plný scan"));
 });
 
+test("Kraken uses Funding Beta as the primary funding-history audit", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes("async function fundingRequest"));
+  assert.ok(kraken.includes('"/funding/v1/deposits"'));
+  assert.ok(kraken.includes('"/funding/v1/withdrawals"'));
+  assert.ok(kraken.includes('"API-Nonce": nonce'));
+  assert.ok(kraken.includes("Buffer.from(signedPath"));
+  assert.ok(kraken.includes("fetchFundingBetaHistory"));
+  assert.ok(kraken.includes('api:'));
+  assert.ok(kraken.includes('"funding_beta"'));
+  assert.ok(connections.includes("funding záznamů"));
+});
+
 test("Kraken enriches both deposit and withdrawal wallet metadata without changing accounting scope", () => {
   const kraken = source("lib/server/integrations/kraken.ts");
 
@@ -931,9 +946,12 @@ test("Kraken enriches both deposit and withdrawal wallet metadata without changi
   assert.ok(kraken.includes('"/0/private/WithdrawStatus"'));
   assert.ok(kraken.includes('"wallet_transfer_in_unclassified"'));
   assert.ok(kraken.includes('"wallet_transfer_out_unclassified"'));
+  assert.ok(kraken.includes("financeOsFundingBeta"));
   assert.ok(kraken.includes("financeOsFundingTxid"));
   assert.ok(kraken.includes("financeOsFundingAddress"));
   assert.ok(kraken.includes("financeOsFundingOriginators"));
+  assert.ok(kraken.includes("fundingBetaDeposits.rows"));
+  assert.ok(kraken.includes("fundingBetaWithdrawals.rows"));
   assert.ok(kraken.includes("depositStatuses.rows"));
   assert.ok(kraken.includes("withdrawalStatuses.rows"));
 });
