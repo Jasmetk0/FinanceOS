@@ -145,6 +145,13 @@ function parseDate(date: string) {
   return new Date(date + "T12:00:00").getTime();
 }
 
+function localIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return year + "-" + month + "-" + day;
+}
+
 function dateLabel(date: string, withYear = true) {
   return new Date(date + "T12:00:00").toLocaleDateString("cs-CZ", {
     day: "numeric",
@@ -265,18 +272,31 @@ export function PortfolioHistoryChart({
 
   const earliest = data.points[0]?.date ?? "";
   const latest = data.points.at(-1)?.date ?? "";
+  const investownOnly =
+    data.providers.length === 1 && data.providers[0] === "investown";
+  const today = localIsoDate();
+  const estimateEndDate =
+    investownOnly && latest && today > latest
+      ? period === "CUSTOM"
+        ? customEnd && customEnd < today
+          ? customEnd
+          : today
+        : today
+      : null;
+  const effectiveLatest =
+    estimateEndDate && estimateEndDate > latest ? estimateEndDate : latest;
 
   const filtered = useMemo(() => {
     if (!data.points.length) return [];
 
     let start: string | null = null;
-    let end: string | null = latest || null;
+    let end: string | null = effectiveLatest || null;
 
     if (period === "CUSTOM") {
       start = customStart || null;
-      end = customEnd || latest || null;
+      end = customEnd || effectiveLatest || null;
     } else {
-      start = latest ? getPeriodStart(period, latest) : null;
+      start = effectiveLatest ? getPeriodStart(period, effectiveLatest) : null;
     }
 
     return data.points.filter(
@@ -284,18 +304,30 @@ export function PortfolioHistoryChart({
         (!start || point.date >= start) &&
         (!end || point.date <= end),
     );
-  }, [data.points, period, customStart, customEnd, latest]);
+  }, [
+    data.points,
+    period,
+    customStart,
+    customEnd,
+    effectiveLatest,
+  ]);
 
   const displayProviders = selectedProviders.filter((provider) =>
     data.providers.includes(provider),
   );
-  const investownOnly =
-    data.providers.length === 1 && data.providers[0] === "investown";
+
+  const estimateSourcePoint =
+    investownOnly && estimateEndDate && filtered.length
+      ? filtered.at(-1) ?? null
+      : null;
 
   const chart = useMemo(() => {
     if (filtered.length < 1) return null;
 
     const timestamps = filtered.map((point) => parseDate(point.date));
+    if (estimateEndDate && estimateEndDate > filtered.at(-1)!.date) {
+      timestamps.push(parseDate(estimateEndDate));
+    }
     const minX = Math.min(...timestamps);
     const maxX = Math.max(...timestamps);
 
@@ -383,6 +415,7 @@ export function PortfolioHistoryChart({
     showTotal,
     showContributions,
     displayProviders,
+    estimateEndDate,
   ]);
 
   const hoverPoint = useMemo(
@@ -505,7 +538,7 @@ export function PortfolioHistoryChart({
             onClick={() => {
               setPeriod("CUSTOM");
               setCustomStart(customStart || earliest);
-              setCustomEnd(customEnd || latest);
+              setCustomEnd(customEnd || effectiveLatest);
             }}
             className={[
               "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
@@ -528,7 +561,7 @@ export function PortfolioHistoryChart({
             <input
               type="date"
               min={earliest}
-              max={latest}
+              max={effectiveLatest}
               value={customStart}
               onChange={(event) => setCustomStart(event.target.value)}
               className="mt-1 rounded-lg border border-white/8 bg-[#0b1511] px-2.5 py-1.5 text-xs"
@@ -844,6 +877,98 @@ export function PortfolioHistoryChart({
               />
             ) : null}
 
+            {estimateSourcePoint && estimateEndDate ? (
+              <>
+                {metric === "value" && showContributions ? (
+                  <path
+                    d={
+                      "M" +
+                      chart.xScale(estimateSourcePoint.date).toFixed(2) +
+                      "," +
+                      chart.yScale(estimateSourcePoint.total.contributedCzk).toFixed(2) +
+                      " L" +
+                      chart.xScale(estimateEndDate).toFixed(2) +
+                      "," +
+                      chart.yScale(estimateSourcePoint.total.contributedCzk).toFixed(2)
+                    }
+                    fill="none"
+                    stroke="rgba(237,247,242,0.34)"
+                    strokeWidth="1.4"
+                    strokeDasharray="6 5"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+
+                {showTotal &&
+                metricValue(metric, estimateSourcePoint.total) !== null ? (
+                  <path
+                    d={
+                      "M" +
+                      chart.xScale(estimateSourcePoint.date).toFixed(2) +
+                      "," +
+                      chart
+                        .yScale(
+                          metricValue(metric, estimateSourcePoint.total) as number,
+                        )
+                        .toFixed(2) +
+                      " L" +
+                      chart.xScale(estimateEndDate).toFixed(2) +
+                      "," +
+                      chart
+                        .yScale(
+                          metricValue(metric, estimateSourcePoint.total) as number,
+                        )
+                        .toFixed(2)
+                    }
+                    fill="none"
+                    stroke="#f6fbf8"
+                    strokeWidth="2.5"
+                    strokeDasharray="7 6"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+
+                {displayProviders.includes("investown") &&
+                estimateSourcePoint.providers.investown &&
+                metricValue(
+                  metric,
+                  estimateSourcePoint.providers.investown,
+                ) !== null ? (
+                  <path
+                    d={
+                      "M" +
+                      chart.xScale(estimateSourcePoint.date).toFixed(2) +
+                      "," +
+                      chart
+                        .yScale(
+                          metricValue(
+                            metric,
+                            estimateSourcePoint.providers.investown,
+                          ) as number,
+                        )
+                        .toFixed(2) +
+                      " L" +
+                      chart.xScale(estimateEndDate).toFixed(2) +
+                      "," +
+                      chart
+                        .yScale(
+                          metricValue(
+                            metric,
+                            estimateSourcePoint.providers.investown,
+                          ) as number,
+                        )
+                        .toFixed(2)
+                    }
+                    fill="none"
+                    stroke={colors.investown || providerColor("investown")}
+                    strokeWidth="2"
+                    strokeDasharray="7 6"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+              </>
+            ) : null}
+
             {showTotal ? (
               <path
                 d={buildPath(
@@ -917,9 +1042,17 @@ export function PortfolioHistoryChart({
           {filtered.length.toLocaleString("cs-CZ")} bodů ·{" "}
           {filtered[0] ? dateLabel(filtered[0].date) : "—"} →{" "}
           {filtered.at(-1) ? dateLabel(filtered.at(-1)!.date) : "—"}
+          {estimateEndDate ? (
+            <>
+              {" · "}
+              <span className="font-medium">odhad do {dateLabel(estimateEndDate)}</span>
+            </>
+          ) : null}
         </span>
         <span>
-          Najetím na graf zobrazíš přesné datum, hodnotu, vklady, P/L a pokrytí dat.
+          {estimateEndDate
+            ? "Přerušovaná část Investownu je odhad: drží poslední importovanou hodnotu beze změny."
+            : "Najetím na graf zobrazíš přesné datum, hodnotu, vklady, P/L a pokrytí dat."}
         </span>
       </div>
     </div>
