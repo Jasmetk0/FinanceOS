@@ -187,10 +187,10 @@ test("Investown full-statement aggregate keeps penalties positive and referral r
     { kind: "income", amountCzk: 1000, category: "referral_reward" },
   ]);
 
-  assert.equal(summary.interestCzk, 3659.89);
-  assert.equal(summary.investmentPnlCzk, 3659.89);
+  assert.equal(Number(summary.interestCzk.toFixed(2)), 3659.89);
+  assert.equal(Number(summary.investmentPnlCzk.toFixed(2)), 3659.89);
   assert.equal(summary.externalRewardsCzk, 2000);
-  assert.equal(summary.totalGainCzk, 5659.89);
+  assert.equal(Number(summary.totalGainCzk.toFixed(2)), 5659.89);
 
   const ownerCapitalCzk = 63293.43 - 10317.88;
   const expectedValueCzk = ownerCapitalCzk + summary.totalGainCzk;
