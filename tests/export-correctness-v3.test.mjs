@@ -201,14 +201,11 @@ test("Investown imports are cumulative and deduplicated", () => {
   assert.ok(importer.includes("už známých"));
   assert.ok(
     importer.includes(
-      "Částečné novější výpisy se přidávají k uložené historii",
+      "Každý import nejdřív proběhne jako read-only preview",
     ),
   );
-  assert.ok(
-    importer.includes(
-      "autoritativní verzi historie Investownu",
-    ),
-  );
+  assert.ok(importer.includes("autoritativní verzi historie"));
+  assert.ok(importer.includes("po výslovném druhém"));
 });
 
 test("Investown statement history is never carried past source coverage", () => {
