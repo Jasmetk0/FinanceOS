@@ -46,7 +46,7 @@ export async function POST(request: Request) {
       currentValue: optionalNumber(body.currentValue),
       walletCash: optionalNumber(body.walletCash),
       rows,
-      replaceExisting: body.replaceExisting !== false,
+      replaceExisting: body.replaceExisting === true,
       sourceFormat,
       dryRun: body.dryRun === true,
       allowAuthoritativeRemovals: body.allowAuthoritativeRemovals === true,
