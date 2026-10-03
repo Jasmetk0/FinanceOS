@@ -211,6 +211,21 @@ test("unknown Investown transaction types block performance instead of being gue
   assert.ok(history.includes("blokuje P/L a výnos"));
 });
 
+test("Investown native statement value is reconciled against capital plus gains", () => {
+  const investown = source("lib/server/investown.ts");
+  const importer = source("components/investown-importer.tsx");
+
+  assert.ok(investown.includes("const derivedOwnerCapitalCzk"));
+  assert.ok(investown.includes("const accountingExpectedValueCzk"));
+  assert.ok(investown.includes("const accountingDifferenceCzk"));
+  assert.ok(investown.includes("Math.abs(accountingDifferenceCzk) <= 0.05"));
+  assert.ok(investown.includes("Investown účetní kontrola nesedí o "));
+  assert.ok(investown.includes("reconciliationDifference: accountingDifferenceCzk ?? 0"));
+  assert.ok(investown.includes("accountingReconciliation"));
+  assert.ok(importer.includes("Účetní rozdíl"));
+  assert.ok(importer.includes("Kontrola sedí."));
+});
+
 test("Investown native imports are previewed before destructive statement reconciliation", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
