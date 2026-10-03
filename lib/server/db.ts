@@ -814,6 +814,12 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
       AND kind = 'interest'
       AND amount_czk IS NOT NULL
   `);
+  const coverageRows = db.prepare(`
+    SELECT occurred_at, raw_json
+    FROM transactions
+    WHERE account_id = ?
+    ORDER BY occurred_at ASC
+  `);
   const update = db.prepare(
     "UPDATE accounts SET realized_pnl = ?, realized_pnl_czk = ?, raw_json = ? WHERE id = ?",
   );
@@ -832,6 +838,21 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
     const investmentPnlCzk =
       interestCzk + investmentIncomeCzk - feesCzk;
     const totalGainCzk = investmentPnlCzk + externalRewardsCzk;
+    const statementDates = coverageRows
+      .all(String(account.id))
+      .map((coverageRow) => {
+        const rowRaw = parseJsonObject(coverageRow.raw_json);
+        for (const candidate of [rowRaw.sourceDate, rowRaw.occurredAt]) {
+          if (typeof candidate !== "string") continue;
+          const match = candidate.match(/^(\d{4}-\d{2}-\d{2})/);
+          if (match?.[1]) return match[1];
+        }
+        return String(coverageRow.occurred_at || "").slice(0, 10);
+      })
+      .filter(Boolean)
+      .sort();
+    const statementFirstDate = statementDates[0] ?? null;
+    const statementLastDate = statementDates.at(-1) ?? null;
     const yieldBreakdown = {
       ordinary: 0,
       bonus: 0,
@@ -865,6 +886,8 @@ function repairInvestownRealizedPnl(db: DatabaseSync) {
         derivedInvestmentPnl: investmentPnlCzk,
         derivedTotalGain: totalGainCzk,
         derivedRealizedPnl: investmentPnlCzk,
+        statementFirstDate,
+        statementLastDate,
       }),
       String(account.id),
     );
