@@ -1,3 +1,4 @@
+import { isPerformanceExternalRewardCategory } from "@/lib/investown-semantics.mjs";
 import { getDb } from "@/lib/server/db";
 import { listConnections } from "@/lib/server/repository";
 
@@ -62,12 +63,7 @@ function nextIsoDate(date: string): string {
 }
 
 function isExternalRewardCategory(category: string) {
-  return (
-    category === "card_cashback" ||
-    category === "external_reward" ||
-    category === "referral_reward" ||
-    category === "campaign_reward"
-  );
+  return isPerformanceExternalRewardCategory(category);
 }
 
 function transactionAccountingDate(row: {
@@ -1296,8 +1292,12 @@ export function getPerformanceData() {
             )
             OR (
               kind = 'income'
-              AND category = 'card_cashback'
-              AND flow_scope = 'external'
+              AND category IN (
+                'card_cashback',
+                'external_reward',
+                'referral_reward',
+                'campaign_reward'
+              )
             )
           )
         ORDER BY occurred_at ASC
@@ -1367,11 +1367,15 @@ export function getPerformanceData() {
       } else if (kind === "withdrawal") {
         withdrawals += amount;
         flows.push({ date, amount });
-      } else if (String(row.category || "") === "card_cashback") {
+      } else if (
+        kind === "income" &&
+        isExternalRewardCategory(String(row.category || ""))
+      ) {
         const signedReward = num(row.amount_czk);
         externalRewards += signedReward;
-        // Positive reward is cash entering the portfolio; a cashback reversal
-        // is the opposite external flow.
+        // External rewards enter the account from outside the investor's own
+        // capital. Treat them as an external cash flow so they do not inflate
+        // investment P/L, Simple Return or XIRR.
         flows.push({ date, amount: -signedReward });
       }
     }
@@ -1567,8 +1571,12 @@ export function getPerformanceData() {
           )
           OR (
             t.kind = 'income'
-            AND t.category = 'card_cashback'
-            AND t.flow_scope = 'external'
+            AND t.category IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
           )
         )
       ORDER BY t.occurred_at ASC
@@ -1850,7 +1858,7 @@ export function getAccountDetail(accountIdInput: string) {
       SELECT
         h.id, h.asset_id, h.quantity, h.average_price, h.current_price,
         h.currency, h.market_value, h.market_value_czk,
-        h.unrealized_pnl, h.unrealized_pnl_czk,
+        h.unrealized_pnl, h.unrealized_pnl_czk, h.raw_json,
         a.symbol, a.name, a.asset_class
       FROM holdings h
       JOIN assets a ON a.id = h.asset_id
@@ -1858,27 +1866,57 @@ export function getAccountDetail(accountIdInput: string) {
       ORDER BY h.market_value_czk DESC, a.symbol ASC
     `)
     .all(accountId)
-    .map((row) => ({
-      id: String(row.id),
-      assetId: String(row.asset_id),
-      symbol: String(row.symbol),
-      name: String(row.name),
-      assetClass: String(row.asset_class),
-      quantity: num(row.quantity),
-      averagePrice:
-        row.average_price === null ? null : num(row.average_price),
-      currentPrice:
-        row.current_price === null ? null : num(row.current_price),
-      currency: String(row.currency),
-      marketValue: num(row.market_value),
-      marketValueCzk: num(row.market_value_czk),
-      unrealizedPnl:
-        row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
-      unrealizedPnlCzk:
-        row.unrealized_pnl_czk === null
-          ? null
-          : num(row.unrealized_pnl_czk),
-    }));
+    .map((row) => {
+      const holdingRaw = parseRawObject(row.raw_json);
+      const rawNumber = (key: string) => {
+        const value = holdingRaw[key];
+        return value === null || value === undefined ? null : num(value);
+      };
+
+      return {
+        id: String(row.id),
+        assetId: String(row.asset_id),
+        symbol: String(row.symbol),
+        name: String(row.name),
+        assetClass: String(row.asset_class),
+        quantity: num(row.quantity),
+        averagePrice:
+          row.average_price === null ? null : num(row.average_price),
+        currentPrice:
+          row.current_price === null ? null : num(row.current_price),
+        currency: String(row.currency),
+        marketValue: num(row.market_value),
+        marketValueCzk: num(row.market_value_czk),
+        unrealizedPnl:
+          row.unrealized_pnl === null ? null : num(row.unrealized_pnl),
+        unrealizedPnlCzk:
+          row.unrealized_pnl_czk === null
+            ? null
+            : num(row.unrealized_pnl_czk),
+        p2p:
+          provider === "investown"
+            ? {
+                principalCzk: rawNumber("principal"),
+                reservedOfferCzk: rawNumber("reservedOfferCzk"),
+                investedPrincipalCzk: rawNumber("investedPrincipal"),
+                returnedPrincipalCzk: rawNumber("returnedPrincipal"),
+                receivedInterestCzk: rawNumber("receivedInterestCzk"),
+                loanName:
+                  typeof holdingRaw.loanName === "string"
+                    ? holdingRaw.loanName
+                    : null,
+                projectUrl:
+                  typeof holdingRaw.projectUrl === "string"
+                    ? holdingRaw.projectUrl
+                    : null,
+                projectType:
+                  typeof holdingRaw.projectType === "string"
+                    ? holdingRaw.projectType
+                    : null,
+              }
+            : null,
+      };
+    });
 
   const transactions = db
     .prepare(`
@@ -2646,15 +2684,12 @@ export function getHistoryData() {
   const flowRows = db
     .prepare(`
       SELECT
-        substr(t.occurred_at, 1, 10) AS day,
+        t.provider,
+        t.occurred_at,
+        t.raw_json,
         t.kind,
         t.category,
-        SUM(
-          CASE
-            WHEN t.kind IN ('deposit', 'withdrawal') THEN ABS(t.amount_czk)
-            ELSE t.amount_czk
-          END
-        ) AS amount
+        t.amount_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
@@ -2672,12 +2707,15 @@ export function getHistoryData() {
           )
           OR (
             t.kind = 'income'
-            AND t.category = 'card_cashback'
-            AND t.flow_scope = 'external'
+            AND t.category IN (
+              'card_cashback',
+              'external_reward',
+              'referral_reward',
+              'campaign_reward'
+            )
           )
         )
-      GROUP BY day, t.kind, t.category
-      ORDER BY day ASC
+      ORDER BY t.occurred_at ASC
     `)
     .all();
 
@@ -2693,7 +2731,7 @@ export function getHistoryData() {
   >();
 
   for (const row of flowRows) {
-    const day = String(row.day);
+    const day = transactionAccountingDate(row);
     const current = flowByDay.get(day) ?? {
       depositsCzk: 0,
       withdrawalsCzk: 0,
@@ -2703,16 +2741,20 @@ export function getHistoryData() {
     };
     const kind = String(row.kind);
     const category = String(row.category || "");
+    const amount =
+      kind === "deposit" || kind === "withdrawal"
+        ? Math.abs(num(row.amount_czk))
+        : num(row.amount_czk);
     if (kind === "deposit" && category.startsWith("card_refund:")) {
-      current.cardRefundsCzk += num(row.amount);
+      current.cardRefundsCzk += amount;
     } else if (kind === "deposit") {
-      current.depositsCzk += num(row.amount);
+      current.depositsCzk += amount;
     } else if (kind === "withdrawal" && category.startsWith("card_spend:")) {
-      current.cardSpendCzk += num(row.amount);
+      current.cardSpendCzk += amount;
     } else if (kind === "withdrawal") {
-      current.withdrawalsCzk += num(row.amount);
-    } else if (kind === "income" && category === "card_cashback") {
-      current.externalRewardsCzk += num(row.amount);
+      current.withdrawalsCzk += amount;
+    } else if (kind === "income" && isExternalRewardCategory(category)) {
+      current.externalRewardsCzk += amount;
     }
     flowByDay.set(day, current);
   }
