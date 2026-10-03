@@ -125,6 +125,15 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     const storedInvestmentPnl = Number(raw.derivedInvestmentPnl);
     if (Number.isFinite(storedInvestmentPnl)) {
       investmentPnlCzk = storedInvestmentPnl;
+    } else {
+      // Backward compatibility: older FinanceOS builds stored referral/promo
+      // rewards inside derivedRealizedPnl. Their derivedInterest/derivedFees
+      // fields still let us recover the true investment-only P/L.
+      const storedFees = Number(raw.derivedFees);
+      if (Number.isFinite(storedYield)) {
+        investmentPnlCzk =
+          storedYield - (Number.isFinite(storedFees) ? storedFees : 0);
+      }
     }
 
     const storedRewards = Number(
@@ -633,6 +642,13 @@ export async function importInvestown(input: InvestownImportInput) {
       const storedInvestmentPnl = Number(raw.derivedInvestmentPnl);
       if (Number.isFinite(storedInvestmentPnl)) {
         previousInvestmentPnlCzk = storedInvestmentPnl;
+      } else {
+        const storedInterest = Number(raw.derivedInterest);
+        const storedFees = Number(raw.derivedFees);
+        if (Number.isFinite(storedInterest)) {
+          previousInvestmentPnlCzk =
+            storedInterest - (Number.isFinite(storedFees) ? storedFees : 0);
+        }
       }
       const storedRewards = Number(
         raw.derivedExternalRewards ?? raw.derivedOtherIncome,
