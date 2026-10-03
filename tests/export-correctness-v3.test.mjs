@@ -312,6 +312,19 @@ test("Investown imports are cumulative and deduplicated", () => {
   assert.ok(importer.includes("po výslovném druhém"));
 });
 
+test("Investown freshness uses provider-local coverage dates", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+
+  assert.ok(investown.includes("const statementFirstDate"));
+  assert.ok(investown.includes("const statementLastDate"));
+  assert.ok(investown.includes("statementFirstDate,"));
+  assert.ok(investown.includes("statementLastDate,"));
+  assert.ok(analytics.includes("raw.statementLastDate"));
+  assert.ok(analytics.includes("raw.statementFirstDate"));
+  assert.ok(analytics.includes("statementLastDate ||"));
+});
+
 test("Investown statement history is never carried past source coverage", () => {
   const investown = source("lib/server/investown.ts");
   const analytics = source("lib/server/analytics.ts");
