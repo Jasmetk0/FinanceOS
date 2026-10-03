@@ -955,11 +955,18 @@ export function InvestownImporter({
             Override použij jen u neúplného výpisu.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-3">
-            <Field label="Account currency">
+            <Field
+              label={
+                nativeFormat
+                  ? "Account currency (native Investown = CZK)"
+                  : "Account currency"
+              }
+            >
               <input
                 name="accountCurrency"
                 defaultValue="CZK"
                 required
+                disabled={nativeFormat}
                 onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
