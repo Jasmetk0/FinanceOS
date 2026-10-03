@@ -30,12 +30,13 @@ test("native Investown statement restores explicit PnL coverage", () => {
   assert.ok(db.includes('"not_applicable"'));
 });
 
-test("Investown provider estimate tail stays visible in provider color", () => {
+test("P2P provider estimate tail stays visible in provider color", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
   assert.ok(chart.includes("providerData &&"));
-  assert.ok(chart.includes('displayProviders.includes("investown")'));
-  assert.ok(chart.includes('stroke={colors.investown || providerColor("investown")}'));
+  assert.ok(chart.includes("displayProviders.includes(statementEstimateProvider)"));
+  assert.ok(chart.includes("colors[statementEstimateProvider]"));
+  assert.ok(chart.includes("providerColor(statementEstimateProvider)"));
   assert.ok(chart.includes('strokeWidth="2.4"'));
   assert.ok(chart.includes('strokeLinecap="round"'));
 });
@@ -67,25 +68,25 @@ test("P2P referral and campaign rewards stay separate from percentage return", (
   assert.ok(table.includes(">Odměny<"));
 });
 
-test("Investown charts extend stale imports as a dashed unchanged estimate", () => {
+test("P2P charts extend stale imports as a dashed unchanged estimate", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
   assert.ok(chart.includes("const estimateEndDate"));
   assert.ok(chart.includes("const estimateSourcePoint"));
   assert.ok(chart.includes('strokeDasharray="7 6"'));
   assert.ok(chart.includes("odhad do"));
-  assert.ok(chart.includes("Přerušovaná část Investownu je odhad"));
+  assert.ok(chart.includes("Přerušovaná část je odhad"));
   assert.ok(chart.includes("metricValue(metric, estimateSourcePoint.total)"));
   assert.ok(chart.includes("estimateSourcePoint.total.contributedCzk"));
 });
 
-test("Investown charts use step paths instead of diagonal interpolation", () => {
+test("Investown and Mintos charts use step paths instead of diagonal interpolation", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
   assert.ok(chart.includes('mode: "linear" | "step" = "linear"'));
   assert.ok(chart.includes('if (mode === "step")'));
-  assert.ok(chart.includes('provider === "investown" ? "step" : "linear"'));
-  assert.ok(chart.includes('investownOnly ? "step" : "linear"'));
+  assert.ok(chart.includes('provider === "investown" || provider === "mintos"'));
+  assert.ok(chart.includes('statementStepProvider ? "step" : "linear"'));
 });
 
 test("Investown daily accounting uses statement-local dates, not UTC dates", () => {
@@ -111,7 +112,9 @@ test("Investown daily snapshots persist and graph explicit realized P/L", () => 
   assert.ok(investown.includes("realizedPnlCzk: snapshot.realizedPnl"));
   assert.ok(analytics.includes('provider === "investown"'));
   assert.ok(analytics.includes("financeOsInvestownHistory"));
-  assert.ok(analytics.includes("const explicitProfit = Number(investownHistory.realizedPnlCzk)"));
+  assert.ok(analytics.includes("const investmentPnl = Number(investownHistory.investmentPnlCzk)"));
+  assert.ok(analytics.includes("const legacyPnl = Number(investownHistory.realizedPnlCzk)"));
+  assert.ok(analytics.includes("const explicitProfit = Number.isFinite(investmentPnl)"));
 });
 
 test("Investown realized PnL counts investor compensation and income positively", () => {
