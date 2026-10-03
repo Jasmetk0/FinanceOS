@@ -701,13 +701,23 @@ test("Trading 212 cashback is external reward capital, not investment return", (
 });
 
 
-test("unmatched Trading 212 rich-export rows stay enrichment-only and idempotent", () => {
+test("Trading 212 rich-export reconciliation repairs old unresolved cash rows safely", () => {
   const card = source("lib/server/trading212-card.ts");
   const analytics = source("lib/server/analytics.ts");
+
   assert.ok(card.includes('const enrichmentOnly = true'));
   assert.ok(card.includes('.get("cash:" + id)'));
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
+
+  assert.ok(card.includes("function reconcileStoredRichExportRows"));
+  assert.ok(card.includes("reconcileStoredRichExportRows();"));
+  assert.ok(card.includes("external_id NOT LIKE 'card-export:%'"));
+  assert.ok(card.includes("UPPER(currency) = UPPER(?)"));
+  assert.ok(card.includes("ABS(ABS(amount) - ?) <= ?"));
+  assert.ok(card.includes("financeOsReconciledFromStoredExport"));
+  assert.ok(card.includes("DELETE FROM transactions WHERE id = ?"));
+
   assert.ok(analytics.includes("t.flow_scope = 'external'"));
   assert.ok(analytics.includes("OR t.provider IN ('investown', 'mintos')"));
   assert.ok(analytics.includes("flow_scope = 'external'"));
@@ -887,6 +897,16 @@ test("net deposits exclude internal transfers while account P/L keeps capital at
   assert.ok(analytics.includes("const netContributed = deposits - withdrawals"));
   assert.ok(
     analytics.includes("netContributed + transferIn - transferOut"),
+  );
+  assert.ok(
+    analytics.includes(
+      "category IN ('internal_transfer', 'internal_transfer:cfd')",
+    ),
+  );
+  assert.ok(
+    analytics.includes(
+      'category === "internal_transfer:cfd"',
+    ),
   );
   assert.ok(analytics.includes("capitalAttributedCzk: capitalAttributed"));
   assert.ok(accountPage.includes("Čisté vklady zatím nejsou kompletní"));
