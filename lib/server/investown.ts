@@ -1188,10 +1188,10 @@ export async function importInvestown(input: InvestownImportInput) {
         }
         runningTotalGain += amountCzk;
       } else if (item.kind === "fee") {
-        const fee = Math.abs(amountCzk);
-        runningFees += fee;
-        runningInvestmentPnl -= fee;
-        runningTotalGain -= fee;
+        const feeCost = -amountCzk;
+        runningFees += feeCost;
+        runningInvestmentPnl += amountCzk;
+        runningTotalGain += amountCzk;
       }
 
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
