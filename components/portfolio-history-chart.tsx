@@ -178,20 +178,43 @@ function buildPath(
   getter: (point: PortfolioChartPoint) => number | null,
   xScale: (date: string) => number,
   yScale: (value: number) => number,
+  mode: "linear" | "step" = "linear",
 ) {
   let path = "";
   let drawing = false;
+  let previousY: number | null = null;
 
   for (const point of points) {
     const value = getter(point);
     if (value === null || !Number.isFinite(value)) {
       drawing = false;
+      previousY = null;
       continue;
     }
 
-    const command = drawing ? "L" : "M";
-    path += command + xScale(point.date).toFixed(2) + "," + yScale(value).toFixed(2) + " ";
-    drawing = true;
+    const x = xScale(point.date);
+    const y = yScale(value);
+
+    if (!drawing || previousY === null) {
+      path += "M" + x.toFixed(2) + "," + y.toFixed(2) + " ";
+      drawing = true;
+      previousY = y;
+      continue;
+    }
+
+    if (mode === "step") {
+      // Investown balances only change when a statement transaction happens.
+      // Keep the previous value flat until the next known event/day, then jump
+      // vertically to the new value instead of visually inventing a gradual
+      // change between observations.
+      path +=
+        "L" + x.toFixed(2) + "," + previousY.toFixed(2) + " " +
+        "L" + x.toFixed(2) + "," + y.toFixed(2) + " ";
+    } else {
+      path += "L" + x.toFixed(2) + "," + y.toFixed(2) + " ";
+    }
+
+    previousY = y;
   }
 
   return path.trim();
@@ -266,6 +289,8 @@ export function PortfolioHistoryChart({
   const displayProviders = selectedProviders.filter((provider) =>
     data.providers.includes(provider),
   );
+  const investownOnly =
+    data.providers.length === 1 && data.providers[0] === "investown";
 
   const chart = useMemo(() => {
     if (filtered.length < 1) return null;
@@ -809,6 +834,7 @@ export function PortfolioHistoryChart({
                       : null,
                   chart.xScale,
                   chart.yScale,
+                  investownOnly ? "step" : "linear",
                 )}
                 fill="none"
                 stroke="rgba(237,247,242,0.34)"
@@ -825,6 +851,7 @@ export function PortfolioHistoryChart({
                   (point) => metricValue(metric, point.total),
                   chart.xScale,
                   chart.yScale,
+                  investownOnly ? "step" : "linear",
                 )}
                 fill="none"
                 stroke="#f6fbf8"
@@ -844,6 +871,7 @@ export function PortfolioHistoryChart({
                       : null,
                   chart.xScale,
                   chart.yScale,
+                  provider === "investown" ? "step" : "linear",
                 )}
                 fill="none"
                 stroke={colors[provider] || providerColor(provider)}
