@@ -53,7 +53,18 @@ export default async function AccountDetailPage({
   if (!detail) notFound();
 
   const performance = detail.performance;
+  const isInvestown = detail.provider === "investown";
   const isStale = detail.dataFreshness.status === "stale";
+  const investownInvestmentPnlCzk = isInvestown
+    ? detail.realizedPnlCzk
+    : null;
+  const investownExternalRewardsCzk = isInvestown
+    ? performance?.externalRewardsCzk ?? 0
+    : 0;
+  const investownTotalGainCzk =
+    investownInvestmentPnlCzk === null
+      ? null
+      : investownInvestmentPnlCzk + investownExternalRewardsCzk;
   const apiReadCoverage = objectRecord(detail.sourceMetadata.apiReadCoverage);
   const syncState = objectRecord(detail.sourceMetadata.trading212SyncState);
   const exportInventory = objectRecord(
@@ -110,7 +121,12 @@ export default async function AccountDetailPage({
         </div>
       ) : null}
 
-      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section
+        className={[
+          "mt-7 grid gap-3 sm:grid-cols-2",
+          isInvestown ? "xl:grid-cols-6" : "xl:grid-cols-4",
+        ].join(" ")}
+      >
         <StatCard label="Celková hodnota" value={detail.totalValueCzk} format="currency" hint="Poslední doložená hodnota účtu" />
         <StatCard label="Hotovost" value={detail.cashValueCzk} format="currency" hint="Známá cash část účtu" />
         <StatCard
@@ -119,35 +135,69 @@ export default async function AccountDetailPage({
           format="currency"
           hint={detail.holdings.length.toLocaleString("cs-CZ") + " aktuálních pozic"}
         />
-        <StatCard
-          label={
-            performance?.estimatedProfitCzk !== null &&
-            performance?.estimatedProfitCzk !== undefined
-              ? "Odhad zisku"
-              : "P/L pozic"
-          }
-          value={
-            performance?.estimatedProfitCzk ??
-            (detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
-              ? detail.realizedPnlCzk + detail.unrealizedPnlCzk
-              : null)
-          }
-          format="currency"
-          hint={
-            performance?.estimatedProfitCzk !== null &&
-            performance?.estimatedProfitCzk !== undefined
-              ? "Simple return " + pct(performance.simpleReturnPct)
-              : "Provider P/L pozic; celkový zisk čeká na úplné cash-flow"
-          }
-          positive={
-            performance?.estimatedProfitCzk !== null &&
-            performance?.estimatedProfitCzk !== undefined
-              ? performance.estimatedProfitCzk >= 0
-              : detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
-                ? detail.realizedPnlCzk + detail.unrealizedPnlCzk >= 0
-                : undefined
-          }
-        />
+        {isInvestown ? (
+          <>
+            <StatCard
+              label="Investiční P/L"
+              value={investownInvestmentPnlCzk}
+              format="currency"
+              hint={"Bez referral/kampaňových odměn · Simple return " + pct(performance?.simpleReturnPct)}
+              positive={
+                investownInvestmentPnlCzk === null
+                  ? undefined
+                  : investownInvestmentPnlCzk >= 0
+              }
+            />
+            <StatCard
+              label="Externí odměny"
+              value={investownExternalRewardsCzk}
+              format="currency"
+              hint="Referral, promo a jiné odměny mimo investiční výnos"
+              positive={investownExternalRewardsCzk >= 0}
+            />
+            <StatCard
+              label="Celkový přírůstek"
+              value={investownTotalGainCzk}
+              format="currency"
+              hint="Investiční P/L + externí odměny"
+              positive={
+                investownTotalGainCzk === null
+                  ? undefined
+                  : investownTotalGainCzk >= 0
+              }
+            />
+          </>
+        ) : (
+          <StatCard
+            label={
+              performance?.estimatedProfitCzk !== null &&
+              performance?.estimatedProfitCzk !== undefined
+                ? "Odhad zisku"
+                : "P/L pozic"
+            }
+            value={
+              performance?.estimatedProfitCzk ??
+              (detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
+                ? detail.realizedPnlCzk + detail.unrealizedPnlCzk
+                : null)
+            }
+            format="currency"
+            hint={
+              performance?.estimatedProfitCzk !== null &&
+              performance?.estimatedProfitCzk !== undefined
+                ? "Simple return " + pct(performance.simpleReturnPct)
+                : "Provider P/L pozic; celkový zisk čeká na úplné cash-flow"
+            }
+            positive={
+              performance?.estimatedProfitCzk !== null &&
+              performance?.estimatedProfitCzk !== undefined
+                ? performance.estimatedProfitCzk >= 0
+                : detail.realizedPnlCzk !== null && detail.unrealizedPnlCzk !== null
+                  ? detail.realizedPnlCzk + detail.unrealizedPnlCzk >= 0
+                  : undefined
+            }
+          />
+        )}
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.75fr)]">
@@ -164,9 +214,17 @@ export default async function AccountDetailPage({
         <SectionCard title="Výkon" subtitle="Cash-flow očištěná analytika">
           <dl className="space-y-4 text-sm">
             <div className="flex items-center justify-between gap-4">
-              <dt className="text-[var(--muted)]">XIRR</dt>
+              <dt className="text-[var(--muted)]">
+                {isInvestown ? "Investiční XIRR" : "XIRR"}
+              </dt>
               <dd className="font-mono">{pct(performance?.xirrPct)}</dd>
             </div>
+            {isInvestown ? (
+              <div className="flex items-center justify-between gap-4">
+                <dt className="text-[var(--muted)]">Simple return</dt>
+                <dd className="font-mono">{pct(performance?.simpleReturnPct)}</dd>
+              </div>
+            ) : null}
             <div className="flex items-center justify-between gap-4">
               <dt className="text-[var(--muted)]">Čistý vložený kapitál</dt>
               <dd className="font-mono">{money(performance?.netContributedCzk ?? null)}</dd>
@@ -188,14 +246,42 @@ export default async function AccountDetailPage({
               <dd className="font-mono">{money(performance?.transferOutCzk ?? null)}</dd>
             </div>
             <div className="border-t border-white/7 pt-4">
-              <div className="flex items-center justify-between gap-4">
-                <dt className="text-[var(--muted)]">Realizované P/L</dt>
-                <dd className="font-mono">{money(detail.realizedPnlCzk)}</dd>
-              </div>
-              <div className="mt-3 flex items-center justify-between gap-4">
-                <dt className="text-[var(--muted)]">Nerealizované P/L</dt>
-                <dd className="font-mono">{money(detail.unrealizedPnlCzk)}</dd>
-              </div>
+              {isInvestown ? (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Investiční P/L</dt>
+                    <dd className="font-mono">{money(investownInvestmentPnlCzk)}</dd>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Externí odměny</dt>
+                    <dd className="font-mono">{money(investownExternalRewardsCzk)}</dd>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Celkový přírůstek</dt>
+                    <dd className="font-mono">{money(investownTotalGainCzk)}</dd>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Nerealizované P/L</dt>
+                    <dd className="font-mono">N/A</dd>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
+                    Investown neposkytuje průběžné tržní ocenění úvěrů. Jistina
+                    je proto vedena v nominální hodnotě a nerealizované P/L se
+                    nevydává za nulu.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Realizované P/L</dt>
+                    <dd className="font-mono">{money(detail.realizedPnlCzk)}</dd>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-4">
+                    <dt className="text-[var(--muted)]">Nerealizované P/L</dt>
+                    <dd className="font-mono">{money(detail.unrealizedPnlCzk)}</dd>
+                  </div>
+                </>
+              )}
             </div>
           </dl>
         </SectionCard>
@@ -252,7 +338,11 @@ export default async function AccountDetailPage({
             </div>
             <div>
               <dt className="text-xs text-[var(--muted)]">Reconciliation</dt>
-              <dd className="mt-1 font-mono">{detail.reconciliationStatus}</dd>
+              <dd className="mt-1 font-mono">
+                {isInvestown && detail.reconciliationStatus === "reconciled"
+                  ? "ověřeno z plného výpisu"
+                  : detail.reconciliationStatus}
+              </dd>
             </div>
           </dl>
 
@@ -508,58 +598,136 @@ export default async function AccountDetailPage({
       </section>
 
       <section className="mt-4">
-        <SectionCard title="Aktuální pozice" subtitle={detail.holdings.length.toLocaleString("cs-CZ") + " držených aktiv"}>
+        <SectionCard
+          title={isInvestown ? "Aktuální Investown projekty" : "Aktuální pozice"}
+          subtitle={
+            detail.holdings.length.toLocaleString("cs-CZ") +
+            (isInvestown ? " nesplacených / rezervovaných projektů" : " držených aktiv")
+          }
+        >
           {detail.holdings.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[850px] border-collapse text-left">
-                <thead>
-                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
-                    <th className="pb-3 font-medium">Asset</th>
-                    <th className="pb-3 font-medium">Class</th>
-                    <th className="pb-3 text-right font-medium">Quantity</th>
-                    <th className="pb-3 text-right font-medium">Avg. price</th>
-                    <th className="pb-3 text-right font-medium">Current</th>
-                    <th className="pb-3 text-right font-medium">Value</th>
-                    <th className="pb-3 text-right font-medium">P/L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {detail.holdings.map((holding) => (
-                    <tr key={holding.id} className="border-b border-white/6 last:border-0">
-                      <td className="py-4">
-                        <Link
-                          href={"/investments/" + encodeURIComponent(holding.symbol)}
-                          className="font-medium transition hover:text-[var(--accent)]"
-                        >
-                          {holding.symbol}
-                        </Link>
-                        {holding.name !== holding.symbol ? (
-                          <p className="mt-1 max-w-[320px] truncate text-xs text-[var(--muted)]">{holding.name}</p>
-                        ) : null}
-                      </td>
-                      <td className="py-4 text-sm text-[var(--muted)]">{holding.assetClass}</td>
-                      <td className="py-4 text-right font-mono text-sm">
-                        {holding.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 })}
-                      </td>
-                      <td className="py-4 text-right font-mono text-sm">
-                        {holding.averagePrice === null
-                          ? "—"
-                          : holding.averagePrice.toLocaleString("cs-CZ", { maximumFractionDigits: 4 }) + " " + holding.currency}
-                      </td>
-                      <td className="py-4 text-right font-mono text-sm">
-                        {holding.currentPrice === null
-                          ? "—"
-                          : holding.currentPrice.toLocaleString("cs-CZ", { maximumFractionDigits: 4 }) + " " + holding.currency}
-                      </td>
-                      <td className="py-4 text-right font-mono text-sm">{money(holding.marketValueCzk)}</td>
-                      <td className="py-4 text-right font-mono text-sm">{money(holding.unrealizedPnlCzk)}</td>
+            isInvestown ? (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[1050px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                      <th className="pb-3 font-medium">Projekt</th>
+                      <th className="pb-3 text-right font-medium">Nesplacená jistina</th>
+                      <th className="pb-3 text-right font-medium">Rezervováno</th>
+                      <th className="pb-3 text-right font-medium">Celkem investováno</th>
+                      <th className="pb-3 text-right font-medium">Splacená jistina</th>
+                      <th className="pb-3 text-right font-medium">Přijaté výnosy</th>
+                      <th className="pb-3 text-right font-medium">Výnos / investováno</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {detail.holdings.map((holding) => {
+                      const p2p = holding.p2p;
+                      const invested = p2p?.investedPrincipalCzk ?? null;
+                      const received = p2p?.receivedInterestCzk ?? null;
+                      const projectReturn =
+                        invested !== null && invested > 0 && received !== null
+                          ? (received / invested) * 100
+                          : null;
+
+                      return (
+                        <tr key={holding.id} className="border-b border-white/6 last:border-0">
+                          <td className="py-4">
+                            <Link
+                              href={"/investments/" + encodeURIComponent(holding.symbol)}
+                              className="font-medium transition hover:text-[var(--accent)]"
+                            >
+                              {holding.symbol}
+                            </Link>
+                            {p2p?.loanName || p2p?.projectType ? (
+                              <p className="mt-1 max-w-[360px] truncate text-xs text-[var(--muted)]">
+                                {[p2p.loanName, p2p.projectType].filter(Boolean).join(" · ")}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(p2p?.principalCzk ?? holding.marketValueCzk)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(p2p?.reservedOfferCzk ?? 0)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(invested)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(p2p?.returnedPrincipalCzk ?? null)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {money(received)}
+                          </td>
+                          <td className="py-4 text-right font-mono text-sm">
+                            {pct(projectReturn)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+                  Výnos / investováno je jednoduchý kumulativní poměr přijatých
+                  výnosů k historicky investované jistině projektu; nejde o XIRR
+                  ani průběžné tržní ocenění.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[850px] border-collapse text-left">
+                  <thead>
+                    <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                      <th className="pb-3 font-medium">Asset</th>
+                      <th className="pb-3 font-medium">Class</th>
+                      <th className="pb-3 text-right font-medium">Quantity</th>
+                      <th className="pb-3 text-right font-medium">Avg. price</th>
+                      <th className="pb-3 text-right font-medium">Current</th>
+                      <th className="pb-3 text-right font-medium">Value</th>
+                      <th className="pb-3 text-right font-medium">P/L</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.holdings.map((holding) => (
+                      <tr key={holding.id} className="border-b border-white/6 last:border-0">
+                        <td className="py-4">
+                          <Link
+                            href={"/investments/" + encodeURIComponent(holding.symbol)}
+                            className="font-medium transition hover:text-[var(--accent)]"
+                          >
+                            {holding.symbol}
+                          </Link>
+                          {holding.name !== holding.symbol ? (
+                            <p className="mt-1 max-w-[320px] truncate text-xs text-[var(--muted)]">{holding.name}</p>
+                          ) : null}
+                        </td>
+                        <td className="py-4 text-sm text-[var(--muted)]">{holding.assetClass}</td>
+                        <td className="py-4 text-right font-mono text-sm">
+                          {holding.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 })}
+                        </td>
+                        <td className="py-4 text-right font-mono text-sm">
+                          {holding.averagePrice === null
+                            ? "—"
+                            : holding.averagePrice.toLocaleString("cs-CZ", { maximumFractionDigits: 4 }) + " " + holding.currency}
+                        </td>
+                        <td className="py-4 text-right font-mono text-sm">
+                          {holding.currentPrice === null
+                            ? "—"
+                            : holding.currentPrice.toLocaleString("cs-CZ", { maximumFractionDigits: 4 }) + " " + holding.currency}
+                        </td>
+                        <td className="py-4 text-right font-mono text-sm">{money(holding.marketValueCzk)}</td>
+                        <td className="py-4 text-right font-mono text-sm">{money(holding.unrealizedPnlCzk)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
           ) : (
-            <p className="text-sm text-[var(--muted)]">Tento účet momentálně nemá samostatně evidované pozice.</p>
+            <p className="text-sm text-[var(--muted)]">
+              Tento účet momentálně nemá samostatně evidované pozice.
+            </p>
           )}
         </SectionCard>
       </section>
