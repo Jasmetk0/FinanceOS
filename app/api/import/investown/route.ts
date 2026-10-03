@@ -27,6 +27,8 @@ export async function POST(request: Request) {
       rows?: unknown;
       replaceExisting?: unknown;
       sourceFormat?: unknown;
+      dryRun?: unknown;
+      allowAuthoritativeRemovals?: unknown;
     };
 
     const rows = Array.isArray(body.rows)
@@ -45,6 +47,8 @@ export async function POST(request: Request) {
       rows,
       replaceExisting: body.replaceExisting !== false,
       sourceFormat,
+      dryRun: body.dryRun === true,
+      allowAuthoritativeRemovals: body.allowAuthoritativeRemovals === true,
     });
 
     return NextResponse.json({ ok: true, result });
