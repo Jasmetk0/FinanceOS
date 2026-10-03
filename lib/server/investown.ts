@@ -509,6 +509,10 @@ export async function importInvestown(input: InvestownImportInput) {
     invested: number;
     returned: number;
     interest: number;
+    ordinaryYield: number;
+    bonusYield: number;
+    penaltyYield: number;
+    otherYield: number;
     reserved: number;
   }>();
 
@@ -532,6 +536,10 @@ export async function importInvestown(input: InvestownImportInput) {
       invested: 0,
       returned: 0,
       interest: 0,
+      ordinaryYield: 0,
+      bonusYield: 0,
+      penaltyYield: 0,
+      otherYield: 0,
       reserved: 0,
     };
 
@@ -547,7 +555,24 @@ export async function importInvestown(input: InvestownImportInput) {
     if (item.kind === "interest" && item.amountCzk !== null) {
       // Preserve the provider sign so a future yield/penalty correction or
       // reversal cannot silently overstate lifetime project income.
+      const incomeType = normalize(item.row.type).toLowerCase();
       project.interest += item.amountCzk;
+      if (
+        incomeType === "výnos" ||
+        incomeType === "částečný výnos"
+      ) {
+        project.ordinaryYield += item.amountCzk;
+      } else if (incomeType === "bonusový výnos") {
+        project.bonusYield += item.amountCzk;
+      } else if (
+        incomeType.includes("pokuta") ||
+        incomeType.includes("prodlení") ||
+        incomeType.includes("prodleni")
+      ) {
+        project.penaltyYield += item.amountCzk;
+      } else {
+        project.otherYield += item.amountCzk;
+      }
     }
 
     if (item.reservationDelta !== 0) {
@@ -903,6 +928,10 @@ export async function importInvestown(input: InvestownImportInput) {
         investedPrincipal: project.invested,
         returnedPrincipal: project.returned,
         receivedInterestCzk: project.interest,
+        ordinaryYieldCzk: project.ordinaryYield,
+        bonusYieldCzk: project.bonusYield,
+        penaltyYieldCzk: project.penaltyYield,
+        otherYieldCzk: project.otherYield,
         reservedOfferCzk: Math.max(0, project.reserved),
         imported: true,
       },
@@ -991,6 +1020,10 @@ export async function importInvestown(input: InvestownImportInput) {
           investedPrincipal: project.invested,
           returnedPrincipal: project.returned,
           receivedInterestCzk: project.interest,
+          ordinaryYieldCzk: project.ordinaryYield,
+          bonusYieldCzk: project.bonusYield,
+          penaltyYieldCzk: project.penaltyYield,
+          otherYieldCzk: project.otherYield,
           loanName: project.loanName || null,
           projectUrl: project.url || null,
           projectType: project.projectType || null,
