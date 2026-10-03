@@ -52,6 +52,10 @@ export interface InvestownImportStatus {
   walletCashCzk: number;
   investedValueCzk: number;
   realizedYieldCzk: number;
+  ordinaryYieldCzk: number;
+  bonusYieldCzk: number;
+  penaltyYieldCzk: number;
+  otherYieldCzk: number;
   investmentPnlCzk: number;
   externalRewardsCzk: number;
   totalGainCzk: number;
@@ -114,6 +118,10 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
 
   let mode = "unknown";
   let realizedYieldCzk = Number(account.realized_pnl_czk) || 0;
+  let ordinaryYieldCzk = 0;
+  let bonusYieldCzk = 0;
+  let penaltyYieldCzk = 0;
+  let otherYieldCzk = 0;
   let investmentPnlCzk = Number(account.realized_pnl_czk) || 0;
   let externalRewardsCzk = 0;
   let totalGainCzk = Number(account.realized_pnl_czk) || 0;
@@ -142,6 +150,14 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
 
     const storedYield = Number(raw.derivedInterest);
     if (Number.isFinite(storedYield)) realizedYieldCzk = storedYield;
+    const storedOrdinaryYield = Number(raw.derivedOrdinaryYield);
+    if (Number.isFinite(storedOrdinaryYield)) ordinaryYieldCzk = storedOrdinaryYield;
+    const storedBonusYield = Number(raw.derivedBonusYield);
+    if (Number.isFinite(storedBonusYield)) bonusYieldCzk = storedBonusYield;
+    const storedPenaltyYield = Number(raw.derivedPenaltyYield);
+    if (Number.isFinite(storedPenaltyYield)) penaltyYieldCzk = storedPenaltyYield;
+    const storedOtherYield = Number(raw.derivedOtherYield);
+    if (Number.isFinite(storedOtherYield)) otherYieldCzk = storedOtherYield;
 
     const storedInvestmentPnl = Number(raw.derivedInvestmentPnl);
     if (Number.isFinite(storedInvestmentPnl)) {
@@ -183,6 +199,10 @@ export function getInvestownImportStatus(): InvestownImportStatus | null {
     walletCashCzk: Number(account.cash_value_czk) || 0,
     investedValueCzk: Number(account.invested_value_czk) || 0,
     realizedYieldCzk,
+    ordinaryYieldCzk,
+    bonusYieldCzk,
+    penaltyYieldCzk,
+    otherYieldCzk,
     investmentPnlCzk,
     externalRewardsCzk,
     totalGainCzk,
@@ -606,7 +626,20 @@ export async function importInvestown(input: InvestownImportInput) {
           : normalize(item.row.type),
     })),
   );
+  const yieldBreakdown = prepared.reduce(
+    (acc, item) => {
+      if (item.kind !== "interest" || item.amountCzk === null) return acc;
+      const bucket = investownInterestBucket(item.row.type);
+      acc[bucket] += item.amountCzk;
+      return acc;
+    },
+    { ordinary: 0, bonus: 0, penalty: 0, other: 0 },
+  );
   const derivedInterest = performanceSummary.interestCzk;
+  const derivedOrdinaryYield = yieldBreakdown.ordinary;
+  const derivedBonusYield = yieldBreakdown.bonus;
+  const derivedPenaltyYield = yieldBreakdown.penalty;
+  const derivedOtherYield = yieldBreakdown.other;
   const derivedExternalRewards = performanceSummary.externalRewardsCzk;
   const derivedOtherInvestmentIncome =
     performanceSummary.otherInvestmentIncomeCzk;
@@ -762,6 +795,10 @@ export async function importInvestown(input: InvestownImportInput) {
           derivedInvestmentPnl,
           derivedExternalRewards,
           derivedTotalGain,
+          derivedOrdinaryYield,
+          derivedBonusYield,
+          derivedPenaltyYield,
+          derivedOtherYield,
           accountingExpectedValueCzk,
           accountingDifferenceCzk,
           missingCzkRows,
@@ -786,6 +823,10 @@ export async function importInvestown(input: InvestownImportInput) {
       investedPrincipalCzk: derivedPrincipal,
       reservedOffersCzk: derivedReserved,
       receivedInterestCzk: derivedInterest,
+      ordinaryYieldCzk: derivedOrdinaryYield,
+      bonusYieldCzk: derivedBonusYield,
+      penaltyYieldCzk: derivedPenaltyYield,
+      otherYieldCzk: derivedOtherYield,
       otherInvestmentIncomeCzk: derivedOtherInvestmentIncome,
       externalRewardsCzk: derivedExternalRewards,
       otherIncomeCzk: derivedOtherIncome,
@@ -929,6 +970,10 @@ export async function importInvestown(input: InvestownImportInput) {
       derivedReserved,
       derivedInvested,
       derivedInterest,
+      derivedOrdinaryYield,
+      derivedBonusYield,
+      derivedPenaltyYield,
+      derivedOtherYield,
       derivedOtherInvestmentIncome,
       derivedExternalRewards,
       derivedOtherIncome,
