@@ -7,6 +7,7 @@ import { listConnections } from "@/lib/server/repository";
 import { getInvestownImportStatus } from "@/lib/server/investown";
 import { getTrading212CardStatus } from "@/lib/server/trading212-card";
 import { getPhantomStatus } from "@/lib/server/integrations/phantom";
+import { getKrakenStatus } from "@/lib/server/integrations/kraken";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,7 @@ export default function ConnectionsPage() {
   const mintosStatus = getMintosImportStatus();
   const trading212Card = getTrading212CardStatus();
   const phantomStatus = getPhantomStatus();
+  const krakenStatus = getKrakenStatus();
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -34,6 +36,142 @@ export default function ConnectionsPage() {
       <div className="mt-7">
         <ConnectionsManager initialConnections={connections} />
       </div>
+
+      {krakenStatus.connected ? (
+        <div className="mt-4">
+          <SectionCard
+            title="Kraken Pro accounting coverage"
+            subtitle="BalanceEx, Earn, wallet transfers, cost basis a API-key coverage"
+          >
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Balance source</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {krakenStatus.balanceSource || "čeká na nový sync"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  dostupné{" "}
+                  {krakenStatus.availableValueCzk.toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  Kč · hold{" "}
+                  {krakenStatus.heldValueCzk.toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  Kč
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Earn</p>
+                <p className="mt-2 font-mono text-sm font-semibold">
+                  {krakenStatus.earn.available
+                    ? krakenStatus.earn.allocatedCzk.toLocaleString("cs-CZ", {
+                        maximumFractionDigits: 0,
+                      }) + " Kč"
+                    : "N/A"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {krakenStatus.earn.activeStrategies.toLocaleString("cs-CZ")}{" "}
+                  aktivních strategií · rewards{" "}
+                  {krakenStatus.earn.rewardedCzk.toLocaleString("cs-CZ", {
+                    maximumFractionDigits: 0,
+                  })}{" "}
+                  Kč
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Wallet transfers</p>
+                <p className="mt-2 font-mono text-sm font-semibold">
+                  {krakenStatus.funding.ownedTransfers.toLocaleString("cs-CZ")}{" "}
+                  interních
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {krakenStatus.funding.unclassifiedTransfers.toLocaleString(
+                    "cs-CZ",
+                  )}{" "}
+                  čeká na spárování
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Cost basis</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {krakenStatus.costBasis.status || "čeká na rekonstrukci"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {krakenStatus.costBasis.incompleteSymbols.length.toLocaleString(
+                    "cs-CZ",
+                  )}{" "}
+                  symbolů nekompletních
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">API historie</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {krakenStatus.key.hasHistoryRestriction
+                    ? "Omezená"
+                    : "Bez známého omezení"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  Export API{" "}
+                  {krakenStatus.key.exportDataEnabled ? "povoleno" : "nepovoleno"}
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+                <p className="text-xs text-[var(--muted)]">Margin</p>
+                <p className="mt-2 text-sm font-semibold">
+                  {krakenStatus.margin.queryEnabled
+                    ? krakenStatus.margin.openPositions.toLocaleString("cs-CZ") +
+                      " otevřených pozic"
+                    : "Query není povolen"}
+                </p>
+                <p className="mt-1 text-[10px] text-[var(--muted)]">
+                  {krakenStatus.margin.openPositions > 0
+                    ? "Výkon účtu vyžaduje margin-aware accounting"
+                    : "Spot accounting bez detekované otevřené margin pozice"}
+                </p>
+              </div>
+            </div>
+
+            {krakenStatus.key.hasHistoryRestriction ||
+            krakenStatus.margin.openPositions > 0 ||
+            krakenStatus.funding.unclassifiedTransfers > 0 ||
+            krakenStatus.earn.error ||
+            krakenStatus.funding.depositStatusError ||
+            krakenStatus.funding.withdrawalStatusError ? (
+              <div className="mt-4 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
+                {krakenStatus.key.hasHistoryRestriction
+                  ? "API key má časové omezení historie; starší P/L nemusí být kompletní. "
+                  : ""}
+                {krakenStatus.margin.openPositions > 0
+                  ? "Kraken má otevřenou margin pozici; spot P/L zatím není kompletní model celého účtu. "
+                  : ""}
+                {krakenStatus.funding.unclassifiedTransfers > 0
+                  ? krakenStatus.funding.unclassifiedTransfers.toLocaleString("cs-CZ") +
+                    " crypto transferů zatím není bezpečně propojeno s vlastní peněženkou. "
+                  : ""}
+                {krakenStatus.earn.error
+                  ? "Earn diagnostika: " + krakenStatus.earn.error + ". "
+                  : ""}
+                {krakenStatus.funding.depositStatusError
+                  ? "Deposit enrichment: " +
+                    krakenStatus.funding.depositStatusError +
+                    ". "
+                  : ""}
+                {krakenStatus.funding.withdrawalStatusError
+                  ? "Withdrawal enrichment: " +
+                    krakenStatus.funding.withdrawalStatusError +
+                    "."
+                  : ""}
+              </div>
+            ) : (
+              <p className="mt-4 text-xs leading-5 text-[var(--muted)]">
+                Kraken v2 audit nenašel známé omezení API historie, otevřenou
+                margin pozici ani nevyřešený wallet transfer.
+              </p>
+            )}
+          </SectionCard>
+        </div>
+      ) : null}
 
       {phantomStatus.connected ? (
         <div className="mt-4">
