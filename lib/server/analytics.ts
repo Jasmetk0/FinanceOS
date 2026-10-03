@@ -1915,6 +1915,10 @@ export function getAccountDetail(accountIdInput: string) {
                 investedPrincipalCzk: rawNumber("investedPrincipal"),
                 returnedPrincipalCzk: rawNumber("returnedPrincipal"),
                 receivedInterestCzk: rawNumber("receivedInterestCzk"),
+                ordinaryYieldCzk: rawNumber("ordinaryYieldCzk"),
+                bonusYieldCzk: rawNumber("bonusYieldCzk"),
+                penaltyYieldCzk: rawNumber("penaltyYieldCzk"),
+                otherYieldCzk: rawNumber("otherYieldCzk"),
                 loanName:
                   typeof holdingRaw.loanName === "string"
                     ? holdingRaw.loanName
