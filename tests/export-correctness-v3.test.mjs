@@ -169,6 +169,33 @@ test("legacy Investown snapshots are repaired to investment-only P/L", () => {
   assert.ok(db.includes("repairInvestownSnapshotPerformance(db)"));
 });
 
+test("unknown Investown transaction types block performance instead of being guessed", () => {
+  const investown = source("lib/server/investown.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const history = source("app/history/page.tsx");
+
+  assert.ok(investown.includes('item.kind === "adjustment"'));
+  assert.ok(investown.includes('? "unclassified"'));
+  assert.ok(investown.includes("const nativeAccountingComplete"));
+  assert.ok(investown.includes("unknownTypes.size === 0"));
+
+  assert.ok(
+    analytics.includes(
+      "t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')",
+    ),
+  );
+  assert.ok(
+    analytics.includes(
+      "kind IN ('deposit', 'withdrawal', 'adjustment')",
+    ),
+  );
+  assert.ok(analytics.includes("performanceGapRows"));
+  assert.ok(analytics.includes("transactionAccountingDate(row)"));
+  assert.ok(analytics.includes("unresolvedAdjustmentCount"));
+  assert.ok(history.includes("unresolvedAdjustmentCount"));
+  assert.ok(history.includes("blokuje P/L a výnos"));
+});
+
 test("Investown native imports are previewed before destructive statement reconciliation", () => {
   const investown = source("lib/server/investown.ts");
   const importer = source("components/investown-importer.tsx");
