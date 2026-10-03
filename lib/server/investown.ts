@@ -616,6 +616,13 @@ export async function importInvestown(input: InvestownImportInput) {
     );
   }
 
+  const nativeDerivedStatement =
+    input.sourceFormat === "investown-native" &&
+    overrideCash === null &&
+    overrideTotal === null;
+  const nativeAccountingComplete =
+    nativeDerivedStatement && unknownTypes.size === 0;
+
   const walletCash = overrideCash ?? derivedWallet;
   const totalValue = overrideTotal ?? Math.max(0, walletCash + derivedInvested);
   const investedValue = Math.max(0, totalValue - walletCash);
@@ -776,19 +783,13 @@ export async function importInvestown(input: InvestownImportInput) {
     totalValue,
     realizedPnl: derivedRealizedPnl,
     unrealizedPnl: 0,
-    realizedPnlStatus:
-      input.sourceFormat === "investown-native" &&
-      overrideCash === null &&
-      overrideTotal === null
-        ? "available"
-        : "partial",
+    realizedPnlStatus: nativeAccountingComplete ? "available" : "partial",
     unrealizedPnlStatus: "not_applicable",
     reconciliationDifference: 0,
-    reconciliationStatus:
-      input.sourceFormat === "investown-native" &&
-      overrideCash === null &&
-      overrideTotal === null
-        ? "reconciled"
+    reconciliationStatus: nativeAccountingComplete
+      ? "reconciled"
+      : nativeDerivedStatement
+        ? "warning"
         : "unknown",
     cashValueCzk,
     investedValueCzk,
@@ -819,6 +820,9 @@ export async function importInvestown(input: InvestownImportInput) {
         [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
       ),
       unknownTypes: [...unknownTypes].sort(),
+      negativePrincipalProjects,
+      negativeReservationProjects,
+      accountingComplete: nativeAccountingComplete,
       lastImportRows: incomingPrepared.length,
       lastImportNewTransactions: newTransactions,
       lastImportMatchedTransactions: matchedTransactions,
