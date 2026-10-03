@@ -468,6 +468,28 @@ export async function importInvestown(input: InvestownImportInput) {
         .map((row) => readStoredInvestownRow(row))
         .filter((row): row is PreparedInvestownRow => row !== null);
 
+  const incomingFirstAt = incomingPrepared[0]?.occurredIso ?? null;
+  const incomingLastAt = incomingPrepared.at(-1)?.occurredIso ?? null;
+  const existingFirstAt = existingPrepared[0]?.occurredIso ?? null;
+  const existingLastAt = existingPrepared.at(-1)?.occurredIso ?? null;
+
+  // Investown native CSV exports are provider snapshots of statement history.
+  // When a new file covers at least the same time span as the stored history,
+  // it is authoritative for that span. Investown may later remove/correct old
+  // penalty/late-interest rows; retaining rows absent from the newer full
+  // statement creates phantom cash and P/L. A genuinely partial/newer-period
+  // import still merges cumulatively and cannot erase older history.
+  const authoritativeNativeSnapshot =
+    input.sourceFormat === "investown-native" &&
+    !hardReplace &&
+    existingPrepared.length > 0 &&
+    incomingFirstAt !== null &&
+    incomingLastAt !== null &&
+    existingFirstAt !== null &&
+    existingLastAt !== null &&
+    incomingFirstAt <= existingFirstAt &&
+    incomingLastAt >= existingLastAt;
+
   const existingByBase = new Map<string, PreparedInvestownRow[]>();
   for (const item of existingPrepared) {
     const base = stableBase(item.row);
@@ -487,6 +509,7 @@ export async function importInvestown(input: InvestownImportInput) {
   const prepared: PreparedInvestownRow[] = [];
   let newTransactions = 0;
   let matchedTransactions = 0;
+  let removedTransactions = 0;
   const allBases = new Set([
     ...existingByBase.keys(),
     ...incomingByBase.keys(),
@@ -500,11 +523,20 @@ export async function importInvestown(input: InvestownImportInput) {
     newTransactions += Math.max(0, incoming.length - existing.length);
 
     // New import data wins for overlapping rows so improved classification or
-    // normalization is applied without duplicating the transaction. If the
-    // stored history contains more indistinguishable copies, keep the remainder.
+    // normalization is applied without duplicating the transaction.
+    //
+    // For a newer full native statement, absence is meaningful: rows that were
+    // present in an older provider export but disappeared from the current
+    // full-history export must be removed. For partial imports we preserve the
+    // stored remainder so incremental uploads stay cumulative.
     prepared.push(...incoming);
     if (existing.length > incoming.length) {
-      prepared.push(...existing.slice(incoming.length));
+      const remainder = existing.slice(incoming.length);
+      if (authoritativeNativeSnapshot) {
+        removedTransactions += remainder.length;
+      } else {
+        prepared.push(...remainder);
+      }
     }
   }
 
@@ -733,6 +765,8 @@ export async function importInvestown(input: InvestownImportInput) {
       lastImportRows: incomingPrepared.length,
       lastImportNewTransactions: newTransactions,
       lastImportMatchedTransactions: matchedTransactions,
+      lastImportRemovedTransactions: removedTransactions,
+      lastImportAuthoritativeSnapshot: authoritativeNativeSnapshot,
       statementFirstAt: prepared[0]?.occurredIso || null,
       statementLastAt,
     },
@@ -985,6 +1019,8 @@ export async function importInvestown(input: InvestownImportInput) {
       imported: incomingPrepared.length,
       newTransactions,
       matchedTransactions,
+      removedTransactions,
+      authoritativeNativeSnapshot,
       storedTransactions,
       skipped: input.rows.length - incomingPrepared.length,
       totalRows: input.rows.length,
