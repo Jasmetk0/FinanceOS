@@ -66,6 +66,25 @@ function isExternalRewardCategory(category: string) {
   return isPerformanceExternalRewardCategory(category);
 }
 
+function ownerCapitalDelta(
+  provider: string,
+  kind: string,
+  amountCzk: number,
+) {
+  if (kind !== "deposit" && kind !== "withdrawal") return 0;
+
+  // Native P2P statements carry the real economic sign. Preserve it so a
+  // provider correction/reversal undoes the original capital flow instead of
+  // being counted as a second deposit or withdrawal.
+  if (provider === "investown" || provider === "mintos") {
+    return amountCzk;
+  }
+
+  return kind === "deposit"
+    ? Math.abs(amountCzk)
+    : -Math.abs(amountCzk);
+}
+
 function transactionAccountingDate(row: {
   provider?: unknown;
   occurred_at?: unknown;
@@ -462,12 +481,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     const category = String(row.category || "");
     const isReward =
       kind === "income" && isExternalRewardCategory(category);
-    const ownContributionDelta =
-      kind === "deposit"
-        ? Math.abs(num(row.amount_czk))
-        : kind === "withdrawal"
-          ? -Math.abs(num(row.amount_czk))
-          : 0;
+    const ownContributionDelta = ownerCapitalDelta(
+      String(row.provider),
+      kind,
+      num(row.amount_czk),
+    );
     const rewardDelta = isReward ? num(row.amount_czk) : 0;
     const transferDelta =
       kind === "transfer" ? num(row.transfer_value_czk) : 0;
@@ -1368,15 +1386,17 @@ export function getPerformanceData() {
 
     for (const row of cashRows) {
       const kind = String(row.kind);
-      const amount = Math.abs(num(row.amount_czk));
+      const signedAmount = num(row.amount_czk);
+      const provider = String(account.provider);
+      const capitalDelta = ownerCapitalDelta(provider, kind, signedAmount);
       const date = new Date(String(row.occurred_at));
 
       if (kind === "deposit") {
-        deposits += amount;
-        flows.push({ date, amount: -amount });
+        deposits += capitalDelta;
+        flows.push({ date, amount: -capitalDelta });
       } else if (kind === "withdrawal") {
-        withdrawals += amount;
-        flows.push({ date, amount });
+        withdrawals += -capitalDelta;
+        flows.push({ date, amount: -capitalDelta });
       } else if (
         kind === "income" &&
         isExternalRewardCategory(String(row.category || ""))
@@ -1563,7 +1583,7 @@ export function getPerformanceData() {
 
   const portfolioFlows: DatedCashFlow[] = db
     .prepare(`
-      SELECT t.kind, t.category, t.occurred_at, t.amount_czk
+      SELECT t.provider, t.kind, t.category, t.occurred_at, t.amount_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
@@ -1596,15 +1616,22 @@ export function getPerformanceData() {
       ORDER BY t.occurred_at ASC
     `)
     .all()
-    .map((row) => ({
-      date: new Date(String(row.occurred_at)),
-      amount:
-        String(row.kind) === "deposit"
-          ? -Math.abs(num(row.amount_czk))
-          : String(row.kind) === "withdrawal"
-            ? Math.abs(num(row.amount_czk))
-            : -num(row.amount_czk),
-    }));
+    .map((row) => {
+      const kind = String(row.kind);
+      const amountCzk = num(row.amount_czk);
+      const capitalDelta = ownerCapitalDelta(
+        String(row.provider),
+        kind,
+        amountCzk,
+      );
+      return {
+        date: new Date(String(row.occurred_at)),
+        amount:
+          kind === "deposit" || kind === "withdrawal"
+            ? -capitalDelta
+            : -amountCzk,
+      };
+    });
 
   if (totals.currentValueCzk > 0) {
     portfolioFlows.push({ date: now, amount: totals.currentValueCzk });
@@ -2088,14 +2115,15 @@ export function getAccountDetail(accountIdInput: string) {
             : 0;
       return {
         date: transactionAccountingDate(row),
-        depositCzk: kind === "deposit" ? Math.abs(amount) : 0,
-        withdrawalCzk: kind === "withdrawal" ? Math.abs(amount) : 0,
-        ownContributionDelta:
+        depositCzk:
           kind === "deposit"
-            ? Math.abs(amount)
-            : kind === "withdrawal"
-              ? -Math.abs(amount)
-              : 0,
+            ? ownerCapitalDelta(provider, kind, amount)
+            : 0,
+        withdrawalCzk:
+          kind === "withdrawal"
+            ? -ownerCapitalDelta(provider, kind, amount)
+            : 0,
+        ownContributionDelta: ownerCapitalDelta(provider, kind, amount),
         rewardDelta:
           kind === "income" &&
           isExternalRewardCategory(category) &&
@@ -2772,20 +2800,19 @@ export function getHistoryData() {
       cardRefundsCzk: 0,
       externalRewardsCzk: 0,
     };
+    const provider = String(row.provider);
     const kind = String(row.kind);
     const category = String(row.category || "");
-    const amount =
-      kind === "deposit" || kind === "withdrawal"
-        ? Math.abs(num(row.amount_czk))
-        : num(row.amount_czk);
+    const amount = num(row.amount_czk);
+    const capitalDelta = ownerCapitalDelta(provider, kind, amount);
     if (kind === "deposit" && category.startsWith("card_refund:")) {
-      current.cardRefundsCzk += amount;
+      current.cardRefundsCzk += Math.abs(amount);
     } else if (kind === "deposit") {
-      current.depositsCzk += amount;
+      current.depositsCzk += capitalDelta;
     } else if (kind === "withdrawal" && category.startsWith("card_spend:")) {
-      current.cardSpendCzk += amount;
+      current.cardSpendCzk += Math.abs(amount);
     } else if (kind === "withdrawal") {
-      current.withdrawalsCzk += amount;
+      current.withdrawalsCzk += -capitalDelta;
     } else if (kind === "income" && isExternalRewardCategory(category)) {
       current.externalRewardsCzk += amount;
     }
