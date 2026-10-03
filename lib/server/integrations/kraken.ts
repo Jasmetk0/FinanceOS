@@ -1285,7 +1285,11 @@ export async function syncKraken() {
             complete: ledgerHistory.complete,
           },
         },
-        lastDeepAuditAt: deepAudit ? new Date().toISOString() : null,
+        lastDeepAuditAt: deepAudit
+          ? new Date().toISOString()
+          : stringValue(
+              asObject(previousRaw.financeOsKrakenV2).lastDeepAuditAt,
+            ) || null,
       },
     },
   });
