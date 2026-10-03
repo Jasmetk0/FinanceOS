@@ -40,6 +40,33 @@ test("Investown provider estimate tail stays visible in provider color", () => {
   assert.ok(chart.includes('strokeLinecap="round"'));
 });
 
+test("Mintos gets the same step chart and dashed estimate tail as Investown", () => {
+  const chart = source("components/portfolio-history-chart.tsx");
+
+  assert.ok(chart.includes('data.providers[0] === "mintos"'));
+  assert.ok(chart.includes('provider === "investown" || provider === "mintos"'));
+  assert.ok(chart.includes("statementEstimateProvider"));
+  assert.ok(chart.includes("strokeDasharray=\"7 6\""));
+});
+
+test("P2P referral and campaign rewards stay separate from percentage return", () => {
+  const investown = source("lib/server/investown.ts");
+  const mintos = source("lib/server/mintos.ts");
+  const analytics = source("lib/server/analytics.ts");
+  const table = source("components/account-daily-history-table.tsx");
+
+  assert.ok(investown.includes('"referral_reward"'));
+  assert.ok(investown.includes('"campaign_reward"'));
+  assert.ok(investown.includes('"external_reward"'));
+  assert.ok(investown.includes("investmentPnlCzk"));
+  assert.ok(mintos.includes('"referral_reward"'));
+  assert.ok(mintos.includes('"campaign_reward"'));
+  assert.ok(mintos.includes('"external_reward"'));
+  assert.ok(analytics.includes("isExternalRewardCategory"));
+  assert.ok(analytics.includes("!isExternalRewardCategory(category)"));
+  assert.ok(table.includes(">Odměny<"));
+});
+
 test("Investown charts extend stale imports as a dashed unchanged estimate", () => {
   const chart = source("components/portfolio-history-chart.tsx");
 
