@@ -118,6 +118,11 @@ test("Investown daily snapshots persist separate investment P/L and external rew
   assert.ok(analytics.includes("financeOsInvestownHistory"));
   assert.ok(analytics.includes("const investmentPnl = Number(investownHistory.investmentPnlCzk)"));
   assert.ok(analytics.includes("const explicitRewards = Number(investownHistory.externalRewardsCzk)"));
+  assert.ok(analytics.includes("explicitProfit / capitalAttributed"));
+  assert.equal(
+    analytics.includes("explicitProfit /\n                    (ownContribution + transferAttribution)"),
+    false,
+  );
 });
 
 test("Investown realized P/L is investment-only while external rewards stay separate", () => {
