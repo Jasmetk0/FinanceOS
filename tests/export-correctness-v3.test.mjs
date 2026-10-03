@@ -162,8 +162,11 @@ test("legacy Investown classification audit is repaired with current semantics",
 
   assert.ok(db.includes("function repairInvestownClassificationAudit"));
   assert.ok(db.includes("classifyInvestownKind"));
+  assert.ok(db.includes("investownIncomeCategory"));
   assert.ok(db.includes("unknownTypes"));
   assert.ok(db.includes('"unclassified"'));
+  assert.ok(db.includes('String(row.kind) === "adjustment"'));
+  assert.ok(db.includes("financeOsClassification: classified"));
   assert.ok(db.includes("repairInvestownClassificationAudit(db)"));
 });
 
