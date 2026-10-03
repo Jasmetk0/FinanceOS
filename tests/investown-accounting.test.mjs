@@ -176,24 +176,26 @@ test("Investown non-promotional income can contribute to investment P/L", () => 
 });
 
 
-test("Investown full-statement aggregate keeps penalties positive and referral rewards separate", () => {
+test("Investown statement aggregate keeps penalties positive and referral rewards separate", () => {
+  // Synthetic values only: regression coverage must never embed a user's
+  // personal statement totals in the repository.
   const summary = summarizeInvestownPerformance([
-    { kind: "interest", amountCzk: 3506.90, category: "Výnos" },
-    { kind: "interest", amountCzk: 18.23, category: "Částečný výnos" },
-    { kind: "interest", amountCzk: 123.94, category: "Bonusový výnos" },
-    { kind: "interest", amountCzk: 9.45, category: "Smluvní pokuta" },
-    { kind: "interest", amountCzk: 1.37, category: "Zákonné úroky z prodlení" },
-    { kind: "income", amountCzk: 1000, category: "referral_reward" },
-    { kind: "income", amountCzk: 1000, category: "referral_reward" },
+    { kind: "interest", amountCzk: 100.10, category: "Výnos" },
+    { kind: "interest", amountCzk: 20.20, category: "Částečný výnos" },
+    { kind: "interest", amountCzk: 3.30, category: "Bonusový výnos" },
+    { kind: "interest", amountCzk: 0.40, category: "Smluvní pokuta" },
+    { kind: "interest", amountCzk: 0.50, category: "Zákonné úroky z prodlení" },
+    { kind: "income", amountCzk: 10, category: "referral_reward" },
+    { kind: "income", amountCzk: 20, category: "campaign_reward" },
   ]);
 
-  assert.equal(Number(summary.interestCzk.toFixed(2)), 3659.89);
-  assert.equal(Number(summary.investmentPnlCzk.toFixed(2)), 3659.89);
-  assert.equal(summary.externalRewardsCzk, 2000);
-  assert.equal(Number(summary.totalGainCzk.toFixed(2)), 5659.89);
+  assert.equal(Number(summary.interestCzk.toFixed(2)), 124.50);
+  assert.equal(Number(summary.investmentPnlCzk.toFixed(2)), 124.50);
+  assert.equal(summary.externalRewardsCzk, 30);
+  assert.equal(Number(summary.totalGainCzk.toFixed(2)), 154.50);
 
-  const ownerCapitalCzk = 63293.43 - 10317.88;
+  const ownerCapitalCzk = 1_000 - 100;
   const expectedValueCzk = ownerCapitalCzk + summary.totalGainCzk;
-  assert.equal(Number(ownerCapitalCzk.toFixed(2)), 52975.55);
-  assert.equal(Number(expectedValueCzk.toFixed(2)), 58635.44);
+  assert.equal(ownerCapitalCzk, 900);
+  assert.equal(Number(expectedValueCzk.toFixed(2)), 1_054.50);
 });
