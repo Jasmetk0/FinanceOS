@@ -232,6 +232,14 @@ type InvestownImportResult = {
     activeProjects: number;
     allProjects: number;
   };
+  reconciliation: {
+    checked: boolean;
+    ownerCapitalCzk: number;
+    expectedValueCzk: number;
+    differenceCzk: number | null;
+    ok: boolean;
+    missingCzkRows: number;
+  };
   effective: {
     walletCashCzk: number;
     investedValueCzk: number;
@@ -586,6 +594,10 @@ export function InvestownImporter({
             money(previewResult.diff.investmentPnlCzk) +
             " · Δ odměny " +
             money(previewResult.diff.externalRewardsCzk) +
+            (previewResult.reconciliation.checked
+              ? " · účetní rozdíl " +
+                money(previewResult.reconciliation.differenceCzk)
+              : "") +
             destructive +
             ".",
         );
@@ -934,7 +946,7 @@ export function InvestownImporter({
         {pendingPreview ? (
           <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-4">
             <p className="text-sm font-semibold">Preview změn před importem</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
               <Preview
                 label="Δ transakce"
                 value={
@@ -958,7 +970,40 @@ export function InvestownImporter({
                 label="Δ odměny"
                 value={money(pendingPreview.diff.externalRewardsCzk)}
               />
+              <Preview
+                label="Účetní rozdíl"
+                value={
+                  pendingPreview.reconciliation.differenceCzk === null
+                    ? "N/A"
+                    : money(pendingPreview.reconciliation.differenceCzk)
+                }
+              />
             </div>
+            {pendingPreview.reconciliation.checked ? (
+              <p
+                className={[
+                  "mt-3 text-xs leading-5",
+                  pendingPreview.reconciliation.ok
+                    ? "text-[var(--muted)]"
+                    : "text-[var(--warning)]",
+                ].join(" ")}
+              >
+                Účetní kontrola: hodnota účtu má odpovídat vlastnímu kapitálu{" "}
+                {money(pendingPreview.reconciliation.ownerCapitalCzk)} + ziskům
+                a odměnám. Očekávaná hodnota{" "}
+                {money(pendingPreview.reconciliation.expectedValueCzk)}; rozdíl{" "}
+                {money(pendingPreview.reconciliation.differenceCzk)}.
+                {pendingPreview.reconciliation.ok
+                  ? " Kontrola sedí."
+                  : " Kontrola nesedí; potvrzený import se zablokuje, dokud není příčina vysvětlená."}
+              </p>
+            ) : pendingPreview.reconciliation.missingCzkRows > 0 ? (
+              <p className="mt-3 text-xs leading-5 text-[var(--warning)]">
+                Účetní kontrolu nelze dokončit:{" "}
+                {pendingPreview.reconciliation.missingCzkRows.toLocaleString("cs-CZ")}{" "}
+                řádků nemá bezpečný přepočet do CZK.
+              </p>
+            ) : null}
             {pendingPreview.removedTransactions > 0 ? (
               <p className="mt-3 text-xs leading-5 text-[var(--warning)]">
                 Tento plný výpis je autoritativní a odstraní{" "}
