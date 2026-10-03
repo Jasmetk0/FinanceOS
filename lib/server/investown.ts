@@ -369,7 +369,15 @@ function readStoredInvestownRow(
 }
 
 export async function importInvestown(input: InvestownImportInput) {
-  const accountCurrency = input.accountCurrency?.trim().toUpperCase() || "CZK";
+  const requestedAccountCurrency =
+    input.accountCurrency?.trim().toUpperCase() || "CZK";
+  // The official Investown export explicitly labels its amount column as CZK.
+  // Never let an editable form field reinterpret those numbers as another
+  // currency and silently corrupt every balance.
+  const accountCurrency =
+    input.sourceFormat === "investown-native"
+      ? "CZK"
+      : requestedAccountCurrency;
 
   if (!Array.isArray(input.rows)) throw new Error("Investown rows must be an array.");
   if (!input.rows.length) throw new Error("Investown import does not contain any data rows.");
@@ -384,7 +392,10 @@ export async function importInvestown(input: InvestownImportInput) {
 
   for (const row of input.rows) {
     const amount = Number(row.amount);
-    const currency = String(row.currency || accountCurrency).trim().toUpperCase();
+    const currency =
+      input.sourceFormat === "investown-native"
+        ? "CZK"
+        : String(row.currency || accountCurrency).trim().toUpperCase();
     const occurredAt = new Date(row.occurredAt);
 
     if (!Number.isFinite(amount) || !currency || Number.isNaN(occurredAt.getTime())) {
