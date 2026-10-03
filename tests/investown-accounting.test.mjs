@@ -113,6 +113,11 @@ test("Investown principal and secondary-market reservation movements are interna
     investownPrincipalDelta({ type: "Odstoupení", amount: 200 }),
     -200,
   );
+  assert.equal(
+    investownPrincipalDelta({ type: "Splacení jistiny", amount: -400 }),
+    400,
+    "negative repayment correction restores principal",
+  );
 
   assert.equal(
     investownReservationDelta({ type: "Nabídka ke koupi", amount: -300 }),
@@ -121,6 +126,11 @@ test("Investown principal and secondary-market reservation movements are interna
   assert.equal(
     investownReservationDelta({ type: "Vrácení nabídky", amount: 300 }),
     -300,
+  );
+  assert.equal(
+    investownReservationDelta({ type: "Vrácení nabídky", amount: -300 }),
+    300,
+    "negative unlock correction restores reservation",
   );
 });
 
@@ -148,13 +158,21 @@ test("Investown non-promotional income can contribute to investment P/L", () => 
   const summary = summarizeInvestownPerformance([
     { kind: "interest", amountCzk: 25, category: "Výnos" },
     { kind: "income", amountCzk: 10, category: "other_investment_income" },
-    { kind: "fee", amountCzk: 2, category: "fee" },
+    { kind: "fee", amountCzk: -2, category: "fee" },
   ]);
 
   assert.equal(summary.externalRewardsCzk, 0);
   assert.equal(summary.otherInvestmentIncomeCzk, 10);
+  assert.equal(summary.feesCzk, 2);
   assert.equal(summary.investmentPnlCzk, 33);
   assert.equal(summary.totalGainCzk, 33);
+
+  const refund = summarizeInvestownPerformance([
+    { kind: "interest", amountCzk: 25, category: "Výnos" },
+    { kind: "fee", amountCzk: 3, category: "fee" },
+  ]);
+  assert.equal(refund.feesCzk, -3);
+  assert.equal(refund.investmentPnlCzk, 28);
 });
 
 
