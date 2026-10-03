@@ -154,6 +154,9 @@ test("Investown realized P/L is investment-only while external rewards stay sepa
   assert.ok(db.includes("investment_income_czk"));
   assert.ok(db.includes("derivedInvestmentPnl"));
   assert.ok(db.includes("derivedExternalRewards"));
+  assert.ok(db.includes("derivedOrdinaryYield"));
+  assert.ok(db.includes("derivedBonusYield"));
+  assert.ok(db.includes("derivedPenaltyYield"));
   assert.ok(db.includes("repairInvestownRealizedPnl(db)"));
 });
 
