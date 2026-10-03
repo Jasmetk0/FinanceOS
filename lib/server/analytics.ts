@@ -133,10 +133,16 @@ function accountDataFreshness(row: {
     typeof raw.balanceMode === "string" ? raw.balanceMode : "";
   const importMode =
     typeof raw.importMode === "string" ? raw.importMode : "";
-  const statementLastAt =
-    typeof raw.statementLastAt === "string"
-      ? isoDate(raw.statementLastAt)
+  const statementLastDate =
+    typeof raw.statementLastDate === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(raw.statementLastDate)
+      ? raw.statementLastDate
       : null;
+  const statementLastAt =
+    statementLastDate ||
+    (typeof raw.statementLastAt === "string"
+      ? isoDate(raw.statementLastAt)
+      : null);
 
   if (balanceMode === "manual-override" || importMode === "balance-only") {
     source = "manual_override";
@@ -326,9 +332,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     .all();
 
   const accountActivity = accountActivityRows.map((row) => {
-    const transactionDate = row.first_transaction
-      ? String(row.first_transaction).slice(0, 10)
-      : null;
+    const provider = String(row.provider);
+    const raw = parseRawObject(row.raw_json);
+    const statementFirstDate =
+      provider === "investown" &&
+      typeof raw.statementFirstDate === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(raw.statementFirstDate)
+        ? raw.statementFirstDate
+        : null;
+    const transactionDate = statementFirstDate ||
+      (row.first_transaction
+        ? String(row.first_transaction).slice(0, 10)
+        : null);
     const snapshotDate = row.first_snapshot
       ? String(row.first_snapshot).slice(0, 10)
       : null;
@@ -343,7 +358,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
 
     return {
       accountId: String(row.account_id),
-      provider: String(row.provider),
+      provider,
       startDate,
       valueThroughDate:
         freshness.status === "manual" ? null : freshness.coverageThrough,
