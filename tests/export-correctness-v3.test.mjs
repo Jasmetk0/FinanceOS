@@ -910,6 +910,20 @@ test("Kraken v2 uses BalanceEx, Earn and read-only key diagnostics", () => {
   assert.ok(connections.includes("API historie"));
 });
 
+test("Kraken performs a periodic full history audit instead of trusting only the first known page", () => {
+  const kraken = source("lib/server/integrations/kraken.ts");
+  const connections = source("app/connections/page.tsx");
+
+  assert.ok(kraken.includes("function shouldRunKrakenDeepAudit"));
+  assert.ok(kraken.includes("7 * 24 * 60 * 60 * 1000"));
+  assert.ok(kraken.includes("stopAtKnownPage: !deepAudit"));
+  assert.ok(kraken.includes('mode: deepAudit ? "full" : "incremental"'));
+  assert.ok(kraken.includes("lastDeepAuditAt"));
+  assert.ok(kraken.includes("providerCount"));
+  assert.ok(connections.includes("History audit"));
+  assert.ok(connections.includes("Plný scan"));
+});
+
 test("Kraken enriches both deposit and withdrawal wallet metadata without changing accounting scope", () => {
   const kraken = source("lib/server/integrations/kraken.ts");
 
