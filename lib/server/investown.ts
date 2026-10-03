@@ -163,6 +163,27 @@ function normalize(value: string | undefined) {
   return (value || "").trim();
 }
 
+function investownIncomeCategory(row: InvestownImportRow) {
+  const text = [row.type, row.description, row.projectType]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    text.includes("pozv") ||
+    text.includes("referral") ||
+    text.includes("invite")
+  ) return "referral_reward";
+
+  if (
+    text.includes("kampa") ||
+    text.includes("campaign") ||
+    text.includes("promo")
+  ) return "campaign_reward";
+
+  return "external_reward";
+}
+
 function classifyInvestown(row: InvestownImportRow): TransactionKind {
   const exact = EXACT_TYPE_MAP[normalize(row.type)];
   if (exact) return exact;
@@ -778,7 +799,10 @@ export async function importInvestown(input: InvestownImportInput) {
       note: [row.type, row.loanName, row.projectName, row.description]
         .filter(Boolean)
         .join(" · ") || "Investown",
-      category: normalize(row.type) || normalize(row.projectType) || null,
+      category:
+        item.kind === "income"
+          ? investownIncomeCategory(row)
+          : normalize(row.type) || normalize(row.projectType) || null,
       sourceLabel: normalize(row.projectType)
         ? "Investown · " + normalize(row.projectType)
         : "Investown",
@@ -839,6 +863,7 @@ export async function importInvestown(input: InvestownImportInput) {
     let runningPrincipal = 0;
     let runningReserved = 0;
     let runningRealizedPnl = 0;
+    let runningInvestmentPnl = 0;
     let runningInterest = 0;
     let runningOtherIncome = 0;
     let runningFees = 0;
@@ -849,6 +874,7 @@ export async function importInvestown(input: InvestownImportInput) {
         invested: number;
         total: number;
         realizedPnl: number;
+        investmentPnl: number;
         interest: number;
         otherIncome: number;
         fees: number;
@@ -864,13 +890,17 @@ export async function importInvestown(input: InvestownImportInput) {
       if (item.kind === "interest") {
         runningInterest += amountCzk;
         runningRealizedPnl += amountCzk;
+        runningInvestmentPnl += amountCzk;
       } else if (item.kind === "income") {
+        // Referral/campaign rewards increase account value, but they are
+        // not investment performance and must not inflate percentage return.
         runningOtherIncome += amountCzk;
         runningRealizedPnl += amountCzk;
       } else if (item.kind === "fee") {
         const fee = Math.abs(amountCzk);
         runningFees += fee;
         runningRealizedPnl -= fee;
+        runningInvestmentPnl -= fee;
       }
 
       if (runningPrincipal < 0 && runningPrincipal > -0.02) runningPrincipal = 0;
@@ -885,6 +915,7 @@ export async function importInvestown(input: InvestownImportInput) {
           runningWallet + runningPrincipal + runningReserved,
         ),
         realizedPnl: runningRealizedPnl,
+        investmentPnl: runningInvestmentPnl,
         interest: runningInterest,
         otherIncome: runningOtherIncome,
         fees: runningFees,
@@ -911,6 +942,8 @@ export async function importInvestown(input: InvestownImportInput) {
         JSON.stringify({
           financeOsInvestownHistory: {
             realizedPnlCzk: snapshot.realizedPnl,
+            investmentPnlCzk: snapshot.investmentPnl,
+            externalRewardsCzk: snapshot.otherIncome,
             interestCzk: snapshot.interest,
             otherIncomeCzk: snapshot.otherIncome,
             feesCzk: snapshot.fees,
@@ -934,6 +967,8 @@ export async function importInvestown(input: InvestownImportInput) {
         JSON.stringify({
           financeOsInvestownHistory: {
             realizedPnlCzk: derivedRealizedPnl,
+            investmentPnlCzk: derivedInterest - derivedFees,
+            externalRewardsCzk: derivedOtherIncome,
             interestCzk: derivedInterest,
             otherIncomeCzk: derivedOtherIncome,
             feesCzk: derivedFees,
