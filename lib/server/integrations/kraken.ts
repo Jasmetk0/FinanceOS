@@ -1379,3 +1379,172 @@ export async function syncKraken() {
     };
   });
 }
+
+
+export function getKrakenStatus() {
+  const db = getDb();
+  const connection = db
+    .prepare(
+      "SELECT status, last_synced_at, last_error FROM connections WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+  const account = db
+    .prepare(
+      "SELECT id, total_value_czk, raw_json FROM accounts WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+
+  let raw: JsonObject = {};
+  try {
+    raw = account?.raw_json
+      ? asObject(JSON.parse(String(account.raw_json)))
+      : {};
+  } catch {
+    raw = {};
+  }
+
+  const v2 = asObject(raw.financeOsKrakenV2);
+  const key = asObject(v2.key);
+  const earn = asObject(v2.earn);
+  const margin = asObject(v2.margin);
+  const funding = asObject(v2.funding);
+
+  const transferAudit = db
+    .prepare(
+      "SELECT " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_unclassified' THEN 1 ELSE 0 END) AS unclassified_count, " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_owned' THEN 1 ELSE 0 END) AS owned_count, " +
+        "SUM(CASE WHEN category LIKE 'wallet_transfer_%_unclassified' AND transfer_value_czk IS NOT NULL THEN 1 ELSE 0 END) AS unclassified_with_book_value " +
+        "FROM transactions WHERE provider = 'kraken'",
+    )
+    .get();
+
+  const costBasis = db
+    .prepare(
+      "SELECT realized_pnl_status, unrealized_pnl_status, raw_json " +
+        "FROM accounts WHERE provider = 'kraken' LIMIT 1",
+    )
+    .get();
+  let costRaw: JsonObject = {};
+  try {
+    costRaw = costBasis?.raw_json
+      ? asObject(JSON.parse(String(costBasis.raw_json)))
+      : {};
+  } catch {
+    costRaw = {};
+  }
+  const incompleteSymbols = Array.isArray(costRaw.incompleteCostBasisSymbols)
+    ? costRaw.incompleteCostBasisSymbols.map(String)
+    : [];
+
+  const holdingRows = account?.id
+    ? db
+        .prepare(
+          "SELECT market_value_czk, raw_json FROM holdings WHERE account_id = ?",
+        )
+        .all(String(account.id))
+    : [];
+  let heldValueCzk = 0;
+  let availableValueCzk = 0;
+  const balanceBuckets = new Map<string, number>();
+  for (const row of holdingRows) {
+    const holdingRaw = (() => {
+      try {
+        return row.raw_json
+          ? asObject(JSON.parse(String(row.raw_json)))
+          : {};
+      } catch {
+        return {};
+      }
+    })();
+    const balance = asObject(holdingRaw.financeOsKrakenBalance);
+    const totalQuantity = numberValue(balance.totalQuantity);
+    const heldQuantity = numberValue(balance.heldTradeQuantity);
+    const availableQuantity = numberValue(balance.availableQuantity);
+    const valueCzk = numberValue(row.market_value_czk);
+    if (totalQuantity > 0) {
+      heldValueCzk += valueCzk * (heldQuantity / totalQuantity);
+      availableValueCzk += valueCzk * (availableQuantity / totalQuantity);
+    }
+    const bucket = stringValue(balance.bucket, "unknown");
+    balanceBuckets.set(
+      bucket,
+      (balanceBuckets.get(bucket) ?? 0) + valueCzk,
+    );
+  }
+
+  return {
+    connected: Boolean(connection),
+    status: connection?.status ? String(connection.status) : "not_connected",
+    lastSyncedAt: connection?.last_synced_at
+      ? String(connection.last_synced_at)
+      : null,
+    lastError: connection?.last_error ? String(connection.last_error) : null,
+    totalValueCzk:
+      account?.total_value_czk === null ||
+      account?.total_value_czk === undefined
+        ? null
+        : numberValue(account.total_value_czk),
+    balanceSource:
+      typeof v2.balanceSource === "string" ? v2.balanceSource : null,
+    heldValueCzk,
+    availableValueCzk,
+    balanceBuckets: Object.fromEntries(balanceBuckets),
+    earn: {
+      available: earn.available === true,
+      allocatedCzk: numberValue(earn.totalAllocatedCzk),
+      rewardedCzk: numberValue(earn.totalRewardedCzk),
+      activeStrategies: numberValue(earn.activeStrategies),
+      error: typeof earn.error === "string" ? earn.error : null,
+    },
+    margin: {
+      queryEnabled: margin.queryEnabled === true,
+      openPositions: numberValue(margin.openPositions),
+      error: typeof margin.error === "string" ? margin.error : null,
+    },
+    key: {
+      name: typeof key.name === "string" ? key.name : null,
+      hasHistoryRestriction: key.hasHistoryRestriction === true,
+      hasExpiry: key.hasExpiry === true,
+      validUntil: typeof key.validUntil === "string" ? key.validUntil : null,
+      queryFrom: typeof key.queryFrom === "string" ? key.queryFrom : null,
+      queryTo: typeof key.queryTo === "string" ? key.queryTo : null,
+      exportDataEnabled: key.exportDataEnabled === true,
+      marginQueryEnabled: key.marginQueryEnabled === true,
+      ipAllowlistCount: numberValue(key.ipAllowlistCount),
+    },
+    funding: {
+      ownedTransfers: numberValue(transferAudit?.owned_count),
+      unclassifiedTransfers: numberValue(transferAudit?.unclassified_count),
+      unclassifiedTransfersWithBookValue: numberValue(
+        transferAudit?.unclassified_with_book_value,
+      ),
+      depositStatusRows: numberValue(funding.legacyDepositStatusRows),
+      withdrawalStatusRows: numberValue(
+        funding.legacyWithdrawalStatusRows,
+      ),
+      depositStatusError:
+        typeof funding.legacyDepositStatusError === "string"
+          ? funding.legacyDepositStatusError
+          : null,
+      withdrawalStatusError:
+        typeof funding.legacyWithdrawalStatusError === "string"
+          ? funding.legacyWithdrawalStatusError
+          : null,
+      api: typeof funding.api === "string" ? funding.api : null,
+    },
+    costBasis: {
+      status:
+        typeof costRaw.costBasisStatus === "string"
+          ? costRaw.costBasisStatus
+          : null,
+      incompleteSymbols,
+      realizedStatus: costBasis?.realized_pnl_status
+        ? String(costBasis.realized_pnl_status)
+        : null,
+      unrealizedStatus: costBasis?.unrealized_pnl_status
+        ? String(costBasis.unrealized_pnl_status)
+        : null,
+    },
+  };
+}
