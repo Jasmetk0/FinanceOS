@@ -349,23 +349,25 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     .prepare(`
       SELECT
         t.provider,
-        MIN(substr(t.occurred_at, 1, 10)) AS first_gap
+        t.occurred_at,
+        t.raw_json
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
-      GROUP BY t.provider
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
+      ORDER BY t.occurred_at ASC
     `)
     .all();
 
   const performanceGapByProvider = new Map<string, string>();
   for (const row of unclassifiedPerformanceRows) {
-    if (!row.first_gap) continue;
-    performanceGapByProvider.set(
-      String(row.provider),
-      String(row.first_gap),
-    );
+    const provider = String(row.provider);
+    const date = transactionAccountingDate(row);
+    const current = performanceGapByProvider.get(provider);
+    if (!current || date < current) {
+      performanceGapByProvider.set(provider, date);
+    }
   }
   const firstPerformanceGap =
     [...performanceGapByProvider.values()].sort()[0] ?? null;
@@ -1338,7 +1340,7 @@ export function getPerformanceData() {
           COUNT(*) AS count,
           SUM(
             CASE
-              WHEN kind IN ('deposit', 'withdrawal')
+              WHEN kind IN ('deposit', 'withdrawal', 'adjustment')
                 AND amount_czk IS NOT NULL
               THEN ABS(amount_czk)
               ELSE 0
@@ -1348,7 +1350,7 @@ export function getPerformanceData() {
         WHERE account_id = ?
           AND flow_scope = 'unclassified'
           AND (
-            kind IN ('deposit', 'withdrawal')
+            kind IN ('deposit', 'withdrawal', 'adjustment')
             OR (
               kind = 'transfer'
               AND transfer_value_czk IS NULL
@@ -1528,7 +1530,7 @@ export function getPerformanceData() {
             WHEN t.kind = 'transfer'
               AND t.transfer_value_czk IS NOT NULL
             THEN ABS(t.transfer_value_czk)
-            WHEN t.kind IN ('deposit', 'withdrawal')
+            WHEN t.kind IN ('deposit', 'withdrawal', 'adjustment')
               AND t.amount_czk IS NOT NULL
             THEN ABS(t.amount_czk)
             ELSE 0
@@ -1547,7 +1549,7 @@ export function getPerformanceData() {
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
     `)
     .get();
   const unclassifiedFlowCount = num(portfolioGap?.count);
@@ -2117,24 +2119,26 @@ export function getAccountDetail(accountIdInput: string) {
       };
     });
 
-  const performanceGapRow = db
+  const performanceGapRows = db
     .prepare(`
-      SELECT MIN(substr(occurred_at, 1, 10)) AS first_gap
+      SELECT provider, occurred_at, raw_json
       FROM transactions
       WHERE account_id = ?
         AND flow_scope = 'unclassified'
         AND (
-          kind IN ('deposit', 'withdrawal')
+          kind IN ('deposit', 'withdrawal', 'adjustment')
           OR (
             kind = 'transfer'
             AND transfer_value_czk IS NULL
           )
         )
+      ORDER BY occurred_at ASC
     `)
-    .get(accountId);
-  const firstPerformanceGap = performanceGapRow?.first_gap
-    ? String(performanceGapRow.first_gap)
-    : null;
+    .all(accountId);
+  const firstPerformanceGap =
+    performanceGapRows
+      .map((row) => transactionAccountingDate(row))
+      .sort()[0] ?? null;
 
   const dailyFlowByDate = new Map<
     string,
@@ -2950,12 +2954,21 @@ export function getHistoryData() {
             ELSE 0
           END
         ) AS cash_value_czk,
-        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count
+        SUM(CASE WHEN t.kind = 'transfer' THEN 1 ELSE 0 END) AS transfer_count,
+        SUM(CASE WHEN t.kind = 'adjustment' THEN 1 ELSE 0 END) AS adjustment_count,
+        SUM(
+          CASE
+            WHEN t.kind = 'adjustment'
+              AND t.amount_czk IS NOT NULL
+            THEN ABS(t.amount_czk)
+            ELSE 0
+          END
+        ) AS adjustment_value_czk
       FROM transactions t
       JOIN accounts a ON a.id = t.account_id
       WHERE a.type IN ('brokerage', 'crypto', 'p2p')
         AND t.flow_scope = 'unclassified'
-        AND t.kind IN ('deposit', 'withdrawal', 'transfer')
+        AND t.kind IN ('deposit', 'withdrawal', 'transfer', 'adjustment')
     `)
     .get();
 
@@ -2991,6 +3004,8 @@ export function getHistoryData() {
       unresolvedCashFlowCount: num(unresolvedHistory?.cash_count),
       unresolvedCashFlowCzk: num(unresolvedHistory?.cash_value_czk),
       unresolvedWalletTransferCount: num(unresolvedHistory?.transfer_count),
+      unresolvedAdjustmentCount: num(unresolvedHistory?.adjustment_count),
+      unresolvedAdjustmentCzk: num(unresolvedHistory?.adjustment_value_czk),
     },
   };
 }
