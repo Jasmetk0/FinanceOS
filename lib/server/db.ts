@@ -1,5 +1,8 @@
 import { DatabaseSync } from "node:sqlite";
-import { isPerformanceExternalRewardCategory } from "@/lib/investown-semantics.mjs";
+import {
+  classifyInvestownKind,
+  isPerformanceExternalRewardCategory,
+} from "@/lib/investown-semantics.mjs";
 import { getDatabasePath } from "@/lib/server/paths";
 import {
   canonicalCryptoIdentity,
@@ -440,6 +443,74 @@ export function repairTrading212CashSemantics(db: DatabaseSync) {
   }
 }
 
+function repairInvestownClassificationAudit(db: DatabaseSync) {
+  const accounts = db
+    .prepare(
+      "SELECT id, raw_json FROM accounts WHERE provider = 'investown'",
+    )
+    .all();
+  const rows = db.prepare(`
+    SELECT id, kind, category, flow_scope, raw_json
+    FROM transactions
+    WHERE account_id = ?
+    ORDER BY occurred_at ASC, external_id ASC
+  `);
+  const updateTransaction = db.prepare(
+    "UPDATE transactions SET flow_scope = ? WHERE id = ?",
+  );
+  const updateAccount = db.prepare(
+    "UPDATE accounts SET raw_json = ? WHERE id = ?",
+  );
+
+  for (const account of accounts) {
+    const accountRaw = parseJsonObject(account.raw_json);
+    if (accountRaw.importMode !== "investown-native") continue;
+
+    const typeCounts = new Map<string, number>();
+    const unknownTypes = new Set<string>();
+
+    for (const row of rows.all(String(account.id))) {
+      const raw = parseJsonObject(row.raw_json);
+      const type =
+        typeof raw.type === "string" && raw.type.trim()
+          ? raw.type.trim()
+          : String(row.category || "Unknown");
+      typeCounts.set(type, (typeCounts.get(type) ?? 0) + 1);
+
+      // Use the current production classifier for the audit. Older FinanceOS
+      // builds could flag provider wording such as "Smluvní pokuta z prodlení"
+      // as unknown even though the transaction itself was safely recognized.
+      const classified = classifyInvestownKind({
+        type,
+        description:
+          typeof raw.description === "string" ? raw.description : undefined,
+        projectType:
+          typeof raw.projectType === "string" ? raw.projectType : undefined,
+      });
+
+      if (classified === "adjustment" || String(row.kind) === "adjustment") {
+        unknownTypes.add(type);
+        if (String(row.flow_scope) !== "unclassified") {
+          updateTransaction.run("unclassified", String(row.id));
+        }
+      }
+    }
+
+    const accountingComplete = unknownTypes.size === 0;
+    updateAccount.run(
+      JSON.stringify({
+        ...accountRaw,
+        typeCounts: Object.fromEntries(
+          [...typeCounts.entries()].sort((a, b) => b[1] - a[1]),
+        ),
+        unknownTypes: [...unknownTypes].sort(),
+        accountingComplete,
+      }),
+      String(account.id),
+    );
+  }
+}
+
 function backfillAccountCoverage(db: DatabaseSync) {
   const investownRows = db
     .prepare(
@@ -737,6 +808,7 @@ function backfillCanonicalAssets(db: DatabaseSync) {
 export function repairStoredData(db: DatabaseSync) {
   backfillLegacyFlowScopes(db);
   repairTrading212CashSemantics(db);
+  repairInvestownClassificationAudit(db);
   backfillAccountCoverage(db);
   repairInvestownRealizedPnl(db);
   repairInvestownSnapshotPerformance(db);
