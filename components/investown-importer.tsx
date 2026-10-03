@@ -833,7 +833,10 @@ export function InvestownImporter({
               <Field key={label} label={label}>
                 <select
                   value={value}
-                  onChange={(event) => setter(event.target.value)}
+                  onChange={(event) => {
+                    setter(event.target.value);
+                    setPendingPreview(null);
+                  }}
                   className={inputClass}
                 >
                   <option value="">— not mapped —</option>
@@ -894,6 +897,7 @@ export function InvestownImporter({
                 name="accountCurrency"
                 defaultValue="CZK"
                 required
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
@@ -904,6 +908,7 @@ export function InvestownImporter({
                 step="0.01"
                 min="0"
                 placeholder="Auto from statement"
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
@@ -914,6 +919,7 @@ export function InvestownImporter({
                 step="0.01"
                 min="0"
                 placeholder="Auto from statement"
+                onChange={() => setPendingPreview(null)}
                 className={inputClass}
               />
             </Field>
