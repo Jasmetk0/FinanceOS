@@ -4,8 +4,10 @@ import assert from "node:assert/strict";
 import {
   classifyInvestownKind,
   investownIncomeCategory,
+  investownInvestedPrincipalDelta,
   investownPrincipalDelta,
   investownReservationDelta,
+  investownReturnedPrincipalDelta,
   isPerformanceExternalRewardCategory,
   summarizeInvestownPerformance,
 } from "../lib/investown-semantics.mjs";
@@ -131,6 +133,25 @@ test("Investown principal and secondary-market reservation movements are interna
     investownReservationDelta({ type: "Vrácení nabídky", amount: -300 }),
     300,
     "negative unlock correction restores reservation",
+  );
+});
+
+test("Investown lifetime principal counters reverse their original bucket", () => {
+  assert.equal(
+    investownInvestedPrincipalDelta({ type: "Investice", amount: -1_000 }),
+    1_000,
+  );
+  assert.equal(
+    investownInvestedPrincipalDelta({ type: "Investice", amount: 250 }),
+    -250,
+  );
+  assert.equal(
+    investownReturnedPrincipalDelta({ type: "Splacení jistiny", amount: 400 }),
+    400,
+  );
+  assert.equal(
+    investownReturnedPrincipalDelta({ type: "Splacení jistiny", amount: -75 }),
+    -75,
   );
 });
 
