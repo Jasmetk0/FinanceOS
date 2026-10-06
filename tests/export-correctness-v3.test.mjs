@@ -1038,3 +1038,25 @@ test("History separates 212 Card spend and refunds from ordinary withdrawals", (
   assert.ok(history.includes("Čistá útrata 212 Card"));
   assert.ok(history.includes("Card refundy"));
 });
+
+
+test("Trading 212 periodically re-audits full paginated history", () => {
+  const t212 = source("lib/server/integrations/trading212.ts");
+
+  assert.ok(t212.includes('const HISTORY_BACKFILL_VERSION = "v2"'));
+  assert.ok(
+    t212.includes(
+      "const HISTORY_DEEP_AUDIT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000",
+    ),
+  );
+  assert.ok(t212.includes('history_${HISTORY_BACKFILL_VERSION}:${historyKey}'));
+  assert.ok(t212.includes("const fullAuditDue ="));
+  assert.ok(t212.includes("const fullScanActive ="));
+  assert.ok(
+    t212.includes(
+      'if (!fullScanActive && stopWhenKnownPrefix && items.length > 0)',
+    ),
+  );
+  assert.ok(t212.includes("setHistorySyncState(fullAuditAtKey, new Date().toISOString())"));
+  assert.ok(t212.includes("setHistorySyncState(cursorKey, nextPath)"));
+});
