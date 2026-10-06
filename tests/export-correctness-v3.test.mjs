@@ -458,8 +458,9 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(trading212.includes("syncTrading212DailyHistory"));
   assert.ok(trading212.includes("dailyHistory"));
   assert.ok(trading212.includes("HISTORY_PAGE_BUDGET"));
-  assert.ok(trading212.includes("history_complete:"));
-  assert.ok(trading212.includes("history_cursor:"));
+  assert.ok(trading212.includes("HISTORY_BACKFILL_VERSION"));
+  assert.ok(trading212.includes('":complete"'));
+  assert.ok(trading212.includes('":cursor"'));
 
   assert.ok(history.includes("Yahoo Finance chart"));
   assert.ok(history.includes("maybeToCzk"));
