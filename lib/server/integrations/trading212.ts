@@ -125,6 +125,8 @@ async function sleep(ms: number) {
 }
 
 const HISTORY_PAGE_BUDGET = 8;
+const HISTORY_BACKFILL_VERSION = "v2";
+const HISTORY_DEEP_AUDIT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getHistorySyncState(key: string): string | null {
   const row = getDb()
@@ -189,19 +191,39 @@ async function fetchPaginated(
   historyKey?: string,
 ): Promise<JsonObject[]> {
   const all: JsonObject[] = [];
-  const completeKey = historyKey ? "history_complete:" + historyKey : null;
-  const cursorKey = historyKey ? "history_cursor:" + historyKey : null;
+  const statePrefix = historyKey
+    ? `history_${HISTORY_BACKFILL_VERSION}:${historyKey}`
+    : null;
+  const completeKey = statePrefix ? statePrefix + ":complete" : null;
+  const cursorKey = statePrefix ? statePrefix + ":cursor" : null;
+  const fullAuditAtKey = statePrefix ? statePrefix + ":full_audit_at" : null;
+
   const fullBackfillComplete =
     completeKey !== null && getHistorySyncState(completeKey) === "true";
+  const savedCursor = cursorKey ? getHistorySyncState(cursorKey) : null;
+  const lastFullAuditRaw = fullAuditAtKey
+    ? getHistorySyncState(fullAuditAtKey)
+    : null;
+  const lastFullAuditMs = lastFullAuditRaw
+    ? new Date(lastFullAuditRaw).getTime()
+    : Number.NaN;
+  const fullAuditDue =
+    fullBackfillComplete &&
+    (!Number.isFinite(lastFullAuditMs) ||
+      Date.now() - lastFullAuditMs >= HISTORY_DEEP_AUDIT_INTERVAL_MS);
+
+  // A saved cursor always means a full traversal is already in progress.
+  // Otherwise a brand-new database/backfill or a periodic audit starts from
+  // the newest page and walks all the way to account inception.
+  const fullScanActive =
+    !fullBackfillComplete || fullAuditDue || Boolean(savedCursor);
   let path: string | null =
-    !fullBackfillComplete && cursorKey
-      ? getHistorySyncState(cursorKey) || initialPath
-      : initialPath;
+    fullScanActive && savedCursor ? savedCursor : initialPath;
   let page = 0;
 
   while (path) {
     if (page > 0) {
-      // History endpoints are currently limited to 6 requests/minute.
+      // Historical orders/dividends/transactions are limited to 6 requests/minute.
       await sleep(10_500);
     }
 
@@ -215,10 +237,10 @@ async function fetchPaginated(
       ? result.items.map((item: unknown) => asObject(item))
       : [];
 
-    // Only use the fast known-page stop after at least one complete traversal.
-    // Before that, persist the provider cursor and progressively walk all the
-    // way to account inception across normal syncs.
-    if (fullBackfillComplete && stopWhenKnownPrefix && items.length > 0) {
+    // The fast known-page stop is safe only during incremental sync. Full
+    // traversals deliberately ignore "already known" pages so a historical
+    // hole can never remain hidden behind a newer known page.
+    if (!fullScanActive && stopWhenKnownPrefix && items.length > 0) {
       const ids: string[] = items.map((item: JsonObject) =>
         historyExternalKey(stopWhenKnownPrefix, item),
       );
@@ -240,19 +262,18 @@ async function fetchPaginated(
     page += 1;
 
     if (!nextPath) {
-      if (!fullBackfillComplete && completeKey && cursorKey) {
+      if (fullScanActive && completeKey && cursorKey) {
         setHistorySyncState(completeKey, "true");
         deleteHistorySyncState(cursorKey);
+        if (fullAuditAtKey) {
+          setHistorySyncState(fullAuditAtKey, new Date().toISOString());
+        }
       }
       path = null;
       continue;
     }
 
-    if (
-      !fullBackfillComplete &&
-      cursorKey &&
-      page >= HISTORY_PAGE_BUDGET
-    ) {
+    if (fullScanActive && cursorKey && page >= HISTORY_PAGE_BUDGET) {
       setHistorySyncState(cursorKey, nextPath);
       path = null;
       continue;

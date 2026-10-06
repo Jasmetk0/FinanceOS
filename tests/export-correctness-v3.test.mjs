@@ -458,8 +458,9 @@ test("Trading 212 sync reconstructs provenance-aware daily history", () => {
   assert.ok(trading212.includes("syncTrading212DailyHistory"));
   assert.ok(trading212.includes("dailyHistory"));
   assert.ok(trading212.includes("HISTORY_PAGE_BUDGET"));
-  assert.ok(trading212.includes("history_complete:"));
-  assert.ok(trading212.includes("history_cursor:"));
+  assert.ok(trading212.includes("HISTORY_BACKFILL_VERSION"));
+  assert.ok(trading212.includes('":complete"'));
+  assert.ok(trading212.includes('":cursor"'));
 
   assert.ok(history.includes("Yahoo Finance chart"));
   assert.ok(history.includes("maybeToCzk"));
@@ -1037,4 +1038,26 @@ test("History separates 212 Card spend and refunds from ordinary withdrawals", (
   assert.ok(analytics.includes('category.startsWith("card_refund:")'));
   assert.ok(history.includes("Čistá útrata 212 Card"));
   assert.ok(history.includes("Card refundy"));
+});
+
+
+test("Trading 212 periodically re-audits full paginated history", () => {
+  const t212 = source("lib/server/integrations/trading212.ts");
+
+  assert.ok(t212.includes('const HISTORY_BACKFILL_VERSION = "v2"'));
+  assert.ok(
+    t212.includes(
+      "const HISTORY_DEEP_AUDIT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000",
+    ),
+  );
+  assert.ok(t212.includes('history_${HISTORY_BACKFILL_VERSION}:${historyKey}'));
+  assert.ok(t212.includes("const fullAuditDue ="));
+  assert.ok(t212.includes("const fullScanActive ="));
+  assert.ok(
+    t212.includes(
+      'if (!fullScanActive && stopWhenKnownPrefix && items.length > 0)',
+    ),
+  );
+  assert.ok(t212.includes("setHistorySyncState(fullAuditAtKey, new Date().toISOString())"));
+  assert.ok(t212.includes("setHistorySyncState(cursorKey, nextPath)"));
 });
