@@ -19,6 +19,23 @@ export default function ConnectionsPage() {
   const trading212Card = getTrading212CardStatus();
   const phantomStatus = getPhantomStatus();
   const krakenStatus = getKrakenStatus();
+  const diagnosticsAttention =
+    Boolean(krakenStatus.connected && (
+      krakenStatus.key.hasHistoryRestriction ||
+      krakenStatus.margin.openPositions > 0 ||
+      krakenStatus.funding.unclassifiedTransfers > 0 ||
+      krakenStatus.earn.error ||
+      krakenStatus.funding.betaDepositError ||
+      krakenStatus.funding.betaWithdrawalError ||
+      krakenStatus.funding.depositStatusError ||
+      krakenStatus.funding.withdrawalStatusError
+    )) ||
+    Boolean(phantomStatus.connected && (
+      phantomStatus.lastError ||
+      phantomStatus.chainHistoryMatch.error ||
+      phantomStatus.unpricedTokenCount > 0
+    )) ||
+    Boolean(trading212Card.lastError || trading212Card.unresolvedCashInCount > 0);
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -63,10 +80,13 @@ export default function ConnectionsPage() {
         <InvestownImporter initialStatus={investownStatus} />
       </div>
 
-      <details id="connection-health" className="group mt-5 scroll-mt-36 rounded-[20px] border border-[var(--border)] bg-[var(--panel)]">
+      <details open={diagnosticsAttention} id="connection-health" className="group mt-5 scroll-mt-36 rounded-[20px] border border-[var(--border)] bg-[var(--panel)]">
         <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3 rounded-[20px] px-4 py-4 marker:hidden sm:px-5">
           <span>
-            <span className="block text-[15px] font-semibold">Technická diagnostika a datové pokrytí</span>
+            <span className="flex flex-wrap items-center gap-2 text-[15px] font-semibold">
+              Technická diagnostika a datové pokrytí
+              {diagnosticsAttention ? <span className="rounded-full border border-[var(--warning)]/25 bg-[var(--warning)]/[.07] px-2 py-0.5 text-[10px] text-[var(--warning)]">Vyžaduje pozornost</span> : null}
+            </span>
             <span className="mt-1 block text-[11px] leading-5 text-[var(--muted)]">Kraken API audit, Phantom, Trading 212 Card a nepokrytá data. Kliknutím zobrazíš podrobnosti.</span>
           </span>
           <span aria-hidden="true" className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-[12px] text-[var(--accent)] group-open:rotate-180">⌄</span>
