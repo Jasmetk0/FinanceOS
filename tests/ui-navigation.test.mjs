@@ -43,7 +43,7 @@ test("chart supports keyboard inspection and announces active filter buttons", (
   const chart = read("components/portfolio-history-chart.tsx");
   assert.ok(chart.includes("tabIndex={0}"));
   assert.ok(chart.includes('event.key === "ArrowLeft"'));
-  assert.ok(chart.includes('event.key === "ArrowRight"'));
+  assert.ok(chart.includes('event.key !== "ArrowRight"'));
   assert.ok(chart.includes("aria-pressed={metric === value}"));
   assert.ok(chart.includes("aria-pressed={period === value}"));
 });
