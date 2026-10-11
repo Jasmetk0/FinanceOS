@@ -543,9 +543,9 @@ export function PortfolioHistoryChart({
   }
 
   return (
-    <div>
+    <div className="finance-chart">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-        <div className="flex flex-wrap gap-1.5">
+        <div className="finance-chart-controls" role="group" aria-label="Zobrazovaná metrika">
           {(
             [
               ["value", "Hodnota"],
@@ -560,7 +560,7 @@ export function PortfolioHistoryChart({
               onClick={() => setMetric(value)}
               aria-pressed={metric === value}
               className={[
-                "rounded-lg border px-2.5 py-1.5 text-xs transition",
+                "finance-chart-tab",
                 metric === value
                   ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--accent)]"
                   : "border-white/8 bg-white/[0.02] text-[var(--muted)] hover:text-white",
@@ -571,7 +571,7 @@ export function PortfolioHistoryChart({
           ))}
         </div>
 
-        <div className="flex flex-wrap gap-1.5">
+        <div className="finance-chart-controls" role="group" aria-label="Časové období">
           {["1M", "3M", "6M", "YTD", "1Y", "ALL"].map((value) => (
             <button
               key={value}
@@ -579,7 +579,7 @@ export function PortfolioHistoryChart({
               onClick={() => setPeriod(value)}
               aria-pressed={period === value}
               className={[
-                "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
+                "finance-chart-tab finance-chart-period",
                 period === value
                   ? "border-white/18 bg-white/8 text-white"
                   : "border-white/7 text-[var(--muted)] hover:text-white",
@@ -597,7 +597,7 @@ export function PortfolioHistoryChart({
             }}
             aria-pressed={period === "CUSTOM"}
             className={[
-              "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
+              "finance-chart-tab finance-chart-period",
               period === "CUSTOM"
                 ? "border-white/18 bg-white/8 text-white"
                 : "border-white/7 text-[var(--muted)] hover:text-white",
@@ -779,9 +779,9 @@ export function PortfolioHistoryChart({
         </div>
       ) : null}
 
-      <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/7 bg-black/10">
+      <div className="finance-chart-canvas relative mt-4 overflow-hidden">
         {hoverPoint ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-xl border border-white/10 bg-[var(--panel-strong)]/95 p-3 shadow-xl backdrop-blur">
+          <div className="pointer-events-none relative z-10 m-2 rounded-xl border border-white/10 bg-[var(--panel-strong)]/95 p-3 shadow-xl backdrop-blur sm:absolute sm:right-3 sm:top-3 sm:m-0 sm:min-w-[200px]">
             <p className="text-xs font-semibold">{dateLabel(hoverPoint.date)}</p>
             <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {metricLabel(metric)}
@@ -894,7 +894,7 @@ export function PortfolioHistoryChart({
                   x2={LEFT + PLOT_W}
                   y1={tick.y}
                   y2={tick.y}
-                  stroke="rgba(255,255,255,0.065)"
+                  stroke="rgba(185,211,237,0.085)"
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -902,7 +902,7 @@ export function PortfolioHistoryChart({
                   x={LEFT - 12}
                   y={tick.y + 4}
                   textAnchor="end"
-                  fill="rgba(237,247,242,0.52)"
+                  fill="rgba(192,211,229,0.65)"
                   fontSize="12"
                 >
                   {formatCompact(tick.value, metric)}
@@ -931,7 +931,7 @@ export function PortfolioHistoryChart({
                         ? "end"
                         : "middle"
                   }
-                  fill="rgba(237,247,242,0.52)"
+                  fill="rgba(192,211,229,0.65)"
                   fontSize="12"
                 >
                   {dateLabel(tick.date)}
@@ -1018,7 +1018,7 @@ export function PortfolioHistoryChart({
                         .toFixed(2)
                     }
                     fill="none"
-                    stroke="#f6fbf8"
+                    stroke="#9cf3ce"
                     strokeWidth="2.5"
                     strokeDasharray="7 6"
                     vectorEffect="non-scaling-stroke"
@@ -1043,7 +1043,7 @@ export function PortfolioHistoryChart({
                   statementStepProvider ? "step" : "linear",
                 )}
                 fill="none"
-                stroke="#f6fbf8"
+                stroke="#9cf3ce"
                 strokeWidth="2.5"
                 vectorEffect="non-scaling-stroke"
               />
