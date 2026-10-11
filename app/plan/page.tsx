@@ -7,11 +7,11 @@ export const dynamic = "force-dynamic";
 
 const labels: Record<string, string> = {
   etf: "ETF",
-  stock: "Stocks",
-  crypto: "Crypto",
+  stock: "Akcie",
+  crypto: "Krypto",
   p2p: "P2P",
-  cash: "Cash",
-  other: "Other",
+  cash: "Hotovost",
+  other: "Ostatní",
 };
 
 export default function PlanPage() {
@@ -38,9 +38,9 @@ export default function PlanPage() {
         </p>
       </div>
 
-      <div className="mt-7">
+      <div className="mt-5">
         <SectionCard
-          title="Target allocation"
+          title="Cílová alokace"
           subtitle="FinanceOS žádné cílové váhy nevolí za tebe"
         >
           <PlanEditor
@@ -50,62 +50,62 @@ export default function PlanPage() {
         </SectionCard>
       </div>
 
-      <section className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
-          label="Tracked allocation"
+          label="Evidovaná hodnota"
           value={plan.totalValueCzk}
           format="currency"
           hint="Pozitivní investovatelná aktiva"
         />
         <StatCard
-          label="Target total"
+          label="Součet cílových vah"
           value={plan.targetSumPct}
           format="percent"
-          hint={plan.active ? "Plan active" : "Complete to 100%"}
+          hint={plan.active ? "Plán aktivní" : "Doplň cíle na 100 %"}
           positive={plan.active}
         />
         <StatCard
-          label="Monthly contribution"
+          label="Měsíční příspěvek"
           value={plan.monthlyContributionCzk}
           format="currency"
         />
         <StatCard
-          label="Largest absolute drift"
+          label="Největší odchylka"
           value={
             plan.active
               ? Math.max(...plan.rows.map((row) => Math.abs(row.driftPct)), 0)
               : 0
           }
           format="percent"
-          hint={plan.active ? "Current vs target" : "Plan not active"}
+          hint={plan.active ? "Aktuální proti cíli" : "Plán neaktivní"}
         />
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
         <SectionCard
-          title="Current vs target"
+          title="Skutečnost vs. cíl"
           subtitle={
             plan.active
               ? "Kladný drift = nad cílem, záporný drift = pod cílem"
-              : "Target values activate after the total reaches 100%"
+              : "Odchylky se aktivují, až cílové váhy dosáhnou 100 %"
           }
         >
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] border-collapse text-left">
+          <div className="finance-scrollbar overflow-x-auto rounded-[14px] border border-[var(--border)]">
+            <table className="finance-data-table w-full min-w-[640px] text-left">
               <thead>
-                <tr className="border-b border-[var(--border)] text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
-                  <th className="pb-3 font-medium">Class</th>
-                  <th className="pb-3 text-right font-medium">Current value</th>
-                  <th className="pb-3 text-right font-medium">Current</th>
-                  <th className="pb-3 text-right font-medium">Target</th>
-                  <th className="pb-3 text-right font-medium">Drift</th>
+                <tr className="">
+                  <th className="pb-3 font-medium">Třída</th>
+                  <th className="pb-3 text-right font-medium">Hodnota</th>
+                  <th className="pb-3 text-right font-medium">Aktuálně</th>
+                  <th className="pb-3 text-right font-medium">Cíl</th>
+                  <th className="pb-3 text-right font-medium">Odchylka</th>
                 </tr>
               </thead>
               <tbody>
                 {plan.rows.map((row) => (
                   <tr
                     key={row.assetClass}
-                    className="border-b border-white/6 last:border-0"
+                    className=""
                   >
                     <td className="py-4 font-medium">
                       {labels[row.assetClass] || row.assetClass}
@@ -154,11 +154,11 @@ export default function PlanPage() {
         </SectionCard>
 
         <SectionCard
-          title="Next contribution"
+          title="Rozdělení dalšího příspěvku"
           subtitle={
             plan.active && plan.monthlyContributionCzk > 0
               ? "Matematické rozdělení nových peněz směrem k tvým cílům"
-              : "Set a complete target and monthly contribution"
+              : "Nastav kompletní cíl a měsíční příspěvek"
           }
         >
           {plan.active && plan.monthlyContributionCzk > 0 ? (
