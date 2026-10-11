@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type IconName =
@@ -129,10 +129,14 @@ function NavSections({ pathname, onNavigate }: { pathname: string; onNavigate?: 
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const searchDialogRef = useRef<HTMLElement>(null);
+  const mobileDialogRef = useRef<HTMLDivElement>(null);
   const menuCloseRef = useRef<HTMLButtonElement>(null);
   const currentPage = [...allNavigation].reverse().find((item) => item.href === "/" ? pathname === "/" : pathname === item.href || pathname.startsWith(item.href + "/")) || allNavigation[0];
   const searchResults = useMemo(() => {
@@ -146,6 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setActiveSearchIndex(0);
         setSearchOpen((open) => !open);
         setMobileOpen(false);
       } else if (event.key === "Escape") {
@@ -164,6 +169,37 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (mobileOpen) menuCloseRef.current?.focus();
   }, [mobileOpen]);
+
+  useEffect(() => {
+    if (!mobileOpen && !searchOpen) return;
+    function trapKeyboard(event: KeyboardEvent) {
+      if (event.key !== "Tab") return;
+      const dialog = searchOpen ? searchDialogRef.current : mobileDialogRef.current;
+      if (!dialog) return;
+      const focusable = [...dialog.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex="0"]',
+      )].filter((item) => item.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", trapKeyboard);
+    return () => document.removeEventListener("keydown", trapKeyboard);
+  }, [mobileOpen, searchOpen]);
+
+  function chooseSearchResult(href: string) {
+    setSearchOpen(false);
+    setQuery("");
+    setActiveSearchIndex(0);
+    router.push(href);
+  }
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[246px_minmax(0,1fr)]">
@@ -194,7 +230,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={() => { setQuery(""); setSearchOpen(true); }} aria-label="Hledat stránku" aria-keyshortcuts="Control+K Meta+K" className="flex h-10 items-center gap-2 rounded-xl border border-[var(--border)] bg-white/[.025] px-3 text-xs font-medium text-[var(--muted)] transition hover:border-white/20 hover:text-white sm:min-w-[170px] sm:justify-between">
+            <button type="button" onClick={() => { setQuery(""); setActiveSearchIndex(0); setSearchOpen(true); }} aria-label="Hledat stránku" aria-keyshortcuts="Control+K Meta+K" className="flex h-10 items-center gap-2 rounded-xl border border-[var(--border)] bg-white/[.025] px-3 text-xs font-medium text-[var(--muted)] transition hover:border-white/20 hover:text-white sm:min-w-[170px] sm:justify-between">
               <span className="flex items-center gap-2"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></svg><span className="hidden sm:inline">Rychlý přechod</span></span>
               <kbd className="hidden rounded-md border border-white/10 bg-white/[.04] px-1.5 py-0.5 font-mono text-[10px] sm:inline">Ctrl K</kbd>
             </button>
@@ -209,7 +245,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {mobileOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden" id="mobile-navigation">
           <button type="button" className="absolute inset-0 bg-black/75 backdrop-blur-sm" aria-label="Zavřít navigaci" onClick={() => setMobileOpen(false)} />
-          <div role="dialog" aria-modal="true" aria-label="Navigace FinanceOS" className="finance-scrollbar absolute bottom-0 left-0 top-0 flex w-[min(340px,88vw)] flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] px-4 py-5 shadow-2xl">
+          <div ref={mobileDialogRef} role="dialog" aria-modal="true" aria-label="Navigace FinanceOS" className="finance-scrollbar absolute bottom-0 left-0 top-0 flex w-[min(340px,88vw)] flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] px-4 py-5 shadow-2xl">
             <div className="mb-7 flex items-center justify-between">
               <Brand />
               <button ref={menuCloseRef} type="button" aria-label="Zavřít menu" onClick={() => setMobileOpen(false)} className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--border)] text-white"><span aria-hidden="true" className="text-xl">×</span></button>
@@ -221,22 +257,57 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {searchOpen ? (
         <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 px-3 pt-[10vh] backdrop-blur-sm sm:pt-[14vh]" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>
-          <section role="dialog" aria-modal="true" aria-label="Rychlý přechod na stránku" className="w-full max-w-lg overflow-hidden rounded-[24px] border border-white/15 bg-[var(--panel-strong)] shadow-[0_32px_100px_rgba(0,0,0,.6)]">
+          <section ref={searchDialogRef} role="dialog" aria-modal="true" aria-label="Rychlý přechod na stránku" className="w-full max-w-lg overflow-hidden rounded-[24px] border border-white/15 bg-[var(--panel-strong)] shadow-[0_32px_100px_rgba(0,0,0,.6)]">
             <div className="flex items-center gap-3 border-b border-[var(--border)] px-5">
               <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-[var(--accent)]"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></svg>
-              <input ref={searchRef} type="search" aria-label="Hledat v navigaci" placeholder="Kam chceš přejít?" value={query} onChange={(event) => setQuery(event.target.value)} className="h-[62px] w-full bg-transparent text-sm text-white outline-none placeholder:text-[var(--muted)]" />
+              <input
+                ref={searchRef}
+                type="search"
+                role="combobox"
+                aria-expanded="true"
+                aria-autocomplete="list"
+                aria-controls="finance-command-results"
+                aria-activedescendant={searchResults.length ? "finance-command-option-" + Math.min(activeSearchIndex, searchResults.length - 1) : undefined}
+                aria-label="Hledat v navigaci"
+                placeholder="Kam chceš přejít?"
+                value={query}
+                onChange={(event) => { setQuery(event.target.value); setActiveSearchIndex(0); }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" && searchResults.length) {
+                    event.preventDefault();
+                    setActiveSearchIndex((index) => (index + 1) % searchResults.length);
+                  } else if (event.key === "ArrowUp" && searchResults.length) {
+                    event.preventDefault();
+                    setActiveSearchIndex((index) => (index - 1 + searchResults.length) % searchResults.length);
+                  } else if (event.key === "Enter" && searchResults.length) {
+                    event.preventDefault();
+                    chooseSearchResult(searchResults[Math.min(activeSearchIndex, searchResults.length - 1)].href);
+                  }
+                }}
+                className="h-[62px] w-full bg-transparent text-sm text-white outline-none placeholder:text-[var(--muted)]"
+              />
               <button type="button" onClick={() => setSearchOpen(false)} aria-label="Zavřít hledání" className="rounded-md border border-white/10 px-2 py-1 text-xs text-[var(--muted)]">Esc</button>
             </div>
-            <div className="finance-scrollbar max-h-[min(60vh,490px)] overflow-y-auto p-2.5">
-              {searchResults.length ? searchResults.map((item) => (
-                <Link key={item.href} href={item.href} prefetch={false} onClick={() => { setSearchOpen(false); setQuery(""); }} className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[var(--foreground)] transition hover:bg-white/[.07] focus:bg-white/[.07]">
+            <div id="finance-command-results" role="listbox" aria-label="Nalezené stránky" className="finance-scrollbar max-h-[min(60vh,490px)] overflow-y-auto p-2.5">
+              {searchResults.length ? searchResults.map((item, index) => (
+                <Link
+                  key={item.href}
+                  id={"finance-command-option-" + index}
+                  role="option"
+                  aria-selected={index === activeSearchIndex}
+                  href={item.href}
+                  prefetch={false}
+                  onMouseEnter={() => setActiveSearchIndex(index)}
+                  onClick={() => { setSearchOpen(false); setQuery(""); setActiveSearchIndex(0); }}
+                  className={["flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[var(--foreground)] transition focus:bg-[var(--accent)]/10", index === activeSearchIndex ? "bg-[var(--accent)]/[.09]" : "hover:bg-white/[.07]"].join(" ")}
+                >
                   <NavIcon name={item.icon} className="h-[18px] w-[18px] text-[var(--accent)]" />
                   <span>{item.label}</span>
                   <span className="ml-auto text-xs text-[var(--muted)]">{item.href}</span>
                 </Link>
               )) : <p className="px-4 py-8 text-center text-sm text-[var(--muted)]">Pro tento dotaz není žádná stránka.</p>}
             </div>
-            <p className="border-t border-[var(--border)] px-5 py-3 text-[11px] text-[var(--muted)]">Pro rychlé otevření kdykoli stiskni Ctrl + K.</p>
+            <p className="border-t border-[var(--border)] px-5 py-3 text-[11px] text-[var(--muted)]">Šipky ↑ ↓ mění výběr · Enter otevře stránku · Esc zavře · Ctrl + K vyvolá hledání.</p>
           </section>
         </div>
       ) : null}

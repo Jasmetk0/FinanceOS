@@ -170,7 +170,7 @@ export default function Home() {
         >
           {data.accounts.length ? (
             <div className="space-y-4">
-              {data.accounts.map((account) => {
+              {data.accounts.slice(0, 5).map((account) => {
                 const share = data.summary.netWorthCzk
                   ? Math.max(
                       0,
@@ -236,6 +236,11 @@ export default function Home() {
                   </div>
                 );
               })}
+              {data.accounts.length > 5 ? (
+                <Link href="/accounts" prefetch={false} className="finance-action flex w-full justify-center">
+                  Zobrazit dalších {data.accounts.length - 5} účtů →
+                </Link>
+              ) : null}
             </div>
           ) : (
             <p className="text-sm text-[var(--muted)]">Zatím žádná data.</p>
@@ -250,13 +255,13 @@ export default function Home() {
           action={<Link href="/investments" prefetch={false} className="text-xs font-semibold text-[var(--accent)] hover:underline">Zobrazit pozice ↗</Link>}
         >
           {data.allocation.length ? (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2.5 sm:grid-cols-2">
               {data.allocation.map((item) => {
                 const pct = allocationTotal > 0 ? (Math.max(0, item.valueCzk) / allocationTotal) * 100 : 0;
                 return (
                 <div
                   key={item.label}
-                  className="rounded-[17px] border border-[var(--border)] bg-white/[.025] p-4"
+                  className="rounded-[14px] border border-[var(--border)] bg-white/[.025] p-3"
                 >
                   <span className="text-sm capitalize text-[var(--muted)]">
                     {item.label}
@@ -279,7 +284,7 @@ export default function Home() {
         <SectionCard title="Poslední aktivita" subtitle="Nejnovější záznamy ze všech účtů" action={<Link href="/transactions" prefetch={false} className="text-xs font-semibold text-[var(--accent)] hover:underline">Všechny transakce ↗</Link>}>
           {data.recentTransactions.length ? (
             <div className="divide-y divide-white/7">
-              {data.recentTransactions.map((tx) => (
+              {data.recentTransactions.slice(0, 6).map((tx) => (
                 <div
                   key={tx.id}
                   className="flex items-center justify-between gap-4 rounded-lg py-3.5 first:pt-0 last:pb-0"

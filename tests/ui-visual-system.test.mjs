@@ -47,10 +47,13 @@ test("accounts retain provider provenance and independently shown cash/investmen
 
 test("holdings render in both responsive and tabular views without hiding unknown P/L", () => {
   const page = file("app/investments/page.tsx");
+  const explorer = file("components/holdings-explorer.tsx");
   assert.ok(page.includes("const holdings = dashboard.holdings"));
-  assert.ok(page.includes("md:hidden"));
-  assert.ok(page.includes("finance-data-table"));
-  assert.ok(page.includes('if (value === null) return "—"'));
+  assert.ok(page.includes("<HoldingsExplorer holdings={holdings} />"));
+  assert.ok(explorer.includes("md:hidden"));
+  assert.ok(explorer.includes("finance-data-table"));
+  assert.ok(explorer.includes('"—"'));
+  assert.ok(explorer.includes('item.pnlCzk !== null'));
 });
 
 test("transaction filtering stays on the client and mobile rows retain all nine fields", () => {

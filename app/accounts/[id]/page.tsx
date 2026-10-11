@@ -80,7 +80,7 @@ export default async function AccountDetailPage({
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <Link href="/accounts" className="text-sm text-[var(--muted)] transition hover:text-white">
-        ← Accounts
+        ← Všechny účty
       </Link>
 
       <div className="mt-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -121,9 +121,23 @@ export default async function AccountDetailPage({
         </div>
       ) : null}
 
+      <nav aria-label="Rychlý přechod v detailu účtu" className="finance-scrollbar sticky top-[68px] z-20 -mx-1 mt-5 flex gap-1.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--background)]/95 p-2 backdrop-blur-xl lg:top-[74px]">
+        {[
+          { href: "#account-overview", label: "Přehled" },
+          { href: "#account-history", label: "Graf a výkon" },
+          ...(detail.dailyHistory.length ? [{ href: "#account-daily", label: "Denní historie" }] : []),
+          { href: "#account-coverage", label: "Kvalita dat" },
+          { href: "#account-holdings", label: isInvestown ? "Projekty" : "Pozice" },
+          { href: "#account-transactions", label: "Transakce" },
+        ].map((item) => (
+          <a key={item.href} href={item.href} className="shrink-0 rounded-lg px-3 py-2 text-[11px] font-semibold text-[var(--muted)] transition hover:bg-[var(--accent)]/[.09] hover:text-[var(--accent)] focus-visible:text-[var(--accent)]">{item.label}</a>
+        ))}
+      </nav>
+
       <section
+        id="account-overview"
         className={[
-          "mt-7 grid gap-3 sm:grid-cols-2",
+          "mt-5 scroll-mt-36 grid gap-3 sm:grid-cols-2",
           isInvestown ? "xl:grid-cols-6" : "xl:grid-cols-4",
         ].join(" ")}
       >
@@ -203,7 +217,7 @@ export default async function AccountDetailPage({
         )}
       </section>
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.75fr)]">
+      <section id="account-history" className="mt-4 scroll-mt-36 grid gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(330px,0.75fr)]">
         <SectionCard title="Vývoj účtu" subtitle="Hodnota, vklady, P/L a výnos pouze pro tento účet">
           {detail.chart.points.length ? (
             <PortfolioHistoryChart data={detail.chart} compact />
@@ -319,7 +333,7 @@ export default async function AccountDetailPage({
       </section>
 
       {detail.dailyHistory.length ? (
-        <section className="mt-4">
+        <section id="account-daily" className="mt-4 scroll-mt-36">
           <SectionCard
             title="Denní historie účtu"
             subtitle="Každý známý den: hodnota, cash, investice, vklady, výběry, kapitál, P/L a výnos"
@@ -332,7 +346,7 @@ export default async function AccountDetailPage({
         </section>
       ) : null}
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-2">
+      <section id="account-coverage" className="mt-4 scroll-mt-36 grid gap-4 xl:grid-cols-2">
         <SectionCard title="Datové pokrytí" subtitle="Jak moc tomuto účtu můžeme věřit">
           <dl className="grid gap-4 text-sm sm:grid-cols-2">
             <div>
@@ -643,7 +657,7 @@ export default async function AccountDetailPage({
         </SectionCard>
       </section>
 
-      <section className="mt-4">
+      <section id="account-holdings" className="mt-4 scroll-mt-36">
         <SectionCard
           title={isInvestown ? "Aktuální Investown projekty" : "Aktuální pozice"}
           subtitle={
@@ -808,7 +822,7 @@ export default async function AccountDetailPage({
         </SectionCard>
       </section>
 
-      <section className="mt-4">
+      <section id="account-transactions" className="mt-4 scroll-mt-36">
         <SectionCard
           title="Transakce účtu"
           subtitle={"Nejnovějších " + detail.transactions.length.toLocaleString("cs-CZ") + " záznamů"}
