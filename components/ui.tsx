@@ -68,16 +68,16 @@ export function StatCard({
           : "text-[var(--foreground)]";
 
   return (
-    <div data-featured={featured ? "true" : "false"} className="finance-stat flex min-w-0 flex-col justify-between px-5 py-5 sm:px-[22px] sm:py-[22px]">
+    <div data-featured={featured ? "true" : "false"} className="finance-stat flex min-w-0 flex-col justify-between px-4 py-4 sm:px-[18px] sm:py-[17px]">
       <div className="relative z-10 flex items-start justify-between gap-3">
         <p className="text-[12px] font-semibold leading-5 tracking-[.01em] text-[var(--muted)]">{label}</p>
-        <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-white/[.085] bg-white/[.035] text-[var(--accent)]">
+        <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border border-white/[.085] bg-white/[.035] text-[var(--accent)]">
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17 9 12l4 3 7-8" /><path d="M16 7h4v4" /></svg>
         </span>
       </div>
-      <div className="relative z-10 mt-4">
-        <p className={["finance-stat-value text-[clamp(1.4rem,2.1vw,2rem)] font-semibold leading-[1.18] tracking-[-.05em]", featured ? "" : tone].join(" ")}>{formatted}</p>
-        <p className="mt-3 max-w-[36ch] text-[11px] leading-[1.55] text-[var(--muted)]">{hint || "\u00a0"}</p>
+      <div className="relative z-10 mt-2.5">
+        <p className={["finance-stat-value text-[clamp(1.28rem,2vw,1.82rem)] font-semibold leading-[1.18] tracking-[-.05em]", featured ? "" : tone].join(" ")}>{formatted}</p>
+        <p className="mt-2 max-w-[36ch] text-[11px] leading-[1.55] text-[var(--muted)]">{hint || "\u00a0"}</p>
       </div>
       <div aria-hidden="true" className="pointer-events-none absolute -bottom-14 -right-14 h-36 w-36 rounded-full border border-white/[.045] bg-[var(--accent)]/[.024]" />
     </div>
