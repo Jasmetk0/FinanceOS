@@ -289,10 +289,16 @@ export function InvestownImporter({
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
   const [pendingPreview, setPendingPreview] =
     useState<InvestownImportResult | null>(null);
 
   async function load(file: File) {
+    setReading(true);
+    setMessage(null);
+    setMessageKind(null);
+    setPendingPreview(null);
     try {
       const parsed = parseCsv(await file.text());
       const native = isNativeInvestown(parsed.headers);
@@ -406,6 +412,9 @@ export function InvestownImporter({
       setFilename("");
       setNativeFormat(false);
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
+    } finally {
+      setReading(false);
     }
   }
 
@@ -524,11 +533,13 @@ export function InvestownImporter({
   async function submit(form: HTMLFormElement) {
     if (!csv) {
       setMessage("Nejdřív vyber Investown CSV soubor.");
+      setMessageKind("error");
       return;
     }
 
     if (!dateColumn || !amountColumn || !typeColumn) {
       setMessage("Namapuj minimálně Date, Amount a Type.");
+      setMessageKind("error");
       return;
     }
 
@@ -575,6 +586,7 @@ export function InvestownImporter({
 
     setBusy(true);
     setMessage(null);
+    setMessageKind(null);
 
     try {
       if (!pendingPreview) {
@@ -660,10 +672,12 @@ export function InvestownImporter({
             : " · Všechny typy transakcí rozpoznány."),
       );
 
+      setMessageKind("success");
       router.refresh();
     } catch (error) {
       if (pendingPreview) setPendingPreview(null);
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
     } finally {
       setBusy(false);
     }
@@ -833,13 +847,14 @@ export function InvestownImporter({
       ) : null}
 
       <form
+        aria-busy={busy || reading}
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           void submit(event.currentTarget);
         }}
       >
-        <label className="block rounded-2xl border border-dashed border-white/12 bg-white/[0.015] p-5 text-center">
+        <label className="block rounded-2xl border border-dashed border-[var(--border-strong)] bg-white/[.015] p-4 text-center transition hover:border-[var(--accent)]/30">
           <span className="block text-sm font-medium">
             {filename || "Vyber Investown CSV historii"}
           </span>
@@ -848,6 +863,7 @@ export function InvestownImporter({
           </span>
           <input
             type="file"
+            disabled={busy || reading}
             accept=".csv,text/csv,text/plain"
             className="mt-4 block w-full text-xs text-[var(--muted)]"
             onChange={(event) => {
@@ -857,6 +873,14 @@ export function InvestownImporter({
           />
         </label>
 
+        <div role="status" aria-live="polite" className="rounded-xl border border-[var(--border)] bg-[var(--panel-soft)] px-3.5 py-3 text-[11px] leading-5 text-[var(--muted)]">
+          {reading
+            ? "Načítám Investown soubor…"
+            : csv
+              ? filename + " · " + csv.rows.length.toLocaleString("cs-CZ") +
+                " CSV řádků · " + (nativeFormat ? "originální formát rozpoznán" : "je nutné zkontrolovat mapování")
+              : "Krok 1/3 · Vyber CSV. Potom se zobrazí kontrola, read-only preview a potvrzení zápisu."}
+        </div>
         {csv && nativeFormat ? (
           <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-4">
             <p className="text-sm font-semibold text-[var(--accent)]">
@@ -1073,17 +1097,20 @@ export function InvestownImporter({
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
+          <p role={messageKind === "error" ? "alert" : "status"} aria-live="polite" className={["rounded-xl border p-3 text-xs leading-5",
+            messageKind === "error" ? "border-[var(--danger)]/25 bg-[var(--danger)]/[.05] text-[var(--danger)]"
+            : "border-[var(--accent)]/20 bg-[var(--accent)]/[.04] text-[var(--foreground)]",
+          ].join(" ")}>
             {message}
           </p>
         ) : null}
 
         <button
           type="submit"
-          disabled={busy || !csv}
-          className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || reading || !csv}
+          className="finance-action finance-action-primary !min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy
+          {reading ? "Načítám soubor…" : busy
             ? pendingPreview
               ? "Importuji…"
               : "Kontroluji výpis…"
