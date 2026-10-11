@@ -429,7 +429,8 @@ test("all account surfaces expose provider-aware data freshness", () => {
   assert.ok(analytics.includes("dataFreshness: accountDataFreshness(row)"));
   assert.ok(analytics.includes("dataFreshness: freshness"));
 
-  assert.ok(accounts.includes("DataFreshnessBadge"));
+  assert.ok(accounts.includes("<AccountsExplorer accounts={accounts} />"));
+  assert.ok(source("components/accounts-explorer.tsx").includes("<DataFreshnessBadge"));
   assert.ok(dashboard.includes("DataFreshnessBadge"));
   assert.ok(performance.includes("DataFreshnessBadge"));
   assert.ok(badge.includes("Chybí od "));
@@ -510,7 +511,8 @@ test("account cards link to rich account detail pages", () => {
   assert.ok(analytics.includes("sourceMetadata"));
   assert.ok(analytics.includes("chartPoints"));
 
-  assert.ok(accounts.includes('href={"/accounts/" + encodeURIComponent(account.id)}'));
+  assert.ok(accounts.includes("<AccountsExplorer accounts={accounts} />"));
+  assert.ok(source("components/accounts-explorer.tsx").includes('const link = "/accounts/" + encodeURIComponent(account.id)'));
   assert.ok(dashboard.includes('href={"/accounts/" + encodeURIComponent(account.id)}'));
   assert.ok(detail.includes("PortfolioHistoryChart"));
   assert.ok(detail.includes("DataFreshnessBadge"));
