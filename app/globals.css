@@ -68,6 +68,25 @@ a, button, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 }
 .skip-link:focus { top: 12px; }
 
+.finance-sidebar {
+  background:
+    radial-gradient(circle at -30% -20%, rgba(72, 142, 181, .10), transparent 45%),
+    linear-gradient(180deg, #0d1828 0%, #09121f 62%, #09111c 100%);
+  box-shadow: 1px 0 0 rgba(255,255,255,.012) inset;
+}
+.finance-sidebar nav [aria-current="page"] {
+  box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+}
+.finance-topbar {
+  background: rgba(9,17,30,.89);
+  box-shadow: 0 1px 0 rgba(255,255,255,.012) inset;
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+@media (min-width: 1024px) {
+  .finance-topbar { padding-right: clamp(24px, 3vw, 54px); }
+}
+
 /* Shared information architecture. */
 #main-content > main { animation: page-arrive .22s ease-out both; padding-bottom: max(3rem, env(safe-area-inset-bottom)); }
 #main-content > main > h1,
