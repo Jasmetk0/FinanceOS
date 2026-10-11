@@ -116,7 +116,7 @@ a, button, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  min-height: 158px;
+  min-height: 130px;
   border-radius: 22px;
   border: 1px solid var(--border);
   background: linear-gradient(146deg, #17253a, #0e1928 86%);
@@ -147,12 +147,12 @@ a, button, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .finance-quick-link {
   position: relative;
   display: flex;
-  min-height: 79px;
+  min-height: 64px;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--border);
   border-radius: 18px;
-  padding: 14px 16px;
+  padding: 10px 13px;
   background: linear-gradient(135deg, rgba(27,44,64,.75), rgba(16,28,44,.76));
   box-shadow: 0 1px 0 rgba(255,255,255,.025) inset;
   transition: border-color .2s ease, background .2s ease, transform .2s ease;
@@ -166,8 +166,8 @@ a, button, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
+  width: 33px;
+  height: 33px;
   border: 1px solid rgba(123,230,188,.16);
   border-radius: 12px;
   background: rgba(123,230,188,.07);
@@ -189,7 +189,7 @@ a, button, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   flex-shrink: 0;
 }
 .finance-account-card {
-  border-radius: 20px;
+  border-radius: 16px;
   border: 1px solid var(--border);
   background: linear-gradient(145deg, rgba(29,46,67,.63), rgba(14,25,39,.75));
   box-shadow: 0 8px 22px rgba(0,0,0,.09);
@@ -291,7 +291,7 @@ table:not(.finance-data-table) th:first-child, table:not(.finance-data-table) td
 
 @keyframes page-arrive { from { opacity: .3; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @media (max-width: 640px) {
-  .finance-stat { min-height: 147px; }
+  .finance-stat { min-height: 124px; }
   .finance-data-table thead th { padding: 13px 10px; }
   .finance-data-table tbody td { padding: 12px 10px; }
 }

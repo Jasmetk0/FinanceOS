@@ -30,6 +30,9 @@ test("summary keeps honest null values and treats featured wealth as a visual va
 
 test("accounts retain provider provenance and independently shown cash/investment values", () => {
   const page = file("app/accounts/page.tsx");
+  const explorer = file("components/accounts-explorer.tsx");
+  assert.ok(page.includes("<AccountsExplorer accounts={accounts} />"));
+  assert.ok(page.includes("<ManualBalancesManager"));
   for (const token of [
     "providerColor(account.provider)",
     "providerLabel(account.provider)",
@@ -37,9 +40,9 @@ test("accounts retain provider provenance and independently shown cash/investmen
     "account.cashValueCzk",
     "account.investedValueCzk",
     "<DataFreshnessBadge",
-    "account.dataFreshness.coverageThrough",
-    "<ManualBalancesManager",
-  ]) assert.ok(page.includes(token), "Missing account field " + token);
+    "account.dataFreshness",
+    "account.updatedAt",
+  ]) assert.ok(explorer.includes(token), "Missing account field " + token);
 });
 
 test("holdings render in both responsive and tabular views without hiding unknown P/L", () => {
