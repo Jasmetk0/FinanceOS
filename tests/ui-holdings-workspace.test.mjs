@@ -68,3 +68,17 @@ test("dashboard shows a compact preview, not the full transaction history", () =
   assert.ok(page.includes("data.accounts.length > 5"));
   assert.ok(page.includes('href="/transactions"'));
 });
+
+test("long account details offer anchored navigation to every available section", () => {
+  const page = source("app/accounts/[id]/page.tsx");
+  for (const fragment of [
+    "account-overview", "account-history", "account-coverage",
+    "account-holdings", "account-transactions",
+  ]) {
+    assert.ok(page.includes('href: "#' + fragment + '"'), "Missing section link " + fragment);
+    assert.ok(page.includes('id="' + fragment + '"'), "Missing anchor target " + fragment);
+  }
+  assert.ok(page.includes('detail.dailyHistory.length ? [{ href: "#account-daily"'));
+  assert.ok(page.includes('id="account-daily"'));
+  assert.ok(page.includes("Rychlý přechod v detailu účtu"));
+});
