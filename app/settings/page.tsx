@@ -21,64 +21,64 @@ export default function SettingsPage() {
       </div>
 
       <div className="mt-7 space-y-4">
-        <SectionCard title="Reporting">
+        <SectionCard title="Základní nastavení">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
-              <p className="text-xs text-[var(--muted)]">Base currency</p>
+              <p className="text-xs text-[var(--muted)]">Základní měna</p>
               <p className="mt-2 font-medium">CZK</p>
             </div>
             <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
-              <p className="text-xs text-[var(--muted)]">Local data directory</p>
+              <p className="text-xs text-[var(--muted)]">Umístění lokálních dat</p>
               <p className="mt-2 break-all font-mono text-xs">{dataDir}</p>
             </div>
           </div>
         </SectionCard>
 
         <SectionCard
-          title="Data export"
-          subtitle="Export neobsahuje API secrets ani encryption key"
+          title="Export dat"
+          subtitle="Export neobsahuje API klíče ani šifrovací klíč"
         >
           <div className="flex flex-wrap gap-3">
             <a
               href="/api/export"
               className="inline-flex rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
             >
-              Export all data (.json)
+              Export všech dat (.json)
             </a>
             <a
               href="/api/export/transactions"
               className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white"
             >
-              Export transactions (.csv)
+              Export transakcí (.csv)
             </a>
             <a
               href="/api/export/ai-context"
               className="inline-flex rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-white"
             >
-              Export AI context (.json)
+              Export kontextu pro AI (.json)
             </a>
           </div>
         </SectionCard>
 
         <SectionCard
-          title="Restore backup"
-          subtitle="Merge-only obnova dat z FinanceOS JSON exportu"
+          title="Obnova ze zálohy"
+          subtitle="Sloučení dat ze zálohy FinanceOS (JSON); existující údaje se nepřepisují naslepo"
         >
           <RestoreBackup />
         </SectionCard>
 
-        <SectionCard title="Automation">
+        <SectionCard title="Automatizace">
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
-              <p className="text-xs text-[var(--muted)]">Background sync</p>
-              <p className="mt-2 font-medium">Every 15 minutes</p>
+              <p className="text-xs text-[var(--muted)]">Synchronizace na pozadí</p>
+              <p className="mt-2 font-medium">Každých 15 minut</p>
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
                 Běží i po zavření prohlížeče, dokud běží FinanceOS server.
               </p>
             </div>
             <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
-              <p className="text-xs text-[var(--muted)]">Automatic backup</p>
-              <p className="mt-2 font-medium">Daily · 60-day retention</p>
+              <p className="text-xs text-[var(--muted)]">Automatická záloha</p>
+              <p className="mt-2 font-medium">Denně · uchování 60 dní</p>
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
                 JSON backup bez API secrets v lokálním data adresáři.
               </p>
@@ -86,7 +86,7 @@ export default function SettingsPage() {
           </div>
         </SectionCard>
 
-        <SectionCard title="Storage & security">
+        <SectionCard title="Úložiště a zabezpečení">
           <div className="space-y-3 text-sm leading-6 text-[var(--muted)]">
             <p>
               SQLite databáze je mimo Git repozitář. Provider credentials jsou
