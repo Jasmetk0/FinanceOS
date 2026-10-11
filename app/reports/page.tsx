@@ -70,7 +70,7 @@ export default function ReportsPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1100px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                  <tr className="border-b border-[var(--border)] text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                     <th className="pb-3 font-medium">Year</th>
                     <th className="pb-3 text-right font-medium">Interest</th>
                     <th className="pb-3 text-right font-medium">Dividends</th>
@@ -154,7 +154,7 @@ export default function ReportsPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1180px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                  <tr className="border-b border-[var(--border)] text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                     <th className="pb-3 font-medium">Year</th>
                     <th className="pb-3 font-medium">Provider</th>
                     <th className="pb-3 text-right font-medium">Interest</th>

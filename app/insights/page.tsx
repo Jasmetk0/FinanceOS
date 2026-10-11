@@ -71,7 +71,7 @@ export default function InsightsPage() {
                       ? "border-[var(--danger)]/25 bg-[var(--danger)]/[0.04]"
                       : warning.severity === "warning"
                         ? "border-[var(--warning)]/25 bg-[var(--warning)]/[0.04]"
-                        : "border-white/8 bg-white/[0.02]",
+                        : "border-[var(--border)] bg-white/[.025]",
                   ].join(" ")}
                 >
                   <div className="flex items-center gap-2">
@@ -146,7 +146,7 @@ export default function InsightsPage() {
               {data.assetClassRanking.map((item) => (
                 <div
                   key={item.label}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[0.02] px-3 py-3"
+                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[.025] px-3 py-3"
                 >
                   <div>
                     <p className="text-sm font-medium capitalize">{item.label}</p>
@@ -188,7 +188,7 @@ export default function InsightsPage() {
                 })}{" "}
                 %
               </p>
-              <div className="mt-6 border-t border-white/7 pt-5">
+              <div className="mt-6 border-t border-[var(--border)] pt-5">
                 <p className="text-sm text-[var(--muted)]">Top 3 combined</p>
                 <p className="mt-2 text-2xl font-semibold">
                   {data.topThreeSharePct.toLocaleString("cs-CZ", {

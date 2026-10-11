@@ -131,7 +131,7 @@ export default function CashFlowPage() {
               {data.categories.slice(0, 12).map((item, index) => (
                 <div
                   key={`${item.category}-${item.kind}-${index}`}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2.5"
+                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[.025] px-3 py-2.5"
                 >
                   <div>
                     <p className="text-sm font-medium">{item.category}</p>
@@ -159,7 +159,7 @@ export default function CashFlowPage() {
               {data.sources.map((item) => (
                 <div
                   key={item.source}
-                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2.5"
+                  className="flex items-center justify-between gap-4 rounded-xl border border-white/6 bg-white/[.025] px-3 py-2.5"
                 >
                   <p className="text-sm font-medium">{item.source}</p>
                   <p className="font-mono text-sm">
@@ -201,7 +201,7 @@ export default function CashFlowPage() {
                 return (
                   <div
                     key={String(label)}
-                    className="rounded-2xl border border-white/7 bg-white/[0.02] p-4"
+                    className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
                   >
                     <p className="text-xs text-[var(--muted)]">{label}</p>
                     <p className="mt-2 font-mono text-lg font-semibold">

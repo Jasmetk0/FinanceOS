@@ -70,7 +70,7 @@ export function PlanEditor({
         {Object.entries(labels).map(([key, label]) => (
           <label
             key={key}
-            className="rounded-2xl border border-white/7 bg-white/[0.025] p-4"
+            className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
           >
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium">{label}</span>
@@ -88,14 +88,14 @@ export function PlanEditor({
                   [key]: Number(event.target.value || 0),
                 }))
               }
-              className="mt-3 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-3 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             />
           </label>
         ))}
       </div>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
-        <label className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+        <label className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
           <span className="text-sm font-medium">Monthly contribution</span>
           <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
             Kolik nových peněz chceš matematicky rozdělit směrem ke svým vlastním cílům.
@@ -107,7 +107,7 @@ export function PlanEditor({
               step="100"
               value={monthlyContribution}
               onChange={(event) => setMonthlyContribution(event.target.value)}
-              className="w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             />
             <span className="text-sm text-[var(--muted)]">Kč</span>
           </div>
