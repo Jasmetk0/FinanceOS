@@ -136,7 +136,7 @@ export function JournalManager({
 
       {open ? (
         <form
-          className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4"
+          className="mt-4 rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void add(event.currentTarget);
@@ -148,7 +148,7 @@ export function JournalManager({
               <input
                 name="symbol"
                 placeholder="AMD"
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm uppercase"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
               />
             </label>
             <label>
@@ -157,7 +157,7 @@ export function JournalManager({
                 name="title"
                 placeholder="Why I am buying"
                 required
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
             <label>
@@ -166,7 +166,7 @@ export function JournalManager({
                 name="createdAt"
                 type="date"
                 defaultValue={defaultCreatedAt}
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
             <label>
@@ -174,7 +174,7 @@ export function JournalManager({
               <input
                 name="reviewAt"
                 type="date"
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
           </div>
@@ -186,7 +186,7 @@ export function JournalManager({
               required
               rows={5}
               placeholder="Co očekávám, proč to kupuji, co by mou tezi vyvrátilo…"
-              className="mt-1.5 w-full resize-y rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm leading-6"
+              className="mt-1.5 w-full resize-y rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm leading-6"
             />
           </label>
 
@@ -220,7 +220,7 @@ export function JournalManager({
           entries.map((entry) => (
             <article
               key={entry.id}
-              className="rounded-2xl border border-white/7 bg-white/[0.025] p-5"
+              className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-5"
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -233,7 +233,7 @@ export function JournalManager({
                         {entry.symbol}
                       </Link>
                     ) : null}
-                    <span className="rounded-lg border border-white/8 px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
+                    <span className="rounded-lg border border-[var(--border)] px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
                       {entry.status}
                     </span>
                   </div>
@@ -256,13 +256,13 @@ export function JournalManager({
                 </div>
               </div>
 
-              <div className="mt-4 flex flex-wrap gap-2 border-t border-white/7 pt-4">
+              <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
                 {entry.status !== "reviewed" ? (
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void patch(entry.id, "reviewed")}
-                    className="rounded-lg border border-white/9 px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
+                    className="rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
                   >
                     Mark reviewed
                   </button>
@@ -272,7 +272,7 @@ export function JournalManager({
                     type="button"
                     disabled={busy}
                     onClick={() => void patch(entry.id, "closed")}
-                    className="rounded-lg border border-white/9 px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
+                    className="rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
                   >
                     Close thesis
                   </button>

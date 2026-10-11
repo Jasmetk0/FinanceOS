@@ -136,7 +136,7 @@ export function ManualBalancesManager({
       {open ? (
         <form
           key={editing?.externalId || "new"}
-          className="mt-4 rounded-2xl border border-white/8 bg-white/[0.02] p-4"
+          className="mt-4 rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
           onSubmit={(event) => {
             event.preventDefault();
             void submit(event.currentTarget);
@@ -150,7 +150,7 @@ export function ManualBalancesManager({
                 defaultValue={editing?.name || ""}
                 placeholder="Bank account, Cash, Car loan…"
                 required
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
             <label>
@@ -158,7 +158,7 @@ export function ManualBalancesManager({
               <select
                 name="kind"
                 defaultValue={editing?.kind || "cash"}
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               >
                 <option value="cash">Cash / bank balance</option>
                 <option value="asset">Other asset</option>
@@ -174,7 +174,7 @@ export function ManualBalancesManager({
                 min="0"
                 defaultValue={editing ? Math.abs(editing.value) : ""}
                 required
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
             <label>
@@ -183,7 +183,7 @@ export function ManualBalancesManager({
                 name="currency"
                 defaultValue={editing?.currency || "CZK"}
                 required
-                className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm uppercase"
+                className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
               />
             </label>
           </div>
@@ -223,7 +223,7 @@ export function ManualBalancesManager({
           {balances.map((balance) => (
             <article
               key={balance.externalId}
-              className="rounded-2xl border border-white/7 bg-white/[0.025] p-4"
+              className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -254,7 +254,7 @@ export function ManualBalancesManager({
                   type="button"
                   onClick={() => startEdit(balance)}
                   disabled={busy}
-                  className="rounded-lg border border-white/9 px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
+                  className="rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
                 >
                   Edit
                 </button>

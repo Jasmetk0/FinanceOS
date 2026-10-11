@@ -362,7 +362,7 @@ export function CashFlowCsvImporter() {
               name="defaultCurrency"
               defaultValue="CZK"
               required
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm uppercase"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
             />
           </label>
           <label>
@@ -370,7 +370,7 @@ export function CashFlowCsvImporter() {
             <input
               name="defaultSource"
               defaultValue="Bank CSV"
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             />
           </label>
           <label>
@@ -378,7 +378,7 @@ export function CashFlowCsvImporter() {
             <select
               name="positiveKind"
               defaultValue="income"
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
               <option value="income">Income</option>
               <option value="gift">Gift</option>
@@ -393,7 +393,7 @@ export function CashFlowCsvImporter() {
             <select
               name="negativeKind"
               defaultValue="expense"
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
               <option value="expense">Expense</option>
               <option value="fee">Fee</option>
@@ -431,7 +431,7 @@ export function CashFlowCsvImporter() {
                   <select
                     value={value}
                     onChange={(event) => setter(event.target.value)}
-                    className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                    className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
                   >
                     <option value="">— not mapped —</option>
                     {csv.headers.map((header) => (
@@ -444,9 +444,9 @@ export function CashFlowCsvImporter() {
               ))}
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-white/7">
+            <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
               <table className="min-w-full border-collapse text-left text-xs">
-                <thead className="bg-white/[0.025] text-[var(--muted)]">
+                <thead className="bg-white/[.025] text-[var(--muted)]">
                   <tr>
                     {csv.headers.map((header) => (
                       <th
@@ -483,7 +483,7 @@ export function CashFlowCsvImporter() {
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-xs leading-5">
+          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
             {message}
           </p>
         ) : null}
