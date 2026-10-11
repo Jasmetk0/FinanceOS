@@ -16,11 +16,11 @@ export default function ReportsPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
-      <Pill>Annual data summary</Pill>
+      <Pill>Roční přehled</Pill>
       <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Reports
+            Reporty
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
             Roční přehled výnosů a transakcí napříč providery. Je to datový

@@ -17,9 +17,9 @@ export default function CashFlowPage() {
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Pill>Personal cash flow</Pill>
+          <Pill>Vklady, výběry a přesuny</Pill>
           <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-            Cash Flow
+            Peněžní toky
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
             Výplaty, dary, úroky a výdaje oddělené od investičních transferů.

@@ -10,10 +10,10 @@ export default function SettingsPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1100px] p-4 sm:p-6 lg:p-8">
-      <Pill>Local-first</Pill>
+      <Pill>Lokální aplikace</Pill>
       <div className="mt-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Settings
+          Nastavení
         </h1>
         <p className="mt-2 text-sm text-[var(--muted)] sm:text-base">
           Data patří tobě a zůstávají na tomto počítači.

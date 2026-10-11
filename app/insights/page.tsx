@@ -10,10 +10,10 @@ export default function InsightsPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
-      <Pill>Deterministic analytics</Pill>
+      <Pill>Analytika portfolia</Pill>
       <div className="mt-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Insights
+          Analýzy
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
           Automatické signály z tvých vlastních dat. Zatím bez AI a bez
