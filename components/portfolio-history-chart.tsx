@@ -558,6 +558,7 @@ export function PortfolioHistoryChart({
               key={value}
               type="button"
               onClick={() => setMetric(value)}
+              aria-pressed={metric === value}
               className={[
                 "rounded-lg border px-2.5 py-1.5 text-xs transition",
                 metric === value
@@ -576,6 +577,7 @@ export function PortfolioHistoryChart({
               key={value}
               type="button"
               onClick={() => setPeriod(value)}
+              aria-pressed={period === value}
               className={[
                 "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
                 period === value
@@ -593,6 +595,7 @@ export function PortfolioHistoryChart({
               setCustomStart(customStart || earliest);
               setCustomEnd(customEnd || effectiveLatest);
             }}
+            aria-pressed={period === "CUSTOM"}
             className={[
               "rounded-lg border px-2.5 py-1.5 text-[11px] transition",
               period === "CUSTOM"
@@ -617,7 +620,7 @@ export function PortfolioHistoryChart({
               max={effectiveLatest}
               value={customStart}
               onChange={(event) => setCustomStart(event.target.value)}
-              className="mt-1 rounded-lg border border-white/8 bg-[#0b1511] px-2.5 py-1.5 text-xs"
+              className="mt-1 rounded-lg border border-white/8 bg-[var(--panel-strong)] px-2.5 py-1.5 text-xs"
             />
           </label>
           <label>
@@ -630,7 +633,7 @@ export function PortfolioHistoryChart({
               max={latest}
               value={customEnd}
               onChange={(event) => setCustomEnd(event.target.value)}
-              className="mt-1 rounded-lg border border-white/8 bg-[#0b1511] px-2.5 py-1.5 text-xs"
+              className="mt-1 rounded-lg border border-white/8 bg-[var(--panel-strong)] px-2.5 py-1.5 text-xs"
             />
           </label>
         </div>
@@ -778,7 +781,7 @@ export function PortfolioHistoryChart({
 
       <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/7 bg-black/10">
         {hoverPoint ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-xl border border-white/10 bg-[#0a1410]/95 p-3 shadow-xl backdrop-blur">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-xl border border-white/10 bg-[var(--panel-strong)]/95 p-3 shadow-xl backdrop-blur">
             <p className="text-xs font-semibold">{dateLabel(hoverPoint.date)}</p>
             <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {metricLabel(metric)}
@@ -857,7 +860,22 @@ export function PortfolioHistoryChart({
             preserveAspectRatio="none"
             className={compact ? "h-64 w-full" : "h-[360px] w-full"}
             role="img"
-            aria-label={metricLabel(metric)}
+            aria-label={metricLabel(metric) + ". Použij šipky vlevo a vpravo pro detail jednotlivých dnů."}
+            tabIndex={0}
+            onKeyDown={(event) => {
+              if (event.key === "Escape") {
+                setHoverDate(null);
+                return;
+              }
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              const current = filtered.findIndex((point) => point.date === hoverDate);
+              const next =
+                current === -1
+                  ? event.key === "ArrowLeft" ? filtered.length - 1 : 0
+                  : Math.max(0, Math.min(filtered.length - 1, current + (event.key === "ArrowLeft" ? -1 : 1)));
+              if (filtered[next]) setHoverDate(filtered[next].date);
+            }}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHoverDate(null)}
           >
@@ -1384,7 +1402,7 @@ export function InteractiveTimeSeriesChart({
 
       <div className="relative mt-3 overflow-hidden rounded-2xl border border-white/7 bg-black/10">
         {hoverPoint ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-xl border border-white/10 bg-[#0a1410]/95 p-3 shadow-xl">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 rounded-xl border border-white/10 bg-[var(--panel-strong)]/95 p-3 shadow-xl">
             <p className="text-xs font-semibold">{dateLabel(hoverPoint.date)}</p>
             <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {label}
