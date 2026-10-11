@@ -8,6 +8,7 @@ export interface CashFlowMonthPoint {
   giftsCzk: number;
   expensesCzk: number;
   interestCzk: number;
+  cashbackCzk?: number;
   netCzk: number;
 }
 
@@ -62,7 +63,7 @@ export function InteractiveCashFlowChart({
   const max = Math.max(
     1,
     ...filtered.flatMap((item) => [
-      item.incomeCzk + item.giftsCzk + item.interestCzk,
+      item.incomeCzk + item.giftsCzk + item.interestCzk + (item.cashbackCzk ?? 0),
       item.expensesCzk,
       showNet ? Math.abs(item.netCzk) : 0,
     ]),
@@ -74,7 +75,7 @@ export function InteractiveCashFlowChart({
         <div>
           <p className="text-sm font-medium">Zatím žádný cash-flow záznam</p>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
-            Přidej první výplatu, dar nebo výdaj přes Add manual transaction.
+            Přidej první výplatu, dar nebo výdaj přes ruční záznam.
           </p>
         </div>
       </div>
@@ -92,7 +93,8 @@ export function InteractiveCashFlowChart({
             <button
               key={value}
               type="button"
-              onClick={() => setPeriod(value)}
+              onClick={() => { setPeriod(value); setHoverMonth(null); }}
+              aria-pressed={period === value}
               className={[
                 "rounded-lg border px-2.5 py-1.5 text-[11px]",
                 period === value
@@ -114,9 +116,9 @@ export function InteractiveCashFlowChart({
         </label>
       </div>
 
-      <div className="relative mt-4 overflow-x-auto rounded-2xl border border-white/7 bg-black/10 p-3">
+      <div className="finance-chart relative mt-4 overflow-x-auto rounded-2xl border border-[var(--border)] bg-black/[.09] p-3">
         {hover ? (
-          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-xl border border-white/10 bg-[#0a1410]/95 p-3 shadow-xl">
+          <div className="pointer-events-none absolute right-3 top-3 z-10 min-w-[190px] rounded-xl border border-white/10 bg-[var(--panel-strong)]/95 p-3 shadow-xl">
             <p className="text-xs font-semibold">
               {new Date(hover.month + "-01T12:00:00").toLocaleDateString(
                 "cs-CZ",
@@ -127,9 +129,10 @@ export function InteractiveCashFlowChart({
               <Row
                 label="Příjmy"
                 value={money(
-                  hover.incomeCzk + hover.giftsCzk + hover.interestCzk,
+                  hover.incomeCzk + hover.giftsCzk + hover.interestCzk + (hover.cashbackCzk ?? 0),
                 )}
               />
+              <Row label="Cashback v příjmech" value={money(hover.cashbackCzk ?? 0)} />
               <Row label="Výdaje" value={money(hover.expensesCzk)} />
               <Row label="Čisté" value={money(hover.netCzk)} />
             </dl>
@@ -165,7 +168,7 @@ export function InteractiveCashFlowChart({
 
             {filtered.map((item) => {
               const income =
-                item.incomeCzk + item.giftsCzk + item.interestCzk;
+                item.incomeCzk + item.giftsCzk + item.interestCzk + (item.cashbackCzk ?? 0);
               const incomeHeight = Math.max(2, (income / max) * 220);
               const expenseHeight = Math.max(
                 2,
@@ -180,6 +183,7 @@ export function InteractiveCashFlowChart({
                   onMouseEnter={() => setHoverMonth(item.month)}
                   onMouseLeave={() => setHoverMonth(null)}
                   onFocus={() => setHoverMonth(item.month)}
+                  aria-label={item.month + ": příjmy " + money(income) + ", z toho cashback " + money(item.cashbackCzk ?? 0) + ", výdaje " + money(item.expensesCzk) + ", čisté " + money(item.netCzk)}
                   onBlur={() => setHoverMonth(null)}
                   className="relative z-[1] flex min-w-[54px] flex-1 flex-col items-center self-end outline-none"
                 >
@@ -217,6 +221,9 @@ export function InteractiveCashFlowChart({
         </div>
       </div>
 
+      <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
+        Příjmy zahrnují také rozpoznaný cashback. Ten je externí odměna, ne vlastní investiční vklad.
+      </p>
       <div className="mt-3 flex flex-wrap gap-5 text-xs text-[var(--muted)]">
         <Legend colorClass="bg-[var(--accent)]" label="Příjmy" />
         <Legend colorClass="bg-white/28" label="Výdaje" />
