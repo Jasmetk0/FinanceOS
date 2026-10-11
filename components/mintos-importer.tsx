@@ -357,6 +357,8 @@ export function MintosImporter({
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
 
   const preview = useMemo(
     () => (nativeFormat && files.length ? nativePreview(files) : null),
@@ -364,6 +366,9 @@ export function MintosImporter({
   );
 
   async function load(selected: FileList) {
+    setReading(true);
+    setMessage(null);
+    setMessageKind(null);
     try {
       const parsedFiles: ParsedFile[] = [];
 
@@ -458,6 +463,9 @@ export function MintosImporter({
       setGenericCsv(null);
       setNativeFormat(false);
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
+    } finally {
+      setReading(false);
     }
   }
 
@@ -494,6 +502,7 @@ export function MintosImporter({
   async function submit(form: HTMLFormElement) {
     if (!nativeFormat && genericCsv && (!dateColumn || !amountColumn)) {
       setMessage("Pro CSV import namapuj Date a Amount.");
+      setMessageKind("error");
       return;
     }
 
@@ -507,6 +516,7 @@ export function MintosImporter({
 
     setBusy(true);
     setMessage(null);
+    setMessageKind(null);
 
     try {
       const response = await fetch("/api/import/mintos", {
@@ -549,6 +559,7 @@ export function MintosImporter({
 
       const derived = payload.result.derived;
       const unknown = payload.result.coverage?.unknownTypes ?? [];
+      setMessageKind("success");
       setMessage(
         "Hotovo · " +
           payload.result.imported.toLocaleString("cs-CZ") +
@@ -572,6 +583,7 @@ export function MintosImporter({
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
     } finally {
       setBusy(false);
     }
@@ -668,13 +680,14 @@ export function MintosImporter({
       ) : null}
 
       <form
+        aria-busy={busy || reading}
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
           void submit(event.currentTarget);
         }}
       >
-        <label className="block rounded-2xl border border-dashed border-white/12 bg-white/[0.015] p-5 text-center">
+        <label className="block rounded-2xl border border-dashed border-[var(--border-strong)] bg-white/[.015] p-4 text-center transition hover:border-[var(--accent)]/30">
           <span className="block text-sm font-medium">
             {files.length
               ? files.length === 1
@@ -688,6 +701,7 @@ export function MintosImporter({
           </span>
           <input
             type="file"
+            disabled={busy || reading}
             multiple
             accept=".csv,text/csv,text/plain"
             className="mt-4 block w-full text-xs text-[var(--muted)]"
@@ -696,6 +710,17 @@ export function MintosImporter({
             }}
           />
         </label>
+
+        <div role="status" aria-live="polite" className="rounded-xl border border-[var(--border)] bg-[var(--panel-soft)] px-3.5 py-3 text-[11px] leading-5 text-[var(--muted)]">
+          {reading
+            ? "Načítám a ověřuji vybrané soubory…"
+            : files.length
+              ? files.length.toLocaleString("cs-CZ") + " souborů · " +
+                files.reduce((sum, file) => sum + file.csv.rows.length, 0).toLocaleString("cs-CZ") +
+                " načtených CSV řádků před deduplikací · " +
+                (nativeFormat ? "originální Mintos formát" : "ručně mapovaný CSV formát")
+              : "Krok 1/2 · Vyber CSV výpis; před odesláním zkontroluj náhled a mapování."}
+        </div>
 
         {nativeFormat && files.length ? (
           <div className="rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[0.04] p-4">
@@ -856,17 +881,20 @@ export function MintosImporter({
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
+          <p role={messageKind === "error" ? "alert" : "status"} aria-live="polite" className={["rounded-xl border p-3 text-xs leading-5",
+            messageKind === "error" ? "border-[var(--danger)]/25 bg-[var(--danger)]/[.055] text-[var(--danger)]"
+            : "border-[var(--accent)]/20 bg-[var(--accent)]/[.045] text-[var(--foreground)]",
+          ].join(" ")}>
             {message}
           </p>
         ) : null}
 
         <button
           type="submit"
-          disabled={busy || (!files.length && !initialStatus)}
-          className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={busy || reading || (!files.length && !initialStatus)}
+          className="finance-action finance-action-primary !min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy
+          {reading ? "Načítám soubory…" : busy
             ? "Zpracovávám Mintos historii…"
             : files.length
               ? "Importovat Mintos kompletně"
