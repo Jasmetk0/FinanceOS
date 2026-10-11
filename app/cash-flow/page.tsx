@@ -4,6 +4,7 @@ import { CashFlowCsvImporter } from "@/components/cashflow-csv-importer";
 import { getCashFlowData } from "@/lib/server/analytics";
 import { getTrading212CardStatus } from "@/lib/server/trading212-card";
 import { InteractiveCashFlowChart } from "@/components/interactive-cash-flow-chart";
+import { MonthlyCashFlowExplorer } from "@/components/monthly-cash-flow-explorer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export default function CashFlowPage() {
         <ManualTransactionForm />
       </div>
 
-      <section className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="mt-5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
         <StatCard
           label="Příjmy"
           value={data.totals.grossIncomeCzk}
@@ -49,15 +50,15 @@ export default function CashFlowPage() {
           positive={data.totals.netCzk >= 0}
         />
         <StatCard
-          label="Savings rate"
-          value={data.totals.savingsRate ?? 0}
+          label="Míra úspor"
+          value={data.totals.savingsRate}
           format="percent"
           hint={
             data.totals.savingsRate === null
               ? "Bez příjmů nelze spočítat"
               : "Za zobrazené období"
           }
-          positive={(data.totals.savingsRate ?? 0) >= 0}
+          positive={data.totals.savingsRate === null ? undefined : data.totals.savingsRate >= 0}
         />
         <StatCard
           label="212 cashback"
@@ -72,7 +73,7 @@ export default function CashFlowPage() {
         />
       </section>
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(320px,0.8fr)]">
+      <section className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
         <SectionCard
           title="Měsíční cash flow"
           subtitle="Přesné částky po najetí, filtry období a čisté cash flow"
@@ -87,12 +88,12 @@ export default function CashFlowPage() {
           {lastMonth ? (
             <dl className="space-y-4">
               {[
-                ["Salary / income", lastMonth.incomeCzk],
-                ["Gifts", lastMonth.giftsCzk],
-                ["Interest", lastMonth.interestCzk],
-                ["212 card cashback", lastMonth.cashbackCzk],
-                ["Expenses", -lastMonth.expensesCzk],
-                ["Net", lastMonth.netCzk],
+                ["Výplata / příjmy", lastMonth.incomeCzk],
+                ["Dary", lastMonth.giftsCzk],
+                ["Úroky", lastMonth.interestCzk],
+                ["212 cashback", lastMonth.cashbackCzk],
+                ["Výdaje", -lastMonth.expensesCzk],
+                ["Čistá úspora", lastMonth.netCzk],
               ].map(([label, raw]) => {
                 const value = Number(raw);
                 return (
@@ -124,7 +125,13 @@ export default function CashFlowPage() {
         </SectionCard>
       </section>
 
-      <section className="mt-4 grid gap-4 xl:grid-cols-2">
+      <div className="mt-4">
+        <SectionCard title="Měsíční srovnání" subtitle="Filtr období, řazení a přesný rozpad příjmů včetně cashbacku; nejde o čisté investiční vklady">
+          <MonthlyCashFlowExplorer months={data.months} />
+        </SectionCard>
+      </div>
+
+      <section className="mt-4 grid gap-3 xl:grid-cols-2">
         <SectionCard title="Kategorie" subtitle="Součet absolutních částek">
           {data.categories.length ? (
             <div className="space-y-3">
@@ -300,8 +307,8 @@ export default function CashFlowPage() {
 
       <div className="mt-4">
         <SectionCard
-          title="Import cash-flow history"
-          subtitle="Bankovní nebo vlastní CSV se signed amount sloupcem"
+          title="Import historie příjmů a výdajů"
+          subtitle="Bankovní nebo vlastní CSV, ve kterém znaménko částky určuje příjem nebo výdaj"
         >
           <CashFlowCsvImporter />
         </SectionCard>
