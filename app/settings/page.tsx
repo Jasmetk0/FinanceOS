@@ -23,11 +23,11 @@ export default function SettingsPage() {
       <div className="mt-7 space-y-4">
         <SectionCard title="Reporting">
           <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Base currency</p>
               <p className="mt-2 font-medium">CZK</p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Local data directory</p>
               <p className="mt-2 break-all font-mono text-xs">{dataDir}</p>
             </div>
@@ -69,14 +69,14 @@ export default function SettingsPage() {
 
         <SectionCard title="Automation">
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Background sync</p>
               <p className="mt-2 font-medium">Every 15 minutes</p>
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">
                 Běží i po zavření prohlížeče, dokud běží FinanceOS server.
               </p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.025] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Automatic backup</p>
               <p className="mt-2 font-medium">Daily · 60-day retention</p>
               <p className="mt-2 text-xs leading-5 text-[var(--muted)]">

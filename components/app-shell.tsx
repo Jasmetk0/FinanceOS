@@ -101,7 +101,7 @@ function NavItem({ item, pathname, onNavigate }: { item: NavigationItem; pathnam
         "group relative flex min-h-10 items-center gap-3 rounded-xl px-3 py-2 text-[13px] font-medium transition-colors",
         active
           ? "bg-[var(--accent)]/[.105] text-[var(--foreground)]"
-          : "text-[var(--muted)] hover:bg-white/[.045] hover:text-[var(--foreground)]",
+          : "text-[var(--muted)] hover:translate-x-0.5 hover:bg-white/[.055] hover:text-[var(--foreground)]",
       ].join(" ")}
     >
       {active ? <span aria-hidden="true" className="absolute bottom-2 left-0 top-2 w-[3px] rounded-r-full bg-[var(--accent)]" /> : null}
@@ -117,7 +117,7 @@ function NavSections({ pathname, onNavigate }: { pathname: string; onNavigate?: 
     <nav aria-label="Hlavní navigace" className="space-y-5">
       {navigationGroups.map((group) => (
         <div key={group.title}>
-          <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[.2em] text-[var(--muted)]/80">{group.title}</p>
+          <p className="mb-1.5 px-3 text-[10px] font-bold uppercase tracking-[.21em] text-[var(--muted)]/85">{group.title}</p>
           <div className="space-y-0.5">
             {group.items.map((item) => <NavItem key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />)}
           </div>
@@ -169,11 +169,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-screen lg:grid lg:grid-cols-[246px_minmax(0,1fr)]">
       <a href="#main-content" className="skip-link">Přeskočit na obsah</a>
 
-      <aside className="finance-scrollbar sticky top-0 hidden h-screen flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] px-3 py-5 lg:flex">
+      <aside className="finance-sidebar finance-scrollbar sticky top-0 hidden h-screen flex-col overflow-y-auto border-r border-[var(--border)] bg-[var(--sidebar)] px-3 py-5 lg:flex">
         <div className="px-3 pb-7 pt-1"><Brand /></div>
         <NavSections pathname={pathname} />
         <div className="mt-auto pt-8">
-          <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] px-3 py-3.5">
+          <div className="rounded-2xl border border-[var(--accent)]/15 bg-[var(--accent)]/[.045] px-3 py-3.5">
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--foreground)]">
               <span className="h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]" /> Lokální režim
             </div>
@@ -183,7 +183,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="min-w-0">
-        <header className="sticky top-0 z-30 flex h-[68px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--background)]/90 px-4 backdrop-blur-xl sm:px-7 lg:h-[74px] lg:px-9">
+        <header className="finance-topbar sticky top-0 z-30 flex h-[68px] items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--background)]/90 px-4 backdrop-blur-xl sm:px-7 lg:h-[74px] lg:px-9">
           <div className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => setMobileOpen(true)} aria-label="Otevřít navigaci" aria-expanded={mobileOpen} aria-controls="mobile-navigation" className="touch-target flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border)] text-[var(--foreground)] hover:bg-white/[.05] lg:hidden">
               <svg aria-hidden="true" viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {searchOpen ? (
         <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black/75 px-3 pt-[10vh] backdrop-blur-sm sm:pt-[14vh]" onMouseDown={(event) => { if (event.target === event.currentTarget) setSearchOpen(false); }}>
-          <section role="dialog" aria-modal="true" aria-label="Rychlý přechod na stránku" className="w-full max-w-lg overflow-hidden rounded-[22px] border border-white/15 bg-[var(--panel-strong)] shadow-[0_32px_100px_rgba(0,0,0,.6)]">
+          <section role="dialog" aria-modal="true" aria-label="Rychlý přechod na stránku" className="w-full max-w-lg overflow-hidden rounded-[24px] border border-white/15 bg-[var(--panel-strong)] shadow-[0_32px_100px_rgba(0,0,0,.6)]">
             <div className="flex items-center gap-3 border-b border-[var(--border)] px-5">
               <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-[var(--accent)]"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></svg>
               <input ref={searchRef} type="search" aria-label="Hledat v navigaci" placeholder="Kam chceš přejít?" value={query} onChange={(event) => setQuery(event.target.value)} className="h-[62px] w-full bg-transparent text-sm text-white outline-none placeholder:text-[var(--muted)]" />

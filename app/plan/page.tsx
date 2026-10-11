@@ -93,7 +93,7 @@ export default function PlanPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] border-collapse text-left">
               <thead>
-                <tr className="border-b border-white/8 text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
+                <tr className="border-b border-[var(--border)] text-xs uppercase tracking-[0.12em] text-[var(--muted)]">
                   <th className="pb-3 font-medium">Class</th>
                   <th className="pb-3 text-right font-medium">Current value</th>
                   <th className="pb-3 text-right font-medium">Current</th>
@@ -168,7 +168,7 @@ export default function PlanPage() {
                 return (
                   <div
                     key={assetClass}
-                    className="rounded-2xl border border-white/7 bg-white/[0.025] p-3"
+                    className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-3"
                   >
                     <div className="flex items-center justify-between gap-4">
                       <p className="text-sm font-medium">
@@ -211,7 +211,7 @@ export default function PlanPage() {
         </SectionCard>
       </section>
 
-      <div className="mt-4 rounded-3xl border border-white/7 bg-white/[0.02] p-5">
+      <div className="mt-4 rounded-3xl border border-[var(--border)] bg-white/[.025] p-5">
         <p className="text-sm font-semibold">Co tento výpočet znamená</p>
         <p className="mt-2 max-w-5xl text-sm leading-6 text-[var(--muted)]">
           Contribution plan neříká, které konkrétní akcie nebo ETF koupit.

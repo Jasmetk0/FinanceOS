@@ -195,7 +195,7 @@ export function ConnectionsManager({
   return (
     <div className="space-y-4">
       {message ? (
-        <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm">
+        <div className="rounded-2xl border border-[var(--border)] bg-white/[0.03] px-4 py-3 text-sm">
           {message}
         </div>
       ) : null}
@@ -215,7 +215,7 @@ export function ConnectionsManager({
             <select
               name="environment"
               defaultValue="live"
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
               <option value="live">Live</option>
               <option value="demo">Demo</option>
@@ -270,7 +270,7 @@ function ProviderCard({
   credentialMode?: "api" | "phantom";
 }) {
   return (
-    <article className="rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
+    <article className="rounded-3xl border border-[var(--border)] bg-[var(--panel)] p-5">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-lg font-semibold">{title}</h2>
@@ -281,7 +281,7 @@ function ProviderCard({
 
       {connection ? (
         <div className="mt-5">
-          <dl className="grid gap-3 rounded-2xl border border-white/7 bg-white/[0.02] p-4 text-sm sm:grid-cols-2">
+          <dl className="grid gap-3 rounded-2xl border border-[var(--border)] bg-white/[.025] p-4 text-sm sm:grid-cols-2">
             <div>
               <dt className="text-xs text-[var(--muted)]">Environment</dt>
               <dd className="mt-1 font-medium">{connection.environment}</dd>
@@ -343,7 +343,7 @@ function ProviderCard({
                   required
                   spellCheck={false}
                   placeholder="Např. veřejná adresa z Phantom Receive"
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 font-mono text-xs outline-none focus:border-[var(--accent)]/50"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 font-mono text-xs outline-none focus:border-[var(--accent)]/50"
                 />
               </label>
               <p className="rounded-xl border border-[var(--accent)]/15 bg-[var(--accent)]/[0.04] p-3 text-xs leading-5 text-[var(--muted)]">
@@ -360,7 +360,7 @@ function ProviderCard({
                   type="password"
                   autoComplete="off"
                   required
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
                 />
               </label>
               <label className="block">
@@ -372,7 +372,7 @@ function ProviderCard({
                   type="password"
                   autoComplete="off"
                   required
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50"
                 />
               </label>
             </>

@@ -64,7 +64,7 @@ const INTEREST_TYPES = new Set([
 ]);
 
 const inputClass =
-  "mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
+  "mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm outline-none focus:border-[var(--accent)]/50";
 
 function delimiterFor(line: string) {
   const choices = [",", ";", "\t"];
@@ -589,7 +589,7 @@ export function MintosImporter({
     : [];
 
   return (
-    <article className="rounded-3xl border border-white/7 bg-[var(--panel)] p-5">
+    <article className="rounded-3xl border border-[var(--border)] bg-[var(--panel)] p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Mintos</h2>
@@ -606,7 +606,7 @@ export function MintosImporter({
       </div>
 
       {initialStatus ? (
-        <div className="mt-5 rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+        <div className="mt-5 rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <p className="text-sm font-semibold">Poslední Mintos import</p>
@@ -646,7 +646,7 @@ export function MintosImporter({
             />
           </div>
 
-          <details className="mt-4 rounded-xl border border-white/7 bg-black/10 p-3">
+          <details className="mt-4 rounded-xl border border-[var(--border)] bg-black/10 p-3">
             <summary className="cursor-pointer text-xs font-medium text-[var(--muted)]">
               Audit typů transakcí ({initialStatus.typeCounts.length})
             </summary>
@@ -784,7 +784,7 @@ export function MintosImporter({
           </div>
         ) : null}
 
-        <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+        <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
           <p className="text-sm font-medium">Current value override</p>
           <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
             U kompletního lifetime výpisu nech Current total i Current cash
@@ -825,9 +825,9 @@ export function MintosImporter({
         </div>
 
         {nativeFormat && files.length ? (
-          <div className="overflow-x-auto rounded-2xl border border-white/7">
+          <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
             <table className="min-w-full border-collapse text-left text-xs">
-              <thead className="bg-white/[0.025] text-[var(--muted)]">
+              <thead className="bg-white/[.025] text-[var(--muted)]">
                 <tr>
                   <th className="px-3 py-2 font-medium">Soubor</th>
                   <th className="px-3 py-2 text-right font-medium">Řádků</th>
@@ -856,7 +856,7 @@ export function MintosImporter({
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-xs leading-5">
+          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
             {message}
           </p>
         ) : null}
@@ -900,7 +900,7 @@ function Field({
 
 function Preview({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-3">
+    <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-3">
       <p className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
         {label}
       </p>

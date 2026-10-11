@@ -67,7 +67,7 @@ export function ManualTransactionForm() {
 
   return (
     <form
-      className="w-full max-w-2xl rounded-2xl border border-white/8 bg-[var(--panel)] p-4"
+      className="w-full max-w-2xl rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-4"
       onSubmit={(event) => {
         event.preventDefault();
         void submit(event.currentTarget);
@@ -79,7 +79,7 @@ export function ManualTransactionForm() {
           <select
             name="kind"
             defaultValue="income"
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
           >
             <option value="income">Income / salary</option>
             <option value="gift">Gift</option>
@@ -98,7 +98,7 @@ export function ManualTransactionForm() {
             type="number"
             step="0.01"
             required
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
           />
         </label>
         <label>
@@ -107,7 +107,7 @@ export function ManualTransactionForm() {
             name="currency"
             defaultValue="CZK"
             required
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm uppercase"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
           />
         </label>
         <label>
@@ -117,7 +117,7 @@ export function ManualTransactionForm() {
             type="datetime-local"
             defaultValue={defaultOccurredAt}
             required
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
           />
         </label>
       </div>
@@ -127,7 +127,7 @@ export function ManualTransactionForm() {
           <input
             name="category"
             placeholder="Salary, Gift, Food, Rent…"
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
           />
         </label>
         <label className="block">
@@ -135,7 +135,7 @@ export function ManualTransactionForm() {
           <input
             name="sourceLabel"
             placeholder="AMBERG, rodina, banka…"
-            className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+            className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
           />
         </label>
       </div>
@@ -144,7 +144,7 @@ export function ManualTransactionForm() {
         <input
           name="note"
           placeholder="Volitelná poznámka"
-          className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+          className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
         />
       </label>
 

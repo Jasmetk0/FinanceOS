@@ -44,7 +44,7 @@ export default function ConnectionsPage() {
             subtitle="BalanceEx, Earn, wallet transfers, cost basis a API-key coverage"
           >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Balance source</p>
                 <p className="mt-2 text-sm font-semibold">
                   {krakenStatus.balanceSource || "čeká na nový sync"}
@@ -61,7 +61,7 @@ export default function ConnectionsPage() {
                   Kč
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Earn</p>
                 <p className="mt-2 font-mono text-sm font-semibold">
                   {krakenStatus.earn.available
@@ -79,7 +79,7 @@ export default function ConnectionsPage() {
                   Kč
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Wallet transfers</p>
                 <p className="mt-2 font-mono text-sm font-semibold">
                   {krakenStatus.funding.ownedTransfers.toLocaleString("cs-CZ")}{" "}
@@ -97,7 +97,7 @@ export default function ConnectionsPage() {
                   funding záznamů
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Cost basis</p>
                 <p className="mt-2 text-sm font-semibold">
                   {krakenStatus.costBasis.status || "čeká na rekonstrukci"}
@@ -109,7 +109,7 @@ export default function ConnectionsPage() {
                   symbolů nekompletních
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">API historie</p>
                 <p className="mt-2 text-sm font-semibold">
                   {krakenStatus.key.hasHistoryRestriction
@@ -121,7 +121,7 @@ export default function ConnectionsPage() {
                   {krakenStatus.key.exportDataEnabled ? "povoleno" : "nepovoleno"}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">History audit</p>
                 <p className="mt-2 text-sm font-semibold">
                   {krakenStatus.historyAudit.mode === "full"
@@ -141,7 +141,7 @@ export default function ConnectionsPage() {
                   )}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Margin</p>
                 <p className="mt-2 text-sm font-semibold">
                   {krakenStatus.margin.queryEnabled
@@ -217,13 +217,13 @@ export default function ConnectionsPage() {
             subtitle="Kontrola toho, co FinanceOS skutečně načetl z veřejné Solana adresy"
           >
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Status</p>
                 <p className="mt-2 text-sm font-semibold">
                   {phantomStatus.status}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Známá hodnota</p>
                 <p className="mt-2 font-mono text-sm font-semibold">
                   {phantomStatus.valueCzk === null
@@ -233,7 +233,7 @@ export default function ConnectionsPage() {
                       }) + " Kč"}
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Valuation</p>
                 <p className="mt-2 text-sm font-semibold">
                   {phantomStatus.valuationStatus || "čeká na první sync"}
@@ -243,7 +243,7 @@ export default function ConnectionsPage() {
                   tokenů bez ceny
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Kraken ↔ Phantom</p>
                 <p className="mt-2 font-mono text-sm font-semibold">
                   {phantomStatus.matchedKrakenTransfers.toLocaleString("cs-CZ")}
@@ -255,7 +255,7 @@ export default function ConnectionsPage() {
                   s carried book value
                 </p>
               </div>
-              <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+              <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
                 <p className="text-xs text-[var(--muted)]">Chain scan</p>
                 <p className="mt-2 text-sm font-semibold">
                   {phantomStatus.chainHistoryMatch.historyCompleteToOldestTransfer
@@ -286,13 +286,13 @@ export default function ConnectionsPage() {
           subtitle="Automatická klasifikace z provider historie + bohatšího Trading 212 exportu"
         >
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Card detected</p>
               <p className="mt-2 text-sm font-semibold">
                 {trading212Card.detected ? "Ano" : "Zatím ne"}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Spending Pot</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.spendingPotCzk === null
@@ -302,7 +302,7 @@ export default function ConnectionsPage() {
                     }) + " Kč"}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Card rows</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.spendCount.toLocaleString("cs-CZ")}
@@ -317,7 +317,7 @@ export default function ConnectionsPage() {
                       : "Bez card evidence"}
               </p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Unresolved cash-ins</p>
               <p className="mt-2 font-mono text-sm font-semibold">
                 {trading212Card.unresolvedCashInCount.toLocaleString("cs-CZ")}
@@ -329,7 +329,7 @@ export default function ConnectionsPage() {
                 Kč čeká na přesnou klasifikaci
               </p>
             </div>
-            <div className="rounded-2xl border border-white/7 bg-white/[0.02] p-4">
+            <div className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4">
               <p className="text-xs text-[var(--muted)]">Card export sync</p>
               <p className="mt-2 text-sm font-semibold">
                 {trading212Card.pending

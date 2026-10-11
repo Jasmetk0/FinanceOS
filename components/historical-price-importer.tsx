@@ -316,7 +316,7 @@ export function HistoricalPriceImporter({
             <select
               value={assetId}
               onChange={(event) => setAssetId(event.target.value)}
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
               {assets.map((asset) => (
                 <option key={asset.id} value={asset.id}>
@@ -333,7 +333,7 @@ export function HistoricalPriceImporter({
               key={selectedAsset?.id || "currency"}
               defaultValue={selectedAsset?.currency || "USD"}
               required
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm uppercase"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
             />
           </label>
 
@@ -342,7 +342,7 @@ export function HistoricalPriceImporter({
             <input
               name="source"
               defaultValue="Historical CSV"
-              className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+              className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             />
           </label>
         </div>
@@ -373,7 +373,7 @@ export function HistoricalPriceImporter({
                 <select
                   value={dateColumn}
                   onChange={(event) => setDateColumn(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
                 >
                   <option value="">— not mapped —</option>
                   {csv.headers.map((header) => (
@@ -389,7 +389,7 @@ export function HistoricalPriceImporter({
                 <select
                   value={closeColumn}
                   onChange={(event) => setCloseColumn(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
                 >
                   <option value="">— not mapped —</option>
                   {csv.headers.map((header) => (
@@ -405,7 +405,7 @@ export function HistoricalPriceImporter({
                 <select
                   value={currencyColumn}
                   onChange={(event) => setCurrencyColumn(event.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-white/9 bg-[#0b1511] px-3 py-2.5 text-sm"
+                  className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
                 >
                   <option value="">Use default currency</option>
                   {csv.headers.map((header) => (
@@ -417,9 +417,9 @@ export function HistoricalPriceImporter({
               </label>
             </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-white/7">
+            <div className="overflow-x-auto rounded-2xl border border-[var(--border)]">
               <table className="min-w-full border-collapse text-left text-xs">
-                <thead className="bg-white/[0.025] text-[var(--muted)]">
+                <thead className="bg-white/[.025] text-[var(--muted)]">
                   <tr>
                     {csv.headers.map((header) => (
                       <th
@@ -456,7 +456,7 @@ export function HistoricalPriceImporter({
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-white/8 bg-white/[0.02] p-3 text-xs leading-5">
+          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
             {message}
           </p>
         ) : null}
