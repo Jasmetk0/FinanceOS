@@ -82,3 +82,26 @@ test("long account details offer anchored navigation to every available section"
   assert.ok(page.includes('id="account-daily"'));
   assert.ok(page.includes("Rychlý přechod v detailu účtu"));
 });
+
+test("data health filters keep backend warnings intact and expose live counts", () => {
+  const page = source("app/insights/page.tsx");
+  const explorer = source("components/data-health-explorer.tsx");
+  assert.ok(page.includes("<DataHealthExplorer warnings={data.warnings} />"));
+  assert.ok(explorer.includes("severity === \"all\" ? warnings : warnings.filter("));
+  assert.ok(explorer.includes('aria-pressed={severity === item}'));
+  assert.ok(explorer.includes('aria-expanded={expanded}'));
+  assert.ok(explorer.includes('aria-live="polite"'));
+  assert.ok(explorer.includes("warnings.length"));
+  assert.ok(!explorer.includes("fetch("));
+});
+
+test("settings have consistent Czech navigation and exports keep actual API routes", () => {
+  const settings = source("app/settings/page.tsx");
+  for (const api of ['/api/export"', '/api/export/transactions"', '/api/export/ai-context"']) {
+    assert.ok(settings.includes(api));
+  }
+  for (const copy of ["Základní měna", "Automatizace", "Obnova ze zálohy", "Úložiště a zabezpečení"]) {
+    assert.ok(settings.includes(copy), "Missing Czech UI label " + copy);
+  }
+  assert.ok(settings.includes("<RestoreBackup />"));
+});
