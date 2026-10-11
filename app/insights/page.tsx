@@ -1,6 +1,7 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getInsightsData } from "@/lib/server/analytics";
 import { providerColor, providerLabel } from "@/lib/provider-visuals";
+import { DataHealthExplorer } from "@/components/data-health-explorer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,7 +37,7 @@ export default function InsightsPage() {
           hint="Podíl tří největších pozic"
         />
         <StatCard
-          label="Savings rate · 3M"
+          label="Míra úspor · 3M"
           value={data.recentSavingsRate ?? 0}
           format="percent"
           hint={
@@ -53,54 +54,17 @@ export default function InsightsPage() {
             String(data.snapshotCount) +
             " snapshotů · " +
             String(data.connectionCount) +
-            " live connections"
+            " aktivních propojení"
           }
         />
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-2">
-        <SectionCard title="Data health" subtitle="Co stojí za kontrolu">
-          {data.warnings.length ? (
-            <div className="space-y-3">
-              {data.warnings.map((warning) => (
-                <article
-                  key={warning.id}
-                  className={[
-                    "rounded-2xl border p-4",
-                    warning.severity === "error"
-                      ? "border-[var(--danger)]/25 bg-[var(--danger)]/[0.04]"
-                      : warning.severity === "warning"
-                        ? "border-[var(--warning)]/25 bg-[var(--warning)]/[0.04]"
-                        : "border-[var(--border)] bg-white/[.025]",
-                  ].join(" ")}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={[
-                        "h-2 w-2 rounded-full",
-                        warning.severity === "error"
-                          ? "bg-[var(--danger)]"
-                          : warning.severity === "warning"
-                            ? "bg-[var(--warning)]"
-                            : "bg-[var(--accent)]",
-                      ].join(" ")}
-                    />
-                    <h2 className="text-sm font-semibold">{warning.title}</h2>
-                  </div>
-                  <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                    {warning.detail}
-                  </p>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--muted)]">
-              FinanceOS momentálně nevidí žádný z definovaných problémů s daty.
-            </p>
-          )}
+        <SectionCard title="Kvalita dat" subtitle="Filtruj synchronizační chyby, nedoložené informace a koncentraci portfolia">
+          <DataHealthExplorer warnings={data.warnings} />
         </SectionCard>
 
-        <SectionCard title="Provider concentration" subtitle="Podíl na celkovém majetku">
+        <SectionCard title="Koncentrace podle platforem" subtitle="Podíl na celkovém majetku">
           {data.providerRanking.length ? (
             <div className="space-y-4">
               {data.providerRanking.map((item) => (
@@ -140,7 +104,7 @@ export default function InsightsPage() {
       </section>
 
       <section className="mt-4 grid gap-4 xl:grid-cols-2">
-        <SectionCard title="Asset classes" subtitle="Aktuálně naceněné pozice">
+        <SectionCard title="Třídy aktiv" subtitle="Aktuálně naceněné pozice">
           {data.assetClassRanking.length ? (
             <div className="space-y-3">
               {data.assetClassRanking.map((item) => (
@@ -171,10 +135,10 @@ export default function InsightsPage() {
           )}
         </SectionCard>
 
-        <SectionCard title="Concentration snapshot">
+        <SectionCard title="Koncentrace portfolia">
           {data.largestHolding ? (
             <div>
-              <p className="text-sm text-[var(--muted)]">Largest holding</p>
+              <p className="text-sm text-[var(--muted)]">Největší pozice</p>
               <p className="mt-2 text-3xl font-semibold">
                 {data.largestHolding.symbol}
               </p>
@@ -189,7 +153,7 @@ export default function InsightsPage() {
                 %
               </p>
               <div className="mt-6 border-t border-[var(--border)] pt-5">
-                <p className="text-sm text-[var(--muted)]">Top 3 combined</p>
+                <p className="text-sm text-[var(--muted)]">Tři největší pozice</p>
                 <p className="mt-2 text-2xl font-semibold">
                   {data.topThreeSharePct.toLocaleString("cs-CZ", {
                     maximumFractionDigits: 1,
