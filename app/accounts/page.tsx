@@ -14,10 +14,10 @@ export default function AccountsPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
-      <Pill>{accounts.length} accounts</Pill>
+      <Pill>Počet účtů: {accounts.length}</Pill>
       <div className="mt-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Accounts
+          Účty
         </h1>
         <p className="mt-2 text-sm text-[var(--muted)] sm:text-base">
           Jednotný pohled na broker, crypto a ruční finance.
@@ -54,7 +54,7 @@ export default function AccountsPage() {
 
                   <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
                     <div className="rounded-xl bg-white/[0.025] p-3">
-                      <dt className="text-xs text-[var(--muted)]">Cash</dt>
+                      <dt className="text-xs text-[var(--muted)]">Hotovost</dt>
                       <dd className="mt-1 font-mono">
                         {account.cashValueCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 0,
@@ -63,7 +63,7 @@ export default function AccountsPage() {
                       </dd>
                     </div>
                     <div className="rounded-xl bg-white/[0.025] p-3">
-                      <dt className="text-xs text-[var(--muted)]">Investments</dt>
+                      <dt className="text-xs text-[var(--muted)]">Investice</dt>
                       <dd className="mt-1 font-mono">
                         {account.investedValueCzk.toLocaleString("cs-CZ", {
                           maximumFractionDigits: 0,
@@ -96,8 +96,8 @@ export default function AccountsPage() {
 
       <div className="mt-4">
         <SectionCard
-          title="Manual balances"
-          subtitle="Oddělené od cash-flow journalu, aby se výplata nebo dar nepočítaly do net worth dvakrát"
+          title="Ručně vedené zůstatky"
+          subtitle="Oddělené od peněžních toků, aby se příjem nezapočítal do majetku dvakrát"
         >
           <ManualBalancesManager initialBalances={manualBalances} />
         </SectionCard>

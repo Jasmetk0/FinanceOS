@@ -21,10 +21,10 @@ export default function PerformancePage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
-      <Pill>Money-weighted analytics</Pill>
+      <Pill>Výnosy očištěné o vklady</Pill>
       <div className="mt-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Performance
+          Výkonnost
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
           Výnos oddělený od vkladů a výběrů. XIRR používá skutečné časování

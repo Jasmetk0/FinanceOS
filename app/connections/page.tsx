@@ -22,10 +22,10 @@ export default function ConnectionsPage() {
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
-      <Pill>Encrypted local credentials</Pill>
+      <Pill>Šifrované lokální přístupy</Pill>
       <div className="mt-3">
         <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-          Connections
+          Propojení
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] sm:text-base">
           Připoj read-only API. Credentials se po validaci zašifrují AES-256-GCM
