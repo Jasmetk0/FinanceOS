@@ -150,6 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     function onKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setActiveSearchIndex(0);
         setSearchOpen((open) => !open);
         setMobileOpen(false);
       } else if (event.key === "Escape") {
@@ -162,10 +163,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (searchOpen) {
-      searchRef.current?.focus();
-      setActiveSearchIndex(0);
-    }
+    if (searchOpen) searchRef.current?.focus();
   }, [searchOpen]);
 
   useEffect(() => {
@@ -232,7 +230,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <button type="button" onClick={() => { setQuery(""); setSearchOpen(true); }} aria-label="Hledat stránku" aria-keyshortcuts="Control+K Meta+K" className="flex h-10 items-center gap-2 rounded-xl border border-[var(--border)] bg-white/[.025] px-3 text-xs font-medium text-[var(--muted)] transition hover:border-white/20 hover:text-white sm:min-w-[170px] sm:justify-between">
+            <button type="button" onClick={() => { setQuery(""); setActiveSearchIndex(0); setSearchOpen(true); }} aria-label="Hledat stránku" aria-keyshortcuts="Control+K Meta+K" className="flex h-10 items-center gap-2 rounded-xl border border-[var(--border)] bg-white/[.025] px-3 text-xs font-medium text-[var(--muted)] transition hover:border-white/20 hover:text-white sm:min-w-[170px] sm:justify-between">
               <span className="flex items-center gap-2"><svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m16 16 5 5" /></svg><span className="hidden sm:inline">Rychlý přechod</span></span>
               <kbd className="hidden rounded-md border border-white/10 bg-white/[.04] px-1.5 py-0.5 font-mono text-[10px] sm:inline">Ctrl K</kbd>
             </button>
