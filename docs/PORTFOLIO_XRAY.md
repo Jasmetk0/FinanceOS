@@ -39,3 +39,24 @@ Předchozí agregovaný soubor portfolio_lookthrough_*.csv **není** seznam podk
 3. Detailní mapy ekonomické expozice derivátů, ETF na kryptoměny a úrokových produktů odděleně od akcií.
 4. Historické snapshoty a srovnávání portfolia v různých obdobích.
 5. Napojení na simulační engine jako analytický pohled, nikoli falešná historická data.
+
+
+## Originální tabulky emitenta — praktický import
+
+Stránka Portfolio X-Ray nově obsahuje samostatný importér originálních CSV tabulek od emitentů.
+Nezaměňovat se standardním X-Ray CSV obsahujícím fund_symbol na každém řádku.
+
+Postup:
+1. Vybrat ETF z **aktuálně evidovaných pozic FinanceOS** (včetně jeho ISIN, je-li k dispozici).
+2. Ručně zadat **datum, ke kterému pochází skutečné složení emitenta**. Datum nemusí být dnešní.
+3. Zvolit jednotku vah — procenta (6.5 = 6.5 %) nebo číselný podíl (0.065 = 6.5 %).
+4. Nahrát originální CSV s hlavičkou obsahující Name, Weight (%) a Asset Class, a alespoň Ticker nebo ISIN.
+   Importér rozpozná i běžné varianty názvů sloupců, CSV oddělené středníkem, quoted názvy a krátkou faktografickou hlavičku před tabulkou.
+5. **Prohlédnout před uložením** počet podkladů a identifikovaný podíl stock/crypto/other. Potvrdit import.
+
+Chybějící nebo neznámý podkladový typ, řádek s chybným počtem sloupců, chybnou vahou, duplicitní podklad nebo celkovou vahou nad 100 % znemožní import celé dávky — soubor nelze částečně nahrát bez upozornění.
+
+Při potvrzení do IndexedDB se nahrazuje pouze složení vybraného ETF. Ostatní fondy zůstanou beze změny.
+Jestliže nová tabulka zná ISIN a starší tabulka stejného tickeru jej neznala, starší nejednoznačný ticker-only snapshot se odebere. Cizí fondy s jiným doloženým ISIN se neodstraňují.
+
+**Důležité limity:** Výběr data i fund identity vychází z uživatelského přiřazení; nejde o automaticky ověřený upstream feed. Někteří emitenti používají odlišné nativní formáty, XLSX nebo další nestandardní třídy aktiv — v takovém případě je nutné převést tabulku na standardní X-Ray CSV bez ztráty či zaokrouhlení podkladových záznamů. Kód úmyslně neodvozuje akcie z dříve agregovaného X-Ray reportu.
