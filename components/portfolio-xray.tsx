@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { calculateXRay, validateXRayConstituents, type XRayConstituent, type XRayHolding } from "@/lib/xray/engine";
 import { parseXRayCompositionCsv } from "@/lib/xray/import";
+import { XRayIssuerImport } from "@/components/xray-issuer-import";
 
 type Filter = "all" | "stock" | "crypto";
 const DB_NAME = "financeos-xray";
@@ -113,6 +114,37 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
     } finally { setBusy(false); }
   }
 
+  async function commitIssuerRows(incoming: XRayConstituent[]) {
+    if (busy || loading) throw new RangeError("Právě probíhá jiný import nebo načítání.");
+    if (!incoming.length) throw new RangeError("Prázdné složení ETF nelze importovat.");
+    const first = incoming[0];
+    if (incoming.some((r) => r.fundIsin !== first.fundIsin || r.fundSymbol !== first.fundSymbol)) {
+      throw new RangeError("Jeden originální soubor musí obsahovat právě jeden vybraný fond.");
+    }
+    setBusy(true);
+    try {
+      // Remove an older symbol-only snapshot when the new file proves the
+      // ISIN, but do not delete another fund with the same ticker and
+      // a different, explicit ISIN.
+      const replaced = constituents.filter((row) =>
+        first.fundIsin
+          ? row.fundIsin === first.fundIsin ||
+            (!row.fundIsin && row.fundSymbol === first.fundSymbol)
+          : !row.fundIsin && row.fundSymbol === first.fundSymbol
+      );
+      const previous = new Set(replaced);
+      const next = [...constituents.filter((r) => !previous.has(r)), ...incoming];
+      validateXRayConstituents(next);
+      await writeRows(next);
+      setConstituents(next);
+      setSelected(null);
+      setMessage("Originální rozklad fondu " + first.fundSymbol + " byl uložen: " +
+        incoming.length.toLocaleString("cs-CZ") + " podkladových řádků. Ostatní fondy zůstaly zachovány.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function clearImport() {
     if (!window.confirm("Smazat všechny importované podklady ETF z tohoto prohlížeče? Skutečné pozice FinanceOS se nezmění.")) return;
     setBusy(true);
@@ -164,6 +196,7 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
           {constituents.length ? <button type="button" disabled={busy} onClick={() => void clearImport()} className="font-semibold text-[var(--warning)] hover:underline">Smazat importované podklady</button> : null}
         </div>
         {message ? <p role="status" aria-live="polite" className="mt-3 rounded-xl border border-[var(--border)] bg-black/10 p-3 text-xs leading-5">{message}</p> : null}
+        <XRayIssuerImport holdings={holdings} disabled={busy || loading} onCommit={commitIssuerRows} />
         <details className="mt-3 text-xs text-[var(--muted)]">
           <summary className="w-fit font-semibold text-[var(--accent)]">Jak připravit CSV a proč je to důležité?</summary>
           <p className="mt-2 leading-5">
