@@ -41,6 +41,8 @@ export function classifyIssuerDate(
 export interface ReconciledIssuerRows {
   rows: XRayConstituent[];
   retainedIsins: string[];
+  /** The publisher returned a valid but OLDER holdings date than we already had. */
+  regressedIsins: string[];
 }
 
 /**
@@ -88,13 +90,30 @@ export function reconcileIssuerRows(
   }
   const output: XRayConstituent[] = [];
   const retainedIsins: string[] = [];
+  const regressedIsins: string[] = [];
   for (const [key, fund] of statuses) {
     if (fund.status === "ok") {
       const rows = next.get(key);
       if (!rows?.length) throw new RangeError("Zdroj ohlásil úspěch, ale nevrátil žádné podklady.");
       const seenDates = new Set(rows.map(r=>r.asOf));
       if (seenDates.size !== 1) throw new RangeError("Zdroj obsahuje více dat složení.");
-      output.push(...rows);
+      const incomingDate = rows[0].asOf;
+      if (validDay(incomingDate) === null) {
+        throw new RangeError("Emitent nevrátil platné datum složení fondu.");
+      }
+      const previous = backup.get(key);
+      const savedDates = new Set(previous?.map(r=>r.asOf)??[]);
+      // Do not let a lagging CDN, issuer rollback, or out-of-order HTTP
+      // response downgrade a fund already checked against newer data.
+      // Compare whole ISO calendar days, not the HTTP download timestamp.
+      if (previous?.length && savedDates.size === 1 &&
+          validDay(previous[0].asOf) !== null && incomingDate < previous[0].asOf) {
+        output.push(...previous);
+        retainedIsins.push(key);
+        regressedIsins.push(key);
+      } else {
+        output.push(...rows);
+      }
     } else {
       const rows = backup.get(key);
       if (rows?.length) {
@@ -104,5 +123,5 @@ export function reconcileIssuerRows(
     }
   }
   validateXRayConstituents(output);
-  return { rows: output, retainedIsins };
+  return { rows: output, retainedIsins, regressedIsins };
 }
