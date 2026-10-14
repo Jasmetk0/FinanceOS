@@ -39,6 +39,13 @@ await debug("SPDR official XLSX schema",async()=>{
   const rows=parseXlsxGrid(buf);
   console.log(JSON.stringify({xlsxBytes:buf.length,rowCount:rows.length,
     first15Rows:rows.slice(0,15).map((r,i)=>({row:i+1,columns:r.slice(0,12).map(x=>x.slice(0,80))}))},null,2));
+  const missingWeight=rows.slice(5).map((r,i)=>({row:i+6,isin:r[0],
+    name:r[2],weight:r[5],marketValue:r[10],sector:r[8]}))
+    .filter(r=>!r.weight||r.weight.trim()==="-");
+  console.log("SPDR missing/dash weight cells",JSON.stringify({
+    count:missingWeight.length,examples:missingWeight.slice(0,24),
+    last5Rows:rows.slice(-5),
+  },null,2));
 });
 await debug("Vanguard real GPX page shapes",async()=>{
   let pages=0;
