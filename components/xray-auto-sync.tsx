@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { validateXRayConstituents, type XRayConstituent } from "@/lib/xray/engine";
+import { XRayIssuerDiagnostics } from "@/components/xray-issuer-diagnostics";
 import {
   classifyIssuerDate, issuerKey, reconcileIssuerRows,
   type IssuerFundStatus,
@@ -233,6 +234,7 @@ export function XRayAutoSync({
           </p>)}
         </div>
       </details>:null}
+      <XRayIssuerDiagnostics />
       <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
         Podporované zdroje: Vanguard VWCE / VWRA / VWRP, State Street SPYI / IMIE / IMID a vybrané fondy iShares.
         Aktuálnost se posuzuje podle data skutečného složení, ne podle času, kdy jsme soubor stáhli.
