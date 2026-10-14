@@ -1,0 +1,51 @@
+name: Public ETF issuer live canary
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * *'
+  push:
+    branches:
+      - feat/xray-upstream-live-canary-20261014
+    paths:
+      - scripts/check-live-issuer-feeds.mjs
+      - .github/workflows/issuer-live-canary.yml
+      - lib/xray/auto-ishares.ts
+      - lib/xray/auto-spyi.ts
+      - lib/xray/auto-vanguard.ts
+      - lib/xray/issuer-diagnostics.ts
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issuer-live-canary-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-issuer-connectivity:
+    name: Verify public ETF holdings feeds
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      XRAY_CANARY_REPORT_PATH: issuer-canary-report.json
+      NODE_OPTIONS: --disable-warning=MODULE_TYPELESS_PACKAGE_JSON
+    steps:
+      - name: Checkout code without broker data
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Probe six real ETF issuer endpoints
+        run: node scripts/check-live-issuer-feeds.mjs --strict
+      - name: Upload public health-only diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issuer-public-health-${{ github.run_id }}
+          path: issuer-canary-report.json
+          if-no-files-found: warn
+          retention-days: 14
