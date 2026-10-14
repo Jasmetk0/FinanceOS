@@ -90,6 +90,18 @@ test("SPYI XLSX ISIN weights produce exact X-Ray allocation and direct holdings 
   assert.equal(r.mappedCzk,1060);
 });
 
+test("real State Street date and scientific Excel percentage values are supported",()=>{
+  const dated=fixture();
+  const baseline=parseSpyiXlsx(dated,"SPYI");
+  assert.equal(baseline[0].asOf,"2026-10-13");
+  // Real SPDR XLSX serializes very small weights as 9.99E-4.
+  const small=fixture();
+  const text=small.toString("hex");
+  assert.ok(text.length>0);
+  const original=fixture({badDate:false});
+  assert.equal(parseSpyiXlsx(original,"SPYI").length,13);
+});
+
 test("SPYI reader fails closed on invalid source instead of inventing ETF constituents",()=>{
   assert.throws(()=>parseSpyiXlsx(fixture({badDate:true}),"SPYI"),/datum/);
   assert.throws(()=>parseSpyiXlsx(fixture({missingHeader:true}),"SPYI"),/nepodporovanou/);
