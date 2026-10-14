@@ -230,7 +230,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
         </div>
         <div className="finance-surface p-4">
           <p className="text-[11px] font-medium text-[var(--muted)]">Potřebné portfolio v dnešních Kč</p>
-          <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">{money(goalRealCzk(inputs))}</p>
+          <p className="mt-2 text-xl font-semibold tabular-nums sm:text-2xl">{money(goalRealCzk(derived))}</p>
           <p className="mt-1 text-xs text-[var(--muted)]">Cílový příjem × 12 ÷ míra výběru</p>
         </div>
         <div className="finance-surface p-4">
@@ -243,7 +243,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
       {answer.error ? <p role="alert" className="rounded-xl border border-[var(--warning)]/25 bg-[var(--warning)]/[.06] p-3 text-sm text-[var(--warning)]">{answer.error}</p> : null}
       {message ? <p role="status" aria-live="polite" className="rounded-xl border border-[var(--border)] bg-white/[.03] p-3 text-xs text-[var(--muted)]">{message}</p> : null}
 
-      <section className="finance-surface p-4 sm:p-5">
+      <section className="finance-surface finance-chart p-4 sm:p-5">
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div><h2 className="text-base font-semibold">Vývoj portfolia</h2><p className="mt-1 text-xs text-[var(--muted)]">Měsíční výpočet · vklady na konci měsíce · efektivní roční sazby</p></div>
           <div role="group" aria-label="Kupní síla" className="flex rounded-xl border border-[var(--border)] p-1">
