@@ -108,10 +108,12 @@ export function XRayAutoSync({
       </div>
     </details>:null}
     <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-      Automatické zdroje: iShares UCITS (SXR8/CSPX, IWDA/EUNL, SSAC/IUSQ, EIMI/IS3N)
-      a State Street SPDR MSCI ACWI IMI (SPYI / IMIE / IMID). Nepodporované ETF včetně VWCE
-      zůstává nerozložené, dokud není ověřený feed nebo volitelný CSV import.
-      Údaje emitentů mají vlastní datum, které může být starší než aktuální tržní cena.
+      Automatické zdroje: Vanguard FTSE All-World (VWCE / VWRA / VWRP),
+      State Street SPDR MSCI ACWI IMI (SPYI / IMIE / IMID) a vybraná iShares UCITS ETF
+      (SXR8/CSPX, IWDA/EUNL, SSAC/IUSQ, EIMI/IS3N).
+      Vanguard používá veřejné evropské rozhraní GPX, jehož dostupnost se může změnit.
+      Nepodporované nebo nedostupné ETF zůstávají nerozložené či použijí ověřenou manuální zálohu.
+      Datum složení od emitenta se může lišit od data ocenění portfolia.
     </p>
   </section>;
 }
