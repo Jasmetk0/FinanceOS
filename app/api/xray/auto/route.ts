@@ -3,6 +3,7 @@ import { localOnly } from "@/lib/server/local-only";
 import { getXRayHoldings } from "@/lib/server/xray";
 import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
 import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
+import { VWCE_ISIN, fetchVwceHoldings } from "@/lib/xray/auto-vanguard";
 import type { XRayConstituent } from "@/lib/xray/engine";
 
 export const runtime = "nodejs";
@@ -27,7 +28,8 @@ export async function GET(request: Request) {
       const isin = h.isin?.trim().toUpperCase() || null;
       const feed = issuerFeedForIsin(isin);
       const supportsSpyi = isin === SPYI_ISIN;
-      if ((feed || supportsSpyi) && isin) {
+      const supportsVwce = isin === VWCE_ISIN;
+      if ((feed || supportsSpyi || supportsVwce) && isin) {
         if (!funds.has(isin)) funds.set(isin,{isin,symbol:h.symbol});
       } else {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
@@ -42,9 +44,11 @@ export async function GET(request: Request) {
     // issuer must not invalidate all other, successfully fetched funds.
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
-      if (!feed && f.isin!==SPYI_ISIN) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
+      if (!feed && f.isin!==SPYI_ISIN && f.isin!==VWCE_ISIN) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
       try {
-        const fetched = feed ? await fetchIsharesHoldings(feed,f.symbol,force) : await fetchSpyiHoldings(f.symbol,force);
+        const fetched = feed ? await fetchIsharesHoldings(feed,f.symbol,force) :
+          f.isin===SPYI_ISIN ? await fetchSpyiHoldings(f.symbol,force) :
+          await fetchVwceHoldings(f.symbol,force);
         return {isin:f.isin,symbol:f.symbol,status:"ok" as const,
           rows:fetched.rows,sourceUrl:fetched.sourceUrl,fetchedAt:fetched.fetchedAt,
           asOf:fetched.rows[0]?.asOf ?? "",cached:fetched.cached};
