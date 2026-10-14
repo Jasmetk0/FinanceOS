@@ -118,7 +118,7 @@ test("X-Ray reads actual local holdings and does not embed user exports or API c
   const server=read("lib/server/xray.ts");
   const client=read("components/portfolio-xray.tsx");
   const nav=read("components/app-shell.tsx");
-  assert.ok(page.includes("getXRayHoldings()"));
+  assert.ok(page.includes("getXRayLiveSnapshot()"));
   assert.ok(server.includes("a.canonical_key"));
   assert.ok(server.includes("a.isin"));
   assert.ok(client.includes("indexedDB.open"));

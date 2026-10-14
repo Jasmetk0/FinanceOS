@@ -24,9 +24,10 @@ interface AutoResponse {
 }
 
 export function XRayAutoSync({
-  onUpdate,
+  onUpdate, refreshSignal,
 }: {
   onUpdate: (rows:XRayConstituent[]) => void;
+  refreshSignal?: { revision:number; force:boolean };
 }) {
   const [status,setStatus]=useState<AutoResponse|null>(null);
   const [loading,setLoading]=useState(true);
@@ -60,9 +61,9 @@ export function XRayAutoSync({
 
   useEffect(()=>{
     const controller=new AbortController();
-    void Promise.resolve().then(() => refresh(false,controller.signal));
+    void Promise.resolve().then(() => refresh(Boolean(refreshSignal?.force),controller.signal));
     return ()=>controller.abort();
-  },[refresh]);
+  },[refresh,refreshSignal]);
 
   const failures=status?.funds.filter(item=>item.status==="error")??[];
   return <section className="finance-surface p-4 sm:p-5" aria-label="Automatický rozklad ETF">

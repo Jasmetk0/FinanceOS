@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { calculateXRay, validateXRayConstituents, type XRayConstituent, type XRayHolding } from "@/lib/xray/engine";
 import { parseXRayCompositionCsv } from "@/lib/xray/import";
 import { XRayIssuerImport } from "@/components/xray-issuer-import";
 import { XRayAutoSync } from "@/components/xray-auto-sync";
+import { XRayLivePositions } from "@/components/xray-live-positions";
+import type { XRayFreshness } from "@/lib/xray/freshness";
 import { combineConstituentSources } from "@/lib/xray/auto-merge";
 
 type Filter = "all" | "stock" | "crypto";
@@ -48,7 +50,17 @@ async function writeRows(rows: XRayConstituent[]): Promise<void> {
   } finally { db.close(); }
 }
 
-export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
+export function PortfolioXRay({
+  holdings, initialFreshness,
+}: {
+  holdings: XRayHolding[];
+  initialFreshness: XRayFreshness;
+}) {
+  const [liveHoldings,setLiveHoldings]=useState(holdings);
+  const [issuerRefresh,setIssuerRefresh]=useState({revision:0,force:false});
+  const refreshIssuer=useCallback((force:boolean)=>{
+    setIssuerRefresh((previous)=>({revision:previous.revision+1,force}));
+  },[]);
   const [constituents, setConstituents] = useState<XRayConstituent[]>([]);
   const [automaticRows, setAutomaticRows] = useState<XRayConstituent[]>([]);
   const effectiveRows = useMemo(() => {
@@ -76,9 +88,9 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
   }, []);
 
   const report = useMemo(() => {
-    try { return { data: calculateXRay(holdings, effectiveRows), error: "" }; }
+    try { return { data: calculateXRay(liveHoldings, effectiveRows), error: "" }; }
     catch (error) { return { data: null, error: error instanceof Error ? error.message : String(error) }; }
-  }, [holdings, effectiveRows]);
+  }, [liveHoldings, effectiveRows]);
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
@@ -177,7 +189,9 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
   const usedFiles = [...new Set(constituents.map((r) => r.source))];
   return (
     <div className="space-y-4">
-      <XRayAutoSync onUpdate={setAutomaticRows} />
+      <XRayLivePositions initial={initialFreshness} onUpdate={setLiveHoldings}
+        onIssuerRefresh={refreshIssuer} />
+      <XRayAutoSync onUpdate={setAutomaticRows} refreshSignal={issuerRefresh} />
       <section className="finance-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -204,7 +218,7 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
           {constituents.length ? <button type="button" disabled={busy} onClick={() => void clearImport()} className="font-semibold text-[var(--warning)] hover:underline">Smazat importované podklady</button> : null}
         </div>
         {message ? <p role="status" aria-live="polite" className="mt-3 rounded-xl border border-[var(--border)] bg-black/10 p-3 text-xs leading-5">{message}</p> : null}
-        <XRayIssuerImport holdings={holdings} disabled={busy || loading} onCommit={commitIssuerRows} />
+        <XRayIssuerImport holdings={liveHoldings} disabled={busy || loading} onCommit={commitIssuerRows} />
         <details className="mt-3 text-xs text-[var(--muted)]">
           <summary className="w-fit font-semibold text-[var(--accent)]">Jak připravit CSV a proč je to důležité?</summary>
           <p className="mt-2 leading-5">
