@@ -13,7 +13,7 @@ function parseDelimited(text: string, delimiter: string): string[][] {
       else field += c;
     } else if (afterQuote) {
       if (c === delimiter) {
-        row.push(field); row = row; field = ""; afterQuote = false;
+        row.push(field); field = ""; afterQuote = false;
       } else if (c === "\n" || c === "\r") {
         row.push(field); rows.push(row); row = []; field = ""; afterQuote = false;
         if (c === "\r" && text[i + 1] === "\n") i++;
