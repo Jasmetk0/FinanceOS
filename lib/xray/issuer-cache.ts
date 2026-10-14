@@ -48,7 +48,8 @@ export function validateIssuerCache(raw:unknown,now=Date.now()):SavedIssuerSnaps
       v.rows.length>MAX_CACHED_ROWS||v.funds.length>200) return null;
   const saved=Date.parse(v.savedAt);
   if(!Number.isFinite(saved)||saved>now+60_000||now-saved>MAX_CACHE_AGE_MS)return null;
-  validateXRayConstituents(v.rows);
+  try { validateXRayConstituents(v.rows); }
+  catch { return null; }
   if (v.funds.some(f=>!f||typeof f.isin!=="string"||typeof f.symbol!=="string"||
       !["ok","error","unsupported"].includes(f.status))) return null;
   return v as SavedIssuerSnapshots;
