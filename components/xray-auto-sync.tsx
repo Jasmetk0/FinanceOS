@@ -108,9 +108,10 @@ export function XRayAutoSync({
       </div>
     </details>:null}
     <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
-      Zatím je automaticky podporována ověřená podmnožina iShares UCITS fondů (SXR8/CSPX, IWDA/EUNL,
-      SSAC/IUSQ, EIMI/IS3N). Nepodporované ETF včetně VWCE zůstává nerozložené, dokud není k dispozici
-      ověřený zdroj nebo volitelný CSV import. Data emitenta mají vlastní datum a nemusí být z dnešního obchodního dne.
+      Automatické zdroje: iShares UCITS (SXR8/CSPX, IWDA/EUNL, SSAC/IUSQ, EIMI/IS3N)
+      a State Street SPDR MSCI ACWI IMI (SPYI / IMIE / IMID). Nepodporované ETF včetně VWCE
+      zůstává nerozložené, dokud není ověřený feed nebo volitelný CSV import.
+      Údaje emitentů mají vlastní datum, které může být starší než aktuální tržní cena.
     </p>
   </section>;
 }
