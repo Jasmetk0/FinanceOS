@@ -26,8 +26,8 @@ const stamp=(value?:string|null) => {
     ? d.toLocaleString("cs-CZ",{dateStyle:"medium",timeStyle:"short"})
     : "neznámý čas";
 };
-const staleLabel=(asOf?:string|null) => {
-  const health=classifyIssuerDate(asOf,Date.now());
+const staleLabel=(asOf:string|null|undefined,nowMs:number) => {
+  const health=classifyIssuerDate(asOf,nowMs);
   if(health.state==="fresh")return "Složení nedávné";
   if(health.state==="aging")return "Složení starší než 3 dny";
   if(health.state==="stale")return "Zastaralé složení";
@@ -46,6 +46,8 @@ export function XRayAutoSync({
   const [error,setError]=useState("");
   const [retainedIsins,setRetainedIsins]=useState<string[]>([]);
   const [showingSaved,setShowingSaved]=useState(false);
+  const [visibleRows,setVisibleRows]=useState<XRayConstituent[]>([]);
+  const [observedAt,setObservedAt]=useState(0);
   const rowsRef=useRef<XRayConstituent[]>([]);
   const loaded=useRef(false);
   const cacheSavedAt=useRef<string|null>(null);
@@ -63,6 +65,8 @@ export function XRayAutoSync({
           if(saved) {
             cacheSavedAt.current=saved.savedAt;
             rowsRef.current=saved.rows;
+            setVisibleRows(saved.rows);
+            setObservedAt(Date.now());
             onUpdate(saved.rows);
             setRetainedIsins([...new Set(saved.rows.map(row=>issuerKey(row.fundIsin)).filter(Boolean))]);
             setStatus({
@@ -96,6 +100,8 @@ export function XRayAutoSync({
       const result=reconcileIssuerRows(rowsRef.current,value.rows,value.funds);
       if(signal?.aborted)return;
       rowsRef.current=result.rows;
+      setVisibleRows(result.rows);
+      setObservedAt(Date.now());
       onUpdate(result.rows);
       setRetainedIsins(result.retainedIsins);
       setShowingSaved(false);
@@ -133,8 +139,8 @@ export function XRayAutoSync({
   const failures=status?.funds.filter(item=>item.status==="error")??[];
   const issues=status?.funds.filter(f=>{
     const key=issuerKey(f.isin);
-    const fallback=rowsRef.current.find(r=>issuerKey(r.fundIsin)===key);
-    const age=classifyIssuerDate(f.status==="ok"?f.asOf:fallback?.asOf,Date.now());
+    const fallback=visibleRows.find(r=>issuerKey(r.fundIsin)===key);
+    const age=classifyIssuerDate(f.status==="ok"?f.asOf:fallback?.asOf,observedAt);
     return f.status!=="ok"||age.state!=="fresh";
   })??[];
   const savedSet=new Set(retainedIsins);
@@ -184,23 +190,23 @@ export function XRayAutoSync({
         </summary>
         <div className="mt-2 space-y-2">
           {status.funds.map(f=>{
-            const saved=rowsRef.current.find(r=>issuerKey(r.fundIsin)===issuerKey(f.isin));
+            const saved=visibleRows.find(r=>issuerKey(r.fundIsin)===issuerKey(f.isin));
             const fallback=savedSet.has(issuerKey(f.isin))||showingSaved;
             const asOf=fallback?saved?.asOf:f.asOf;
-            const freshness=classifyIssuerDate(asOf,Date.now());
+            const freshness=classifyIssuerDate(asOf,observedAt);
             return <div key={f.isin} className="rounded-xl border border-[var(--border)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <strong>{f.symbol} · {f.isin}</strong>
                 <span className={fallback||f.status!=="ok"||freshness.state==="stale"||
                   freshness.state==="future"?"text-[var(--warning)]":"text-[var(--accent)]"}>
                   {fallback?"Záložní data · ":f.status==="ok"?"Zdroj funkční · ":"Chyba zdroje · "}
-                  {staleLabel(asOf)}
+                  {staleLabel(asOf,observedAt)}
                 </span>
               </div>
               <p className="mt-1">Složení k: <strong>{asOf??"neuvedeno"}</strong>
                 {" · "}Poslední stažení: {stamp(f.fetchedAt)}
                 {" · "}Počet podkladů: {fallback?
-                  rowsRef.current.filter(r=>issuerKey(r.fundIsin)===issuerKey(f.isin)).length:
+                  visibleRows.filter(r=>issuerKey(r.fundIsin)===issuerKey(f.isin)).length:
                   f.holdings??"neuvedeno"}
               </p>
               {f.error?<p className="mt-1 text-[var(--warning)]">{f.error}</p>:null}
