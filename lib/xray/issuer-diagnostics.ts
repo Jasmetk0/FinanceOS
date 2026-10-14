@@ -67,8 +67,12 @@ export async function probeIssuer(
     }
     const dates=[...new Set(rows.map(r=>r.asOf))];
     if(dates.length!==1 || !dates[0])throw new RangeError("Zdroj nemá jednoznačné datum složení.");
-    const date=classifyIssuerDate(dates[0],now());
-    if(date.state==="unknown" || date.state==="future" || (date.ageDays??0)<0)
+    const currentTime=now();
+    const date=classifyIssuerDate(dates[0],currentTime);
+    const issuerDay=Date.parse(dates[0]+"T00:00:00.000Z");
+    const utcDay=Math.floor(currentTime/86_400_000)*86_400_000;
+    if(date.state==="unknown" || date.state==="future" ||
+      !Number.isFinite(issuerDay) || issuerDay>utcDay)
       throw new RangeError("Neplatné nebo budoucí datum podkladů.");
     if(response.sourceUrl!==target.sourceUrl)throw new RangeError("Zdroj dat není whitelistovaný emitent.");
     const stock=rows.filter(r=>r.kind==="stock").reduce((total,r)=>total+r.weightPct,0);
