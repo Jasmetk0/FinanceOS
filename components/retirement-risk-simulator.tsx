@@ -147,7 +147,7 @@ export function RetirementRiskSimulator() {
       {error?<p role="alert" className="mt-3 rounded-xl border border-[var(--warning)]/25 bg-[var(--warning)]/[.07] p-3 text-xs text-[var(--warning)]">{error}</p>:null}
     </section>
 
-    {result&&usedInputs?< >
+    {result&&usedInputs?<>
       {changed&&!realTimeResult?<p role="status" className="rounded-xl border border-[var(--warning)]/25 bg-[var(--warning)]/[.07] p-3 text-xs text-[var(--warning)]">
         Vstupy se změnily. Výsledky níže pocházejí z předchozího běhu. Klikni znovu na Spustit Monte Carlo.
       </p>:null}
