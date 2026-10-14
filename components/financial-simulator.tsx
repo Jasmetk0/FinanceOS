@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { LifeTimelineEditor } from "@/components/life-timeline-editor";
+import { validateTimelineRules, type TimelineRule } from "@/lib/simulator/timeline";
 import {
   SIMULATOR_DEFAULTS, durationLabel, goalRealCzk, simulate, solve,
   type SimulatorEvent, type SimulatorInputs, type SolveKey,
@@ -92,25 +94,27 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
   const [inputs, setInputs] = useState<SimulatorInputs>({ ...SIMULATOR_DEFAULTS });
   const [unknown, setUnknown] = useState<SolveKey>("years");
   const [events, setEvents] = useState<SimulatorEvent[]>([]);
+  const [rules, setRules] = useState<TimelineRule[]>([]);
+  const [startAge, setStartAge] = useState(22);
   const [eventYear, setEventYear] = useState("5");
   const [eventAmount, setEventAmount] = useState("100000");
   const [real, setReal] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(0);
   const [message, setMessage] = useState("");
 
-  const answer = useMemo(() => solve(inputs, unknown, events), [inputs, unknown, events]);
+  const answer = useMemo(() => solve(inputs, unknown, events, rules), [inputs, unknown, events, rules]);
   const derived = useMemo<SimulatorInputs>(() => answer.value === null ? inputs : { ...inputs, [unknown]: answer.value }, [inputs, unknown, answer.value]);
   const projectedMonths = unknown === "years" && answer.value !== null
     ? Math.min(1200, Math.round(answer.value * 12) + 12)
     : Math.max(0, Math.min(1200, Math.round(inputs.years * 12)));
   const forecast = useMemo(() => {
-    try { return simulate(derived, projectedMonths, events); }
+    try { return simulate(derived, projectedMonths, events, rules); }
     catch { return null; }
-  }, [derived, projectedMonths, events]);
+  }, [derived, projectedMonths, events, rules]);
   const yearComparisons = useMemo(() => [0, 5000, 10000, 20000].map((monthly) => ({
     monthly,
-    result: solve({ ...derived, monthlyContributionCzk: monthly }, "years", events),
-  })), [derived, events]);
+    result: solve({ ...derived, monthlyContributionCzk: monthly }, "years", events, rules),
+  })), [derived, events, rules]);
 
   function chooseUnknown(key: SolveKey) {
     if (key === unknown) return;
@@ -138,7 +142,9 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
 
   function saveScenario() {
     try {
-      window.localStorage.setItem("financeos-financial-simulator-v1", JSON.stringify({ inputs, unknown, events }));
+      validateTimelineRules(rules);
+      simulate(inputs, 0, events, rules);
+      window.localStorage.setItem("financeos-financial-simulator-v2", JSON.stringify({ version: 2, inputs, unknown, events, rules, startAge }));
       setMessage("Scénář byl uložen pouze do tohoto prohlížeče.");
     } catch {
       setMessage("Prohlížeč nedovolil uložit scénář.");
@@ -147,17 +153,34 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
 
   function loadScenario() {
     try {
-      const raw = window.localStorage.getItem("financeos-financial-simulator-v1");
+      const raw = window.localStorage.getItem("financeos-financial-simulator-v2") ??
+        window.localStorage.getItem("financeos-financial-simulator-v1");
       if (!raw) { setMessage("Zatím nemáš uložený scénář."); return; }
       const value: unknown = JSON.parse(raw);
       if (!value || typeof value !== "object") throw new Error("Neplatný soubor");
-      const entry = value as { inputs?: Partial<SimulatorInputs>; unknown?: SolveKey; events?: SimulatorEvent[] };
+      const entry = value as {
+        version?: number;
+        inputs?: Partial<SimulatorInputs>;
+        unknown?: SolveKey;
+        events?: SimulatorEvent[];
+        rules?: TimelineRule[];
+        startAge?: number;
+      };
       const restored = { ...SIMULATOR_DEFAULTS, ...entry.inputs };
-      simulate(restored, 0, Array.isArray(entry.events) ? entry.events : []);
+      if (entry.version !== undefined && entry.version !== 2) throw new Error("Nepodporovaná verze");
+      const restoredEvents = entry.events === undefined ? [] : entry.events;
+      const restoredRules = entry.rules === undefined ? [] : entry.rules;
+      const restoredAge = entry.startAge ?? 22;
+      if (!Array.isArray(restoredEvents) || restoredEvents.length > 40 ||
+          !Array.isArray(restoredRules) || !Number.isInteger(restoredAge) ||
+          restoredAge < 0 || restoredAge > 100) throw new Error("Neplatné události nebo věk");
+      simulate(restored, 0, restoredEvents, restoredRules);
       if (!solveKeys.includes(entry.unknown as SolveKey)) throw new Error("Neplatný dopočet");
       setInputs(restored);
       setUnknown(entry.unknown as SolveKey);
-      setEvents(Array.isArray(entry.events) ? entry.events.slice(0, 40) : []);
+      setEvents(restoredEvents);
+      setRules(restoredRules);
+      setStartAge(restoredAge);
       setMessage("Uložený scénář načten.");
     } catch {
       setMessage("Uložený scénář je neplatný a nebyl načten.");
@@ -252,8 +275,21 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
           </div>
         </div>
         {forecast ? <ProjectionChart points={forecast.points} target={forecast.goalRealCzk} real={real} selectedMonth={selectedMonth} onSelect={setSelectedMonth} /> : <p className="text-sm text-[var(--warning)]">Graf se zobrazí po zadání platných hodnot.</p>}
+        {forecast ? (() => {
+          const point = forecast.points[Math.min(selectedMonth, forecast.points.length - 1)];
+          return <div className="mt-3 grid gap-2 border-t border-[var(--border)] pt-3 text-xs sm:grid-cols-3">
+            <p className="text-[var(--muted)]">Vklad v měsíci: <strong className="text-[var(--accent)]">{money(point.monthlyDepositCzk)}</strong></p>
+            <p className="text-[var(--muted)]">Výběr v měsíci: <strong className="text-[var(--foreground)]">{money(point.monthlyWithdrawalCzk)}</strong></p>
+            <p className="text-[var(--muted)]">Celkem vloženo: <strong className="text-[var(--foreground)]">{money(point.paidInCzk)}</strong></p>
+          </div>;
+        })() : null}
         {forecast && forecast.last.shortfallCzk > 0 ? <p className="mt-3 text-xs text-[var(--warning)]">Pozor: události požadovaly více výběrů, než kolik bylo k dispozici ({money(forecast.last.shortfallCzk)} neuspokojeno). Simulátor nezakládá automaticky dluh.</p> : null}
       </section>
+
+      <LifeTimelineEditor startAge={startAge} onStartAgeChange={setStartAge} rules={rules} onRulesChange={(next) => {
+        setRules(next);
+        setMessage("");
+      }} />
 
       <section className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,.9fr)]">
         <div className="finance-surface p-4 sm:p-5">
@@ -279,7 +315,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
         </div>
         <div className="finance-surface p-4 sm:p-5">
           <h2 className="text-base font-semibold">Porovnání měsíčních vkladů</h2>
-          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Stejné předpoklady a události, mění se pouze výše vkladu.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Stejné předpoklady a životní fáze; mění se pouze základní vklad mimo období s jeho přepisem.</p>
           <div className="mt-4 space-y-2">
             {yearComparisons.map(({ monthly, result }) => (
               <div key={monthly} className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border)] bg-white/[.025] px-3 py-3">
@@ -291,7 +327,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
         </div>
       </section>
       <p className="rounded-xl border border-[var(--border)] bg-white/[.02] p-4 text-xs leading-5 text-[var(--muted)]">
-        <strong className="text-[var(--foreground)]">Předpoklady a omezení:</strong> Model počítá s konstantním nominálním zhodnocením, bez daní, poplatků a volatility. Pravidelné vklady lze indexovat o vlastní roční procento. Cílový příjem 3 % z portfolia není zaručený doživotní příjem ani pravidlo bezpečného čerpání. Jednorázové výběry neumožňují záporné portfolio. Scénář se ukládá pouze v tomto prohlížeči a nijak nemění transakce FinanceOS.
+        <strong className="text-[var(--foreground)]">Předpoklady a omezení:</strong> Model počítá s konstantním nominálním zhodnocením, bez daní, poplatků a volatility. Pravidelné vklady lze indexovat o vlastní roční procento. Životní fáze přepisují základní vklad jen ve zvolených měsících, dodatečné vklady a výběry se sčítají. Cílový příjem 3 % z portfolia není zaručený doživotní příjem ani pravidlo bezpečného čerpání. Jednorázové výběry neumožňují záporné portfolio. Scénář se ukládá pouze v tomto prohlížeči a nijak nemění transakce FinanceOS.
       </p>
     </div>
   );
