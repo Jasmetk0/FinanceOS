@@ -72,7 +72,7 @@ export function XRayLivePositions({
       onIssuerRefresh(mode==="manual");
       const failures=payload.results?.filter(r=>!r.ok)??[];
       if(failures.length) {
-        setMessage("Částečná synchronizace: "+failures.map(r=>labels[r.provider]??r.provider+": "+(r.error??"chyba")).join("; ")+
+        setMessage("Částečná synchronizace: "+failures.map(r=>(labels[r.provider]??r.provider)+": "+(r.error??"chyba")).join("; ")+
           ". Nepovedené účty mohou stále ukazovat staré hodnoty.");
       } else if(!payload.attempted) {
         setMessage(payload.reason==="rate_limited"?"Synchronizace byla provedena nedávno; dodržujeme limit požadavků.":
@@ -92,6 +92,7 @@ export function XRayLivePositions({
   const check=useCallback(async()=>{
     if(active.current)return;
     active.current=true;
+    let runAuto=false;
     try {
       const response=await fetch("/api/xray/live",{cache:"no-store",credentials:"same-origin"});
       if(!response.ok)throw new Error("HTTP "+response.status);
@@ -103,17 +104,12 @@ export function XRayLivePositions({
         const raw=localStorage.getItem(AUTO_ATTEMPT_KEY);
         if(raw) previous=Number(raw);
       } catch {/* storage may be disabled */}
-      if(shouldStartAutoSync(snapshot.freshness,previous,now)){
-        // Release the GET lock before dispatching the (potentially slower)
-        // provider sync. Provider calls are rate-limited server-side as well.
-        active.current=false;
-        await refresh("auto");
-        return;
-      }
+      runAuto=shouldStartAutoSync(snapshot.freshness,previous,now);
     } catch(e) {
       setMessage("Nelze ověřit aktuálnost pozic: "+(e instanceof Error?e.message:String(e))+
         ". Zobrazují se naposledy uložené hodnoty.");
     } finally {active.current=false;}
+    if(runAuto)await refresh("auto");
   },[refresh,update]);
 
   useEffect(()=>{
