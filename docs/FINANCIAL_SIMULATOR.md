@@ -58,3 +58,17 @@ Nové uložení používá `financeos-financial-simulator-v2` s verzí 2 a se se
 ### Další vývoj
 
 Plán: více uložených pojmenovaných scénářů, vizuální srovnávací graf pro dvě a více variant, editace jednotlivých pravidel, příjmový/výdajový rozpočet mimo investiční portfolio, samostatné modely čerpání důchodu a rizika.
+
+## Knihovna scénářů (verze 3)
+
+Nová knihovna na stránce /simulator dovoluje ukládat až 30 nezávislých pojmenovaných variant. Každá ukládá všechny parametry kalkulačky, právě dopočítávanou proměnnou, jednorázové události, pravidelné životní fáze a počáteční věk.
+
+- Uživatel variantu uloží výslovně. Snímky se nepřepisují při změnách editoru ani při importu reálné hodnoty účtu.
+- Načtení kopíruje stav vybrané varianty do otevřeného editoru, nikoliv opačně; uložená varianta se nezmění.
+- Uložení používá klíč financeos-simulator-scenarios-v3 v lokálním prohlížeči. Původní klíče v1 a v2 se stále čtou jako jedna migrační varianta. Žádná stará hodnota se při čtení nemaže.
+- Všechny scénáře a knihovna se validují (neznámé klíče, období, duplicitní event ID, sazby, kapacita).
+- Srovnání dovoluje až 4 vybrané varianty a vykresluje souběžné reálné projekce na společné ose a s jednotným horizontem. Pro každou variantu používá stejný matematický engine i solver jako hlavní simulátor.
+- Varianta, jejíž cíl nebyl v horizontu srovnání dosažen, se takto označí; neslibuje dosažení cíle na konci horizontu.
+- Knihovna nijak nezasahuje do skutečného finančního ledgeru.
+
+**Omezení:** localStorage je vázané na jeden prohlížeč. Synchronizace s jinými zařízeními a export/import knihovny vyžadují samostatnou funkční etapu; porovnání je deterministické a neobsahuje Monte Carlo.

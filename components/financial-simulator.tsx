@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { LifeTimelineEditor } from "@/components/life-timeline-editor";
+import { SimulatorScenarioLibrary } from "@/components/simulator-scenario-library";
+import type { FinancialScenario } from "@/lib/simulator/scenarios";
 import { validateTimelineRules, type TimelineRule } from "@/lib/simulator/timeline";
 import {
   SIMULATOR_DEFAULTS, durationLabel, goalRealCzk, simulate, solve,
@@ -285,6 +287,17 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
         })() : null}
         {forecast && forecast.last.shortfallCzk > 0 ? <p className="mt-3 text-xs text-[var(--warning)]">Pozor: události požadovaly více výběrů, než kolik bylo k dispozici ({money(forecast.last.shortfallCzk)} neuspokojeno). Simulátor nezakládá automaticky dluh.</p> : null}
       </section>
+
+      <SimulatorScenarioLibrary scenario={{ inputs, unknown, events, rules, startAge }}
+        onRestore={(loaded: FinancialScenario) => {
+          setInputs(loaded.inputs);
+          setUnknown(loaded.unknown);
+          setEvents(loaded.events);
+          setRules(loaded.rules);
+          setStartAge(loaded.startAge);
+          setSelectedMonth(0);
+          setMessage("Pojmenovaná varianta načtena. Uložená kopie zůstává beze změny.");
+        }} />
 
       <LifeTimelineEditor startAge={startAge} onStartAgeChange={setStartAge} rules={rules} onRulesChange={(next) => {
         setRules(next);
