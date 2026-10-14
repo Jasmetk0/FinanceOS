@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type IconName =
   | "overview" | "holdings" | "performance" | "history" | "insights"
-  | "plan" | "simulator" | "analyst" | "reports" | "journal" | "transactions"
+  | "plan" | "simulator" | "xray" | "analyst" | "reports" | "journal" | "transactions"
   | "cash" | "accounts" | "connections" | "settings";
 
 type NavigationItem = { href: string; label: string; icon: IconName; keywords?: string };
@@ -29,6 +29,7 @@ const navigationGroups: Array<{ title: string; items: NavigationItem[] }> = [
       { href: "/insights", label: "Analýzy", icon: "insights" },
       { href: "/plan", label: "Plán", icon: "plan", keywords: "cíle" },
       { href: "/simulator", label: "Simulátor", icon: "simulator", keywords: "investice složené úročení inflace fire důchod kalkulačka" },
+      { href: "/xray", label: "Portfolio X-Ray", icon: "xray", keywords: "ETF podkladové akcie expozice krypto koncentrace váhy" },
       { href: "/analyst", label: "AI analytik", icon: "analyst" },
       { href: "/reports", label: "Reporty", icon: "reports" },
     ],
@@ -59,6 +60,7 @@ const icons: Record<IconName, ReactNode> = {
   insights: <><path d="M12 2 9.8 9.8 2 12l7.8 2.2L12 22l2.2-7.8L22 12l-7.8-2.2z" /></>,
   plan: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
   simulator: <><path d="M3 20V4m0 16h18M6 16l5-6 4 3 5-8"/><circle cx="20" cy="5" r="1"/></>,
+  xray: <><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6m-3-3v6"/></>,
   analyst: <><rect x="4" y="5" width="16" height="15" rx="3" /><path d="M9 2v3m6-3v3M8 12h.01M16 12h.01M8 16c2 1.5 6 1.5 8 0" /></>,
   reports: <><path d="M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z" /><path d="M14 2v6h6M8 13h8M8 17h8" /></>,
   journal: <><path d="M5 3h14v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M8 7h7M8 11h7M8 15h4" /></>,
