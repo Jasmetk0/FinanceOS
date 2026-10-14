@@ -49,6 +49,7 @@ test("parsed rows accounting for only 93% are marked PARTIAL not green",async()=
 test("parser fails closed on wrong fund, future date, mixed dates and duplicate rows",async()=>{
   for(const payload of [
     rows().map((r,i)=>i===0?{...r,fundIsin:"IE00C0000000"}:r),
+    rows("2026-10-15"),
     rows("2026-10-18"),
     rows().map((r,i)=>i===0?{...r,asOf:"2026-10-12"}:r),
     rows().map((r,i)=>i===0?{...r,securitySymbol:"STK1"}:r),
