@@ -73,6 +73,13 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
     const name=(row[nameCol]??"").trim();
     const sedol=normalizedSedol(sedolCol>=0?(row[sedolCol]??""):null);
     const rawWeight=(row[weightCol]??"").trim();
+    // Real SPDR files include unassigned FX currencies and futures with
+    // published Percent of Fund = "-" but nonzero Base Market Value.
+    // There is NO reliable allocation percentage for those rows. Leave
+    // them in the fund's undistributed residual: never invent a weight
+    // from an unrelated futures notional or convert to a fictitious share.
+    if(rawWeight==="-" && isin==="UNASSIGNED" &&
+      (row[sectorCol]??"").trim().toLowerCase()==="unassigned" && name)continue;
     // Blank unlabelled padding is allowed; labelled footers cannot be
     // silently accepted as constituents or omitted.
     if(!isin&&!name&&!rawWeight)continue;
