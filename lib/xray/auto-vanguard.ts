@@ -164,6 +164,7 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
     const kind=isEquityType(type) && /^[0-9A-Z]{7}$/.test(sedol) ? "stock" : "other";
     // Explicitly avoid classifying ETF/fund/cash as a directly owned stock.
     const identity=kind==="stock"?"SEDOL-"+sedol:"OTHER-"+(i+1);
+    const displayTicker=ticker && /^[A-Z0-9.^-]{1,24}$/.test(ticker) ? ticker+"@"+sedol : identity;
     const key=kind==="stock"?identity+"|"+type:identity;
     weightSum+=weight;
     if (weight===0) continue;
@@ -174,7 +175,7 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
       }
       previous.weightPct+=weight;
     } else rows.set(key,{
-      fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:identity,
+      fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:kind==="stock"?displayTicker:identity,
       securityIsin:null,securityName:name,weightPct:weight,
       kind,asOf:date,source:"Vanguard EU official GPX holdings; "+date,
     });
