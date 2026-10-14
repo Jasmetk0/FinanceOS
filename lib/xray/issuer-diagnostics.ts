@@ -68,7 +68,8 @@ export async function probeIssuer(
     const dates=[...new Set(rows.map(r=>r.asOf))];
     if(dates.length!==1 || !dates[0])throw new RangeError("Zdroj nemá jednoznačné datum složení.");
     const date=classifyIssuerDate(dates[0],now());
-    if(date.state==="unknown" || date.state==="future")throw new RangeError("Neplatné nebo budoucí datum podkladů.");
+    if(date.state==="unknown" || date.state==="future" || (date.ageDays??0)<0)
+      throw new RangeError("Neplatné nebo budoucí datum podkladů.");
     if(response.sourceUrl!==target.sourceUrl)throw new RangeError("Zdroj dat není whitelistovaný emitent.");
     const stock=rows.filter(r=>r.kind==="stock").reduce((total,r)=>total+r.weightPct,0);
     const crypto=rows.filter(r=>r.kind==="crypto").reduce((total,r)=>total+r.weightPct,0);
