@@ -189,5 +189,7 @@ export function solve(
 export function durationLabel(months: number) {
   const y = Math.floor(months / 12);
   const m = months % 12;
-  return y + " let " + m + " měsíců";
+  const years = y === 1 ? "rok" : y >= 2 && y <= 4 ? "roky" : "let";
+  const months = m === 1 ? "měsíc" : m >= 2 && m <= 4 ? "měsíce" : "měsíců";
+  return y + " " + years + " " + m + " " + months;
 }
