@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { getXRayHoldings } from "@/lib/server/xray";
+import { getXRayLiveSnapshot } from "@/lib/server/xray-live";
 import { PortfolioXRay } from "@/components/portfolio-xray";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default function PortfolioXRayPage() {
-  const holdings = getXRayHoldings();
+  const { holdings, freshness } = getXRayLiveSnapshot();
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
@@ -20,7 +20,7 @@ export default function PortfolioXRayPage() {
         </div>
         <Link href="/investments" prefetch={false} className="finance-action">Přejít na skutečné investice ↗</Link>
       </div>
-      <PortfolioXRay holdings={holdings} />
+      <PortfolioXRay holdings={holdings} initialFreshness={freshness} />
     </main>
   );
 }
