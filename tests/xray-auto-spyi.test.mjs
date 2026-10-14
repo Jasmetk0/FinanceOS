@@ -92,7 +92,10 @@ test("SPYI reader fails closed on invalid source instead of inventing ETF consti
   assert.throws(()=>parseSpyiXlsx(fixture({badDate:true}),"SPYI"),/datum/);
   assert.throws(()=>parseSpyiXlsx(fixture({missingHeader:true}),"SPYI"),/nepodporovanou/);
   assert.throws(()=>parseSpyiXlsx(fixture({badWeight:true}),"SPYI"),/záporné/);
-  assert.throws(()=>parseSpyiXlsx(fixture({addCash:false}),"SPYI"),/neúplné|neúplný|jednotky/);
+  const withoutCash=parseSpyiXlsx(fixture({addCash:false}),"SPYI");
+  assert.equal(withoutCash.length,12);
+  assert.ok(Math.abs(withoutCash.reduce((total,row)=>total+row.weightPct,0)-96)<1e-8,
+    "Minor omitted cash stays as an explicit unmapped 4%, not fabricated holdings");
   assert.throws(()=>parseXlsxGrid(Buffer.from("not a ZIP")),/XLSX/);
 });
 
