@@ -71,6 +71,11 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
   for(let i=rowIndex+1;i<grid.length;i++){
     const row=grid[i];
     if(!row.some(x=>x.trim()))continue;
+    // State Street appends one long, non-tabular legal disclaimer after the
+    // last holding. This is NOT an ETF constituent. Accept only that exact
+    // trailing shape; reject any unexpected non-tabular data inside the fund.
+    if(i===grid.length-1 && row[0]?.startsWith("Marketing communication") &&
+      row.slice(1).every(x=>!x.trim()))continue;
     const isin=(row[isinCol]??"").trim().toUpperCase();
     const name=(row[nameCol]??"").trim();
     const sedol=normalizedSedol(sedolCol>=0?(row[sedolCol]??""):null);
