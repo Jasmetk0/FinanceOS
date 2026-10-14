@@ -296,6 +296,12 @@ export function PortfolioXRay({
                           {selected===item.key ? <span className="mt-2 block text-[11px] leading-5 text-[var(--muted)]">
                             {item.kind==="crypto"?"Krypto":"Akcie"} · Přes fondy: {item.fundSymbols.join(", ") || "žádné"}.
                             {" "}Přímo: {item.accounts.join(", ") || "žádné"}.
+                            {item.kind==="stock" ?
+                              item.key.startsWith("stock|isin:") ?
+                                " Identita: doložený ISIN." :
+                              item.key.startsWith("stock|sedol:") ?
+                                " Identita: SEDOL (bez potvrzeného ISIN)." :
+                                " Identita: není potvrzená. Stejný ticker se neslučuje s jinou akcií." : ""}
                             {item.fundEquivalentQuantity!==null?" Teoretický ekvivalent z fondů: "+quantity(item.fundEquivalentQuantity)+" kusů.":""}
                           </span>:null}
                         </button>
