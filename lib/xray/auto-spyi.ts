@@ -5,6 +5,7 @@
  */
 import { parseXlsxGrid } from "./xlsx-grid.ts";
 import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
+import { normalizedSedol } from "./security-identity.ts";
 
 export const SPYI_ISIN="IE00B3YLTY66";
 export const SPYI_OFFICIAL_URL="https://www.ssga.com/library-content/products/fund-data/etfs/emea/holdings-daily-emea-en-spyi-gy.xlsx";
@@ -58,6 +59,7 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
   const isinCol=col(["isin"]),nameCol=col(["security name","name"]);
   const weightCol=col(["percent of fund","weight","weight percent"]);
   const sectorCol=col(["sector classification","sector","asset class"]);
+  const sedolCol=col(["sedol","sedol 1","sedol1"]);
   if(isinCol<0||nameCol<0||weightCol<0)throw new RangeError("SPDR XLSX nemá povinné sloupce.");
   if(grid.length-rowIndex<12)throw new RangeError("SPDR XLSX neobsahuje úplný rozklad fondu.");
   const byIsin=new Map<string,XRayConstituent>();
@@ -68,6 +70,7 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
     if(!row.some(x=>x.trim()))continue;
     const isin=(row[isinCol]??"").trim().toUpperCase();
     const name=(row[nameCol]??"").trim();
+    const sedol=normalizedSedol(sedolCol>=0?(row[sedolCol]??""):null);
     const rawWeight=(row[weightCol]??"").trim();
     // Blank unlabelled padding is allowed; labelled footers cannot be
     // silently accepted as constituents or omitted.
@@ -84,10 +87,12 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
     const previous=byIsin.get(key);
     if(previous){
       if(previous.kind!==kind||previous.securityName!==name)throw new RangeError("Stejný ISIN s rozdílnou identitou v SPDR.");
+      if(previous.securitySedol && sedol && previous.securitySedol!==sedol)
+        previous.securitySedol=null; // one ISIN, multiple listings: no unique SEDOL for this row
       previous.weightPct+=weight;
     }else byIsin.set(key,{
       fundSymbol:symbol,fundIsin:SPYI_ISIN,securitySymbol:isEquity?isin:"OTHER-"+(i+1),
-      securityIsin:isEquity?isin:null,securityName:name,weightPct:weight,
+      securityIsin:isEquity?isin:null,securitySedol:isEquity?sedol:null,securityName:name,weightPct:weight,
       kind,asOf,source:"State Street official daily SPYI XLSX; "+asOf,
     });
     seen++;

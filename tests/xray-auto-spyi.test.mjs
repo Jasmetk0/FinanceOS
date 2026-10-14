@@ -45,7 +45,7 @@ function fixture({badDate=false,missingHeader=false,badWeight=false,addCash=true
   rows.push(["ISIN","SEDOL","Security Name","Currency","Number of Shares","Percent of Fund","Trade Country Name","Local Price","Sector Classification","Industry Classification","Base Market Value"]);
   for(let i=0;i<12;i++){
     const isin='US'+String(i+1).padStart(10,'0');
-    rows.push([isin,"","Company "+i,"USD","10",badWeight&&i===0?"-5":"8","United States","100","Information Technology","Software","1000"]);
+    rows.push([isin,i===0?"B1YW440":i===1?"0263494":"","Company "+i,"USD","10",badWeight&&i===0?"-5":"8","United States","100","Information Technology","Software","1000"]);
   }
   if(addCash)rows.push(["","","Cash EUR","EUR","100","4","Ireland","1","Cash","","4"]);
   const col=n=>String.fromCharCode(65+n);
@@ -76,6 +76,8 @@ test("SPYI XLSX ISIN weights produce exact X-Ray allocation and direct holdings 
   assert.equal(rows[0].fundIsin,SPYI_ISIN);
   assert.equal(rows[0].asOf,"2026-10-13");
   assert.equal(rows[0].securityIsin,"US0000000001");
+  assert.equal(rows[0].securitySedol,"B1YW440");
+  assert.equal(rows[1].securitySedol,"0263494");
   assert.ok(Math.abs(rows.reduce((acc,r)=>acc+r.weightPct,0)-100)<1e-8);
   assert.equal(rows[12].kind,"other");
   const r=calculateXRay([

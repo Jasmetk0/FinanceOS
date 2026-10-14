@@ -3,6 +3,8 @@
  * No inferred ETF constituents. No double counting of a fund's market value.
  * The model reports economic exposure, not direct ownership or tax lots.
  */
+import { buildSedolIsinCrosswalk, normalizedSedol, resolveSecurityIsin } from "./security-identity.ts";
+
 export interface XRayHolding {
   id: string;
   symbol: string;
@@ -23,6 +25,7 @@ export interface XRayConstituent {
   fundIsin: string | null;
   securitySymbol: string;
   securityIsin: string | null;
+  securitySedol?: string | null; // checked separate share-class ID; never inferred from company name
   securityName: string;
   weightPct: number; // 0..100 of the fund's MARKET VALUE (not leverage/notional).
   kind: ExposureKind;
@@ -98,6 +101,7 @@ export function validateXRayConstituents(rows: XRayConstituent[]) {
         !Number.isFinite(r.weightPct) || r.weightPct < 0 || r.weightPct > 100 ||
         (r.fundIsin && !strongIsin(r.fundIsin)) ||
         (r.securityIsin && !strongIsin(r.securityIsin)) ||
+        (r.securitySedol && !normalizedSedol(r.securitySedol)) ||
         (r.asOf && !/^\d{4}-\d{2}-\d{2}$/.test(r.asOf)) ||
         !norm(r.fundSymbol) || !norm(r.securitySymbol) ||
         !r.securityName.trim() || r.securityName.length > 150 ||
@@ -131,6 +135,9 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
 
   // Symbol-only matching to ISIN is allowed only when exactly one distinct ISIN
   // exists for the symbol across both direct holdings and imported holdings.
+  // Only exact SEDOL-to-ISIN pairs from the same official issuer constituent
+  // are trusted. Different SEDOLs can represent different listings/classes.
+  const crosswalk = buildSedolIsinCrosswalk(compositions);
   const isinBySymbol = new Map<string, Set<string>>();
   const register = (symbol: string, isin: string | null, kind: string) => {
     if (kind !== "stock" || !strongIsin(isin)) return;
@@ -139,7 +146,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     isinBySymbol.get(s)?.add(norm(isin));
   };
   for (const h of stocks) register(h.symbol, h.isin, "stock");
-  for (const c of compositions) register(c.securitySymbol, c.securityIsin, c.kind);
+  for (const c of compositions) register(c.securitySymbol, resolveSecurityIsin(c,crosswalk), c.kind);
   const stockKey = (symbol: string, isin: string | null, canonicalKey?: string | null) => {
     if (strongIsin(isin)) return "isin:" + norm(isin);
     if (canonicalKey?.startsWith("isin:") && strongIsin(canonicalKey.slice(5))) return "isin:" + canonicalKey.slice(5).toUpperCase();
@@ -226,7 +233,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       if (c.kind === "other" || c.weightPct === 0) continue;
       const part = h.valueCzk * c.weightPct / 100;
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
-        stockKey(c.securitySymbol, c.securityIsin);
+        stockKey(c.securitySymbol, resolveSecurityIsin(c,crosswalk));
       add(key, c.kind, c.securitySymbol, c.securityName, 0, part, 0, undefined, h.symbol);
       mapped += part;
     }
