@@ -99,16 +99,14 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
   const [message, setMessage] = useState("");
 
   const answer = useMemo(() => solve(inputs, unknown, events), [inputs, unknown, events]);
-  const derived: SimulatorInputs = answer.value === null ? inputs : { ...inputs, [unknown]: answer.value };
+  const derived = useMemo<SimulatorInputs>(() => answer.value === null ? inputs : { ...inputs, [unknown]: answer.value }, [inputs, unknown, answer.value]);
   const projectedMonths = unknown === "years" && answer.value !== null
     ? Math.min(1200, Math.round(answer.value * 12) + 12)
     : Math.max(0, Math.min(1200, Math.round(inputs.years * 12)));
   const forecast = useMemo(() => {
     try { return simulate(derived, projectedMonths, events); }
     catch { return null; }
-  // Individual scalar dependencies are used here to keep React hook rules deterministic.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputs, unknown, answer.value, projectedMonths, events]);
+  }, [derived, projectedMonths, events]);
   const yearComparisons = useMemo(() => [0, 5000, 10000, 20000].map((monthly) => ({
     monthly,
     result: solve({ ...derived, monthlyContributionCzk: monthly }, "years", events),
