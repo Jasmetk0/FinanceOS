@@ -9,6 +9,7 @@
  * best effort, with source/date visible in the X-Ray dashboard.
  */
 import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
+import { normalizedSedol } from "./security-identity.ts";
 
 export const VWCE_ISIN = "IE00BK5BQT80";
 export const VANGUARD_EU_PRODUCT_ID = "9679";
@@ -176,7 +177,8 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
       previous.weightPct+=weight;
     } else rows.set(key,{
       fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:kind==="stock"?displayTicker:identity,
-      securityIsin:null,securityName:name,weightPct:weight,
+      securityIsin:null,securitySedol:kind==="stock"?normalizedSedol(sedol):null,
+      securityName:name,weightPct:weight,
       kind,asOf:date,source:"Vanguard EU official GPX holdings; "+date,
     });
   }
