@@ -58,7 +58,21 @@ export interface XRayFundCoverage {
   asOf: string | null;
   note: string | null;
 }
+/**
+ * These buckets describe the available identity evidence, not provenance
+ * authentication or live quotes. All amounts are values in CZK.
+ */
+export interface XRayIdentityCoverage {
+  isinCzk: number;       // explicit ISIN in broker or issuer source
+  bridgedCzk: number;    // SEDOL mapped to explicit issuer ISIN
+  sedolOnlyCzk: number;  // security-level SEDOL without verified ISIN bridge
+  tickerOnlyCzk: number; // weak ticker/canonical fallback, NOT proven same share class
+  cryptoCzk: number;     // symbol-based crypto positions/exposures (no chain ID)
+  unmappedCzk: number;   // fund residual, cash, fixed income, no issuer snapshot
+  totalCzk: number;
+}
 export interface XRayResult {
+  identityCoverage: XRayIdentityCoverage;
   denominatorCzk: number;
   directCzk: number;
   fundsCzk: number;
@@ -132,6 +146,10 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   const directCzk = direct.reduce((total, h) => total + h.valueCzk, 0);
   const fundsCzk = funds.reduce((total, h) => total + h.valueCzk, 0);
   const denominatorCzk = directCzk + fundsCzk;
+  const identityCoverage: XRayIdentityCoverage = {
+    isinCzk:0,bridgedCzk:0,sedolOnlyCzk:0,
+    tickerOnlyCzk:0,cryptoCzk:0,unmappedCzk:0,totalCzk:denominatorCzk,
+  };
 
   // Symbol-only matching to ISIN is allowed only when exactly one distinct ISIN
   // exists for the symbol across both direct holdings and imported holdings.
@@ -178,6 +196,11 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     // Without an identifiable symbol or ISIN, keep the individual source row separate.
     const resolved = key.endsWith(":") || key.endsWith(":UNKNOWN") ? "position:" + h.id : key;
     add(resolved, kind, h.symbol, h.name, h.valueCzk, 0, h.quantity, h.provider + " · " + h.accountName);
+    if(kind==="crypto") identityCoverage.cryptoCzk+=h.valueCzk;
+    else if(strongIsin(h.isin) ||
+      (h.canonicalKey?.startsWith("isin:") && strongIsin(h.canonicalKey.slice(5))))
+      identityCoverage.isinCzk+=h.valueCzk;
+    else identityCoverage.tickerOnlyCzk+=h.valueCzk;
   }
 
   const byIsin = new Map<string, XRayConstituent[]>();
@@ -235,6 +258,11 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
         stockKey(c.securitySymbol, resolveSecurityIsin(c,crosswalk));
       add(key, c.kind, c.securitySymbol, c.securityName, 0, part, 0, undefined, h.symbol);
+      if(c.kind==="crypto") identityCoverage.cryptoCzk+=part;
+      else if(strongIsin(c.securityIsin)) identityCoverage.isinCzk+=part;
+      else if(strongIsin(resolveSecurityIsin(c,crosswalk))) identityCoverage.bridgedCzk+=part;
+      else if(normalizedSedol(c.securitySedol)) identityCoverage.sedolOnlyCzk+=part;
+      else identityCoverage.tickerOnlyCzk+=part;
       mapped += part;
     }
     coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: mapped / h.valueCzk * 100, mappedCzk: mapped, unmappedCzk: Math.max(0, h.valueCzk - mapped), source: holdingsList[0].source || null, asOf: dates[0] ?? null, note: mapped === 0 ? "Rozklad neobsahuje akcie nebo kryptoměny" : null });
@@ -256,11 +284,21 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   }).sort((a, b) => b.totalCzk - a.totalCzk || a.ticker.localeCompare(b.ticker));
   const mappedCzk = exposures.reduce((sum, row) => sum + row.totalCzk, 0);
   const unallocatedCzk = Math.max(0, denominatorCzk - mappedCzk);
+  identityCoverage.unmappedCzk=unallocatedCzk;
+  const covered=[identityCoverage.isinCzk,identityCoverage.bridgedCzk,
+    identityCoverage.sedolOnlyCzk,identityCoverage.tickerOnlyCzk,identityCoverage.cryptoCzk]
+    .reduce((a,b)=>a+b,0);
+  // Buckets are derived from the *same* direct and fund allocation events.
+  // Any discrepancy is a regression: never present misleading coverage.
+  if(Math.abs(covered-mappedCzk)>Math.max(MONEY_EPSILON,denominatorCzk*1e-10)) {
+    throw new RangeError("Kontrola identity a výpočtu X-Ray nesouhlasí. Výstup nebyl použit.");
+  }
   if (mappedCzk > denominatorCzk + MONEY_EPSILON) {
     throw new RangeError("Rozklad překročil hodnotu původního portfolia. Zkontroluj strukturu fondů.");
   }
   const fundCoverage = coverage.sort((a, b) => b.unmappedCzk - a.unmappedCzk);
   return {
+    identityCoverage,
     denominatorCzk, directCzk, fundsCzk, mappedCzk, unallocatedCzk,
     mappedPct: denominatorCzk ? mappedCzk / denominatorCzk * 100 : 0,
     exposures, funds: fundCoverage, warnings: [...warnings],

@@ -5,6 +5,7 @@ import { calculateXRay, validateXRayConstituents, type XRayConstituent, type XRa
 import { parseXRayCompositionCsv } from "@/lib/xray/import";
 import { XRayIssuerImport } from "@/components/xray-issuer-import";
 import { XRayAutoSync } from "@/components/xray-auto-sync";
+import { XRayIdentityQuality } from "@/components/xray-identity-quality";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
 import { combineConstituentSources } from "@/lib/xray/auto-merge";
@@ -197,7 +198,7 @@ export function PortfolioXRay({
           <div>
             <h2 className="text-base font-semibold">Volitelný ruční import a záloha složení</h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted)]">
-              Přímé akcie a kryptoměny se zobrazují automaticky. Pro průhled do ETF nahraj jejich skutečné složení v CSV od emitenta.
+              Přímé akcie, kryptoměny a podporovaná ETF se načítají automaticky z propojených účtů a zdrojů emitentů. CSV slouží pouze jako volitelná záloha.
               FinanceOS nikdy nedopočítává chybějící společnosti z odhadů nebo z předchozího agregovaného X-Ray reportu.
             </p>
           </div>
@@ -248,6 +249,7 @@ export function PortfolioXRay({
               </div>
             ))}
           </section>
+          <XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} />
           <section className="finance-surface p-4 sm:p-5">
             <div className="flex flex-wrap justify-between gap-3">
               <div>
