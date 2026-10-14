@@ -2,7 +2,7 @@ import { validateXRayConstituents, type ExposureKind, type XRayConstituent } fro
 
 const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 
-function parseDelimited(text: string, delimiter: string): string[][] {
+export function parseDelimited(text: string, delimiter: string): string[][] {
   const rows: string[][] = [];
   let field = "", row: string[] = [], quoted = false, afterQuote = false;
   for (let i = 0; i < text.length; i++) {
@@ -37,7 +37,7 @@ function parseDelimited(text: string, delimiter: string): string[][] {
   return rows.filter((r) => r.some((v) => v.trim() !== ""));
 }
 
-function delimiterOf(line: string) {
+export function delimiterOf(line: string) {
   let commas = 0, semicolons = 0, inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const c = line[i];
