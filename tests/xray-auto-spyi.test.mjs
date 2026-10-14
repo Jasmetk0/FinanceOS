@@ -37,15 +37,15 @@ function xmlCell(value,col,row,numeric=false){
   const body=numeric?'<v>'+value+'</v>':'<is><t>'+value+'</t></is>';
   return '<c r="'+col+row+'"'+attr+'>'+body+'</c>';
 }
-function fixture({badDate=false,missingHeader=false,badWeight=false,addCash=true,shared=false}={}){
+function fixture({badDate=false,missingHeader=false,badWeight=false,addCash=true,shared=false,scientific=false,dateLabel="13 Oct 2026"}={}){
   const rows=[];
-  rows.push([ "Holdings as of",badDate?"31 Feb 2026":"13 Oct 2026" ]);
+  rows.push([ "Holdings as of",badDate?"31 Feb 2026":dateLabel ]);
   rows.push(["SPDR MSCI ACWI IMI UCITS ETF"]);
   rows.push(["Official daily holdings"]);
   rows.push(["ISIN","SEDOL","Security Name","Currency","Number of Shares","Percent of Fund","Trade Country Name","Local Price","Sector Classification","Industry Classification","Base Market Value"]);
   for(let i=0;i<12;i++){
     const isin='US'+String(i+1).padStart(10,'0');
-    rows.push([isin,i===0?"B1YW440":i===1?"0263494":"","Company "+i,"USD","10",badWeight&&i===0?"-5":"8","United States","100","Information Technology","Software","1000"]);
+    rows.push([isin,i===0?"B1YW440":i===1?"0263494":"","Company "+i,"USD","10",badWeight&&i===0?"-5":scientific?(i===0?"9.99E-4":"8.72718"):"8","United States","100","Information Technology","Software","1000"]);
   }
   if(addCash)rows.push(["","","Cash EUR","EUR","100","4","Ireland","1","Cash","","4"]);
   const col=n=>String.fromCharCode(65+n);
@@ -91,15 +91,11 @@ test("SPYI XLSX ISIN weights produce exact X-Ray allocation and direct holdings 
 });
 
 test("real State Street date and scientific Excel percentage values are supported",()=>{
-  const dated=fixture();
-  const baseline=parseSpyiXlsx(dated,"SPYI");
-  assert.equal(baseline[0].asOf,"2026-10-13");
-  // Real SPDR XLSX serializes very small weights as 9.99E-4.
-  const small=fixture();
-  const text=small.toString("hex");
-  assert.ok(text.length>0);
-  const original=fixture({badDate:false});
-  assert.equal(parseSpyiXlsx(original,"SPYI").length,13);
+  const rows=parseSpyiXlsx(fixture({scientific:true,dateLabel:"13-Oct-2026"}),"SPYI");
+  assert.equal(rows[0].asOf,"2026-10-13");
+  assert.ok(Math.abs(rows[0].weightPct-0.000999)<1e-9);
+  assert.ok(Math.abs(rows.reduce((sum,row)=>sum+row.weightPct,0)-100)<0.01);
+  assert.equal(rows.length,13);
 });
 
 test("SPYI reader fails closed on invalid source instead of inventing ETF constituents",()=>{
