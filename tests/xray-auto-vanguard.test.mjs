@@ -59,6 +59,37 @@ test("Vanguard EU parser uses all 3800 holdings and preserves unallocated residu
   assert.ok(report.exposures.some(x=>x.ticker==="STK1@A000001"),"Fund security retains readable ticker and precise SEDOL identity");
 });
 
+test("actual GPX short FX contracts offset OTHER, never change share percentages",()=>{
+  const modified=[
+    sourceHolding(1,{securityType:"CT.SPOT",marketValuePercentage:-0.4}),
+    sourceHolding(2,{securityType:"MM.TD",marketValuePercentage:0.6}),
+    ...source.slice(2),
+  ];
+  const p=[
+    page(modified.slice(0,1500),count,"a2"),
+    page(modified.slice(1500,3000),count,"a3"),
+    page(modified.slice(3000),count,null),
+  ];
+  const parsed=parseVanguardHoldings(p,"VWCE");
+  const equityWeight=parsed.rows.filter(x=>x.kind==="stock").reduce((v,x)=>v+x.weightPct,0);
+  const otherWeight=parsed.rows.filter(x=>x.kind==="other").reduce((v,x)=>v+x.weightPct,0);
+  assert.ok(Math.abs(equityWeight-(98.8-0.052))<1e-7);
+  assert.ok(Math.abs(otherWeight-0.2)<1e-7);
+  assert.ok(Math.abs(parsed.coveragePct+parsed.unmappedPct-100)<1e-7);
+  assert.equal(parsed.count,3800);
+});
+
+test("negative stock weights and material FX short exposures still fail closed",()=>{
+  const badStock=[...source];
+  badStock[0]={...badStock[0],marketValuePercentage:-0.1};
+  const p=[page(badStock.slice(0,1500),count,"a2"),pages[1],pages[2]];
+  assert.throws(()=>parseVanguardHoldings(p,"VWCE"),/zápornou akciovou/);
+  const excessive=[...source];
+  excessive[0]={...excessive[0],securityType:"CT.SPOT",marketValuePercentage:-4};
+  const x=[page(excessive.slice(0,1500),count,"a2"),pages[1],pages[2]];
+  assert.throws(()=>parseVanguardHoldings(x,"VWCE"),/významné záporné/);
+});
+
 test("different SEDOLs with identical tickers do not collide or silently merge",()=>{
   const r=parseVanguardHoldings(pages,"VWRP");
   assert.equal(r.rows.length,3800);
@@ -98,6 +129,7 @@ test("issuer request paginates to final item; no broker token or user-defined UR
     assert.equal(init.headers.Authorization,undefined);
     const body=JSON.parse(init.body);
     assert.deepEqual(body.variables.portIds,[VANGUARD_EU_PRODUCT_ID]);
+    assert.equal(body.variables.securityTypes,null,"Do not silently exclude GPX FX contracts from reported totalHoldings");
     used.push(body.variables.lastItemKey);
     const idx=count-1;
     return new Response(JSON.stringify(payload(pages[idx].items,count===3?3800:3800,

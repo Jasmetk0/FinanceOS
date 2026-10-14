@@ -13,7 +13,7 @@ export const SPYI_OFFICIAL_URL="https://www.ssga.com/library-content/products/fu
 const DATE_PATTERNS=[
   /\b(\d{4})-(\d{2})-(\d{2})\b/,
   /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/,
-  /\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/,
+  /\b(\d{1,2})[-\s]+([A-Za-z]{3,9})[-\s]+(\d{4})\b/,
   /\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})\b/,
 ];
 function asOfOf(rows:string[][]):string{
@@ -38,7 +38,8 @@ function asOfOf(rows:string[][]):string{
 const header=(s:string)=>s.toLowerCase().trim().replace(/[\s_/()%.-]+/g," ");
 function number(value:string):number{
   const cleaned=value.trim().replace(/[, %]/g,"");
-  if(!/^-?\d+(?:\.\d+)?$/.test(cleaned))throw new RangeError("Neplatná váha podkladu SPDR: "+value);
+  if(!/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d{1,3})?$/.test(cleaned))
+    throw new RangeError("Neplatná váha podkladu SPDR: "+value);
   const n=Number(cleaned);if(!Number.isFinite(n))throw new RangeError("Nekonečná váha.");
   return n;
 }
@@ -65,25 +66,49 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
   const byIsin=new Map<string,XRayConstituent>();
   let total=0;
   let seen=0;
+  let otherNet=0;
+  let negativeOther=0;
   for(let i=rowIndex+1;i<grid.length;i++){
     const row=grid[i];
     if(!row.some(x=>x.trim()))continue;
+    // State Street appends one long, non-tabular legal disclaimer after the
+    // last holding. This is NOT an ETF constituent. Accept only that exact
+    // trailing shape; reject any unexpected non-tabular data inside the fund.
+    if(i===grid.length-1 && row[0]?.startsWith("Marketing communication") &&
+      row.slice(1).every(x=>!x.trim()))continue;
     const isin=(row[isinCol]??"").trim().toUpperCase();
     const name=(row[nameCol]??"").trim();
     const sedol=normalizedSedol(sedolCol>=0?(row[sedolCol]??""):null);
     const rawWeight=(row[weightCol]??"").trim();
+    // Real SPDR files include unassigned FX currencies and futures with
+    // published Percent of Fund = "-" but nonzero Base Market Value.
+    // There is NO reliable allocation percentage for those rows. Leave
+    // them in the fund's undistributed residual: never invent a weight
+    // from an unrelated futures notional or convert to a fictitious share.
+    if(rawWeight==="-" && isin==="UNASSIGNED" &&
+      (row[sectorCol]??"").trim().toLowerCase()==="unassigned" && name)continue;
     // Blank unlabelled padding is allowed; labelled footers cannot be
     // silently accepted as constituents or omitted.
     if(!isin&&!name&&!rawWeight)continue;
     if(!rawWeight||!name)throw new RangeError("Neúplný řádek SPDR "+(i+1)+".");
     const weight=number(rawWeight);
-    if(weight<0)throw new RangeError("SPDR obsahuje záporné podkladové váhy.");
-    if(weight>100)throw new RangeError("SPDR XLSX nemá procentní váhy 0–100.");
+    if(weight>100||weight< -100)throw new RangeError("SPDR XLSX nemá platné procentní váhy.");
     const isEquity=/^[A-Z]{2}[A-Z0-9]{10}$/.test(isin) &&
       !/(ETF|FUND|CASH|FUTURE|SWAP|FORWARD|TREASURY|BOND)/i.test(name) &&
       !/^(cash|money market|fixed income|derivative)/i.test((row[sectorCol]??"").trim());
     const kind=isEquity?"stock":"other";
-    const key=isEquity?isin:"OTHER-"+(i+1);
+    if(kind==="stock"&&weight<0)throw new RangeError("SPDR obsahuje zápornou akciovou expozici.");
+    if(kind==="other"){
+      // Real SPDR UCITS holdings contain a tiny signed FX derivative
+      // (e.g. -4.0E-5%); offset it exclusively against POSITIVE
+      // non-equity balances, never against constituent stocks.
+      otherNet+=weight;
+      if(weight<0)negativeOther+=-weight;
+      seen++;
+      total+=weight;
+      continue;
+    }
+    const key=isin;
     const previous=byIsin.get(key);
     if(previous){
       if(previous.kind!==kind||previous.securityName!==name)throw new RangeError("Stejný ISIN s rozdílnou identitou v SPDR.");
@@ -98,8 +123,19 @@ export function parseSpyiXlsx(data:Uint8Array,symbol:string):XRayConstituent[]{
     seen++;
     total+=weight;
   }
+  if(negativeOther>0.01||otherNet< -0.01)
+    throw new RangeError("SPDR má významné záporné neakciové expozice.");
   if(seen<10||total<90||total>101)
     throw new RangeError("SPDR složení je neúplné nebo má nesprávné jednotky vah; součet "+total.toFixed(3)+" %.");
+  // Only the NET other balance is economically allocable without a signed
+  // cash/derivatives sub-ledger; never treat a short FX position as stock.
+  if(otherNet>0)byIsin.set("OTHER-NET",{
+    fundSymbol:symbol,fundIsin:SPYI_ISIN,securitySymbol:"OTHER-NET",
+    securityIsin:null,securitySedol:null,
+    securityName:"Net non-equity cash, funds and FX holdings",
+    weightPct:otherNet,kind:"other",asOf,
+    source:"State Street official daily SPYI XLSX; "+asOf,
+  });
   // Source may be rounded at 4+ decimals; preserve small cash/unknown
   // remainder rather than manufacture equities or distribute the shortfall.
   const rows=[...byIsin.values()];

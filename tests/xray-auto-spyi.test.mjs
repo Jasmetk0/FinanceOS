@@ -37,17 +37,20 @@ function xmlCell(value,col,row,numeric=false){
   const body=numeric?'<v>'+value+'</v>':'<is><t>'+value+'</t></is>';
   return '<c r="'+col+row+'"'+attr+'>'+body+'</c>';
 }
-function fixture({badDate=false,missingHeader=false,badWeight=false,addCash=true,shared=false}={}){
+function fixture({badDate=false,missingHeader=false,badWeight=false,addCash=true,shared=false,scientific=false,dateLabel="13 Oct 2026",withFx=false,badFx=false,footer=false}={}){
   const rows=[];
-  rows.push([ "Holdings as of",badDate?"31 Feb 2026":"13 Oct 2026" ]);
+  rows.push([ "Holdings as of",badDate?"31 Feb 2026":dateLabel ]);
   rows.push(["SPDR MSCI ACWI IMI UCITS ETF"]);
   rows.push(["Official daily holdings"]);
   rows.push(["ISIN","SEDOL","Security Name","Currency","Number of Shares","Percent of Fund","Trade Country Name","Local Price","Sector Classification","Industry Classification","Base Market Value"]);
   for(let i=0;i<12;i++){
     const isin='US'+String(i+1).padStart(10,'0');
-    rows.push([isin,i===0?"B1YW440":i===1?"0263494":"","Company "+i,"USD","10",badWeight&&i===0?"-5":"8","United States","100","Information Technology","Software","1000"]);
+    rows.push([isin,i===0?"B1YW440":i===1?"0263494":"","Company "+i,"USD","10",badWeight&&i===0?"-5":scientific?(i===0?"9.99E-4":"8.72718"):"8","United States","100","Information Technology","Software","1000"]);
   }
   if(addCash)rows.push(["","","Cash EUR","EUR","100","4","Ireland","1","Cash","","4"]);
+  if(withFx)rows.push(["Unassigned","Unassigned","CNY:HKD 20250930","CNY","-10",badFx?"-0.03":"-4.0E-5","Unassigned","1","Unassigned","Unassigned","-3.8"]);
+  if(withFx)rows.push(["Unassigned","Unassigned","Czech Koruna","CZK","100","-","Unassigned","1","Unassigned","Unassigned","100"]);
+  if(footer)rows.push(["Marketing communication – this is a trailing note, not a security"]);
   const col=n=>String.fromCharCode(65+n);
   const source=rows.map((fields,index)=>{
     const n=index+1;
@@ -90,10 +93,31 @@ test("SPYI XLSX ISIN weights produce exact X-Ray allocation and direct holdings 
   assert.equal(r.mappedCzk,1060);
 });
 
+test("real State Street date and scientific Excel percentage values are supported",()=>{
+  const rows=parseSpyiXlsx(fixture({scientific:true,dateLabel:"13-Oct-2026"}),"SPYI");
+  assert.equal(rows[0].asOf,"2026-10-13");
+  assert.ok(Math.abs(rows[0].weightPct-0.000999)<1e-9);
+  assert.ok(Math.abs(rows.reduce((sum,row)=>sum+row.weightPct,0)-100)<0.01);
+  assert.equal(rows.length,13);
+});
+
+test("real SPYI XLSX format: ignore terminal disclaimer and unassigned dash percentages, safely net tiny short FX",()=>{
+  const r=parseSpyiXlsx(fixture({withFx:true,footer:true}),"SPYI");
+  assert.equal(r.length,13);
+  assert.equal(r.filter(x=>x.kind==="stock").length,12);
+  const net=r.find(x=>x.kind==="other");
+  assert.ok(net);
+  assert.ok(Math.abs(net.weightPct-3.99996)<1e-9);
+  assert.ok(Math.abs(r.reduce((n,x)=>n+x.weightPct,0)-99.99996)<1e-7);
+  assert.ok(!r.some(x=>/CNY:HKD|Marketing communication/.test(x.securityName)));
+  assert.throws(()=>parseSpyiXlsx(fixture({withFx:true,badFx:true}),"SPYI"),
+    /významné záporné/);
+});
+
 test("SPYI reader fails closed on invalid source instead of inventing ETF constituents",()=>{
   assert.throws(()=>parseSpyiXlsx(fixture({badDate:true}),"SPYI"),/datum/);
   assert.throws(()=>parseSpyiXlsx(fixture({missingHeader:true}),"SPYI"),/nepodporovanou/);
-  assert.throws(()=>parseSpyiXlsx(fixture({badWeight:true}),"SPYI"),/záporné/);
+  assert.throws(()=>parseSpyiXlsx(fixture({badWeight:true}),"SPYI"),/zápornou akciovou expozici/);
   const withoutCash=parseSpyiXlsx(fixture({addCash:false}),"SPYI");
   assert.equal(withoutCash.length,12);
   assert.ok(Math.abs(withoutCash.reduce((total,row)=>total+row.weightPct,0)-96)<1e-8,

@@ -73,6 +73,18 @@ test("issuer reader keeps distinct equity identities when same ticker has differ
   assert.notEqual(sap[0].securitySymbol,sap[1].securitySymbol);
 });
 
+test("real EM IMI feed can distinguish unrelated equity rows with issuer ticker '-'",()=>{
+  const altered=csv.replace(equity("ORCL","ORACLE","20.00"),
+    equity("-","HEG LTD","10.00","National Stock Exchange Of India","India")+
+    equity("-","IGL SPIRITS LTD","10.00","National Stock Exchange Of India","India"));
+  const r=parseIsharesHoldingsCsv(altered,ISHARES_FEEDS[3],"EIMI");
+  const unnamed=r.filter(x=>x.securitySymbol.startsWith("-@"));
+  assert.equal(unnamed.length,2);
+  assert.notEqual(unnamed[0].securitySymbol,unnamed[1].securitySymbol);
+  assert.ok(unnamed.every(x=>x.securityIsin===null));
+  assert.ok(Math.abs(r.reduce((n,x)=>n+x.weightPct,0)-100)<1e-7);
+});
+
 test("invalid issuer feed, dates, unexpected row and negatives fail closed",()=>{
   assert.throws(()=>parseIsharesHoldingsCsv("<html>no data</html>",feed,"SXR8"),/Neplatný/);
   assert.throws(()=>parseIsharesHoldingsCsv(csv.replace("13/Oct/2026","31/Feb/2026"),feed,"SXR8"),/datum/);

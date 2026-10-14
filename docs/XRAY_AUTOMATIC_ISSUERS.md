@@ -26,8 +26,8 @@ Výpočet vah iShares preferuje přesné tržní hodnoty uvedené v oficiálním
 - Pouze whitelist konkrétních oficiálních iShares URL; žádná URL z uživatelského vstupu, žádný SSRF.
 - Oddělená hlášení o nedostupných a nepodporovaných fondech; výpadek emitenta nesmaže jiné podklady.
 - Bez změny účetního ledgeru, pozic a transakcí.
-- **VWCE (Vanguard), SPYI (State Street), ostatní ETF zatím nejsou automaticky podporována.** Chybějící fond zůstává nerozložený a jasně označený. Ani reálně připojený Trading 212 API klíč neumí nahradit nezveřejněné podkladové soubory třetích stran.
-- Další implementace: ověřené originální Vanguard a State Street feedy, rozšíření pokrytí ISIN, aktualizace po každé broker synchronizaci, kvalitnější ISIN identity podkladových akcií a historické snapshoty.
+- **VWCE (Vanguard) a SPYI (State Street) jsou nyní automaticky podporovány** z veřejných kompletních (nikoliv jen top 10) emitentských zdrojů. Další, dosud nepodporovaná ETF zůstanou nerozložená. Ani Trading 212 API klíč neumí nahradit nezveřejněné podklady třetích stran.
+- Reálná kompatibilita všech šesti podporovaných fondů byla ověřena na GitHub Actions 14. 10. 2026. Další plán: rozšíření ISIN pokrytí, důvěryhodnější identita podkladů, historie snapshotů a trvalá kontrola přesnosti. VWCE má nadále zastaralé emitentské složení k 31. 8. 2026.
 
 ## Oficiální zdroje
 
