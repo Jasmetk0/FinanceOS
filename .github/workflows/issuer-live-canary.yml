@@ -9,6 +9,7 @@ on:
       - feat/xray-upstream-live-canary-20261014
     paths:
       - scripts/check-live-issuer-feeds.mjs
+      - scripts/inspect-public-issuer-shapes.mjs
       - .github/workflows/issuer-live-canary.yml
       - lib/xray/auto-ishares.ts
       - lib/xray/auto-spyi.ts
