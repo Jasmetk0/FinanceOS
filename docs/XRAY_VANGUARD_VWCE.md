@@ -17,7 +17,7 @@ Toto rozhraní je veřejně používané ve webových klientech; **nejde o smluv
 - Důsledné odmítnutí nedostažené poslední strany, chybného počtu řádků, cyklických kurzorů, jiného fondu či smíšených dat snapshotů.
 - Podkladové váhy marketValuePercentage se chápou jako procenta, ne desetinná čísla 0–1. Součet vah musí být 90 až 100,15 %; menší chybějící část zůstane nerozložená, přebytek v rámci zaokrouhlení se normalizuje.
 - Kontrola záporných a neplatných vah; ETF/deriváty nejsou vydávány za přímo vlastněné akcie.
-- Opatrná identita: evropský GPX nabízí SEDOL, nikoliv spolehlivý ISIN každé akcie. Akcie se do X-Ray ukládají jako SEDOL-<id>, aby se nesloučily dvě nesouvisející společnosti se stejným tickerem. Některé stejné akcie z přímých nákupů proto zůstanou oddělené, dokud nebude ověřené mapování SEDOL → ISIN. Jde o vědomý kompromis ve prospěch finanční správnosti.
+- Opatrná identita: evropský GPX nabízí SEDOL, nikoliv spolehlivý ISIN každé akcie. Akcie se v X-Ray zobrazí pod rozpoznatelným označením TICKER@SEDOL (případně SEDOL-<id>, pokud ticker chybí), aby se nesloučily dvě nesouvisející společnosti se stejným tickerem. Některé stejné akcie z přímých nákupů proto zůstanou oddělené, dokud nebude ověřené mapování SEDOL → ISIN. Jde o vědomý kompromis ve prospěch finanční správnosti.
 - Pouze úspěšná celá data se používají a drží v serverové paměťové cache 12 hodin; aktualizovat je lze ručně v X-Ray.
 
 ## Ověření
