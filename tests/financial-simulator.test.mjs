@@ -15,7 +15,7 @@ test("5000 CZK monthly crosses after 35 years and 2 months", () => {
   const result = solve(defaults, "years");
   assert.equal(result.error, null);
   assert.equal(Math.round(result.value * 12), 422);
-  assert.equal(durationLabel(422), "35 let 2 měsíců");
+  assert.equal(durationLabel(422), "35 let 2 měsíce");
   const previous = simulate(defaults, 421).last;
   const reached = simulate(defaults, 422).last;
   assert.ok(previous.realCzk < 20_000_000);
