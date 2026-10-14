@@ -23,16 +23,11 @@ const MAX_TOTAL_WEIGHT_PCT = 100.15;
 const MIN_TOTAL_WEIGHT_PCT = 90;
 const CACHE_MS = 12 * 60 * 60 * 1000;
 
-// The vendor's query intentionally includes all known equity types plus
-// temporary cash / other types. Non-equities are kept UNMAPPED, not guessed.
-const SECURITY_TYPES = [
-  "EQ.DRCPT","EQ.ETF","EQ.FSH","EQ.PREF","EQ.PSH","EQ.REIT",
-  "EQ.STOCK","EQ.RIGHT","EQ.WRT",
-  "MF.MF","MM.AGC","MM.BACC","MM.CD","MM.CP","MM.MCP",
-  "MM.RE","MM.TBILL","MM.TD","MM.TFN",
-  "FI.ABS","FI.CONV","FI.CORP","FI.IP","FI.LOAN","FI.MBS",
-  "FI.MUNI","FI.NONUS_GOV","FI.US_GOV",
-];
+// The public GPX totalHoldings counts ALL security types, including
+// CT.SPOT contracts. Filtering by known types returns fewer rows than
+// totalHoldings and creates a false "complete" snapshot. Request every
+// category, verify every page and conservatively net non-equity exposures.
+const MAX_NEGATIVE_OTHER_PCT = 2;
 
 const HOLDINGS_QUERY = [
   "query FinanceOsVanguardHoldings($portIds: [String!], $securityTypes: [String!], $lastItemKey: String) {",
@@ -59,7 +54,7 @@ function string(value: unknown): string | null {
 function parseWeight(value: unknown): number {
   const n = typeof value === "number" ? value :
     typeof value === "string" && value.trim() ? Number(value.replace(/,/g,"").replace(/%/g,"")) : NaN;
-  if (!Number.isFinite(n) || n < 0 || n > 100) {
+  if (!Number.isFinite(n) || n < -100 || n > 100) {
     throw new RangeError("Vanguard vrátil neplatnou váhu podkladového aktiva.");
   }
   return n;
@@ -148,7 +143,9 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
 
   const dates=new Set<string>();
   const rows=new Map<string,XRayConstituent>();
-  let weightSum=0;
+  let stockWeight=0;
+  let netOther=0;
+  let negativeOther=0;
   for(let i=0;i<all.length;i++) {
     const r=all[i],weight=parseWeight(r.marketValuePercentage);
     const name=string(r.securityLongDescription)??string(r.issuerName);
@@ -163,11 +160,20 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
     dates.add(date);
     if (dates.size>1)throw new RangeError("Vanguard smíchal různá data podkladových pozic.");
     const kind=isEquityType(type) && /^[0-9A-Z]{7}$/.test(sedol) ? "stock" : "other";
-    // Explicitly avoid classifying ETF/fund/cash as a directly owned stock.
-    const identity=kind==="stock"?"SEDOL-"+sedol:"OTHER-"+(i+1);
+    // GPX includes small short FX/cash contracts (e.g. CT.SPOT) whose
+    // negative weights offset POSITIVE cash. The X-Ray calculation has
+    // nonnegative buckets; net these only against other/non-equity,
+    // NEVER against underlying equities or by increasing their weights.
+    if (kind==="other") {
+      netOther+=weight;
+      if(weight<0)negativeOther+=-weight;
+      continue;
+    }
+    if(weight<0)throw new RangeError("Vanguard vrátil zápornou akciovou expozici.");
+    stockWeight+=weight;
+    const identity="SEDOL-"+sedol;
     const displayTicker=ticker && /^[A-Z0-9.^-]{1,24}$/.test(ticker) ? ticker+"@"+sedol : identity;
-    const key=kind==="stock"?identity+"|"+type:identity;
-    weightSum+=weight;
+    const key=identity+"|"+type;
     if (weight===0) continue;
     const previous=rows.get(key);
     if (previous) {
@@ -182,9 +188,24 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
       kind,asOf:date,source:"Vanguard EU official GPX holdings; "+date,
     });
   }
+  // Small offsetting FX/contract positions can safely reduce the
+  // non-equity cash bucket; material short exposure needs a different
+  // signed-notional model, so never silently normalize it into equities.
+  if(negativeOther>MAX_NEGATIVE_OTHER_PCT || netOther< -0.02) {
+    throw new RangeError("Vanguard má významné záporné neakciové expozice: "+
+      negativeOther.toFixed(3)+" %.");
+  }
+  const weightSum=stockWeight+Math.max(0,netOther);
   if (dates.size!==1 ||weightSum<MIN_TOTAL_WEIGHT_PCT||weightSum>MAX_TOTAL_WEIGHT_PCT) {
     throw new RangeError("Vanguard složení je neúplné nebo jeho váhy přesahují 100 % ("+weightSum.toFixed(3)+" %).");
   }
+  if(netOther>0)rows.set("OTHER-NET",{
+    fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:"OTHER-NET",
+    securityIsin:null,securitySedol:null,
+    securityName:"Net non-equity assets, cash and FX contracts",
+    weightPct:netOther,kind:"other",asOf:[...dates][0],
+    source:"Vanguard EU official GPX holdings; "+[...dates][0],
+  });
   // Minor rounding must not increase the accounted asset value above 100%.
   // Preserve exact weights when <100 so the balance stays explicitly unmapped.
   if (weightSum>100) for(const row of rows.values())row.weightPct*=100/weightSum;
@@ -222,7 +243,7 @@ export async function fetchVwceHoldings(
       method:"POST",signal:AbortSignal.timeout(30_000),redirect:"error",cache:"no-store",
       headers:{"Accept":"application/json","Content-Type":"application/json","X-Consumer-ID":VANGUARD_CONSUMER},
       body:JSON.stringify({query:HOLDINGS_QUERY,variables:{
-        portIds:[VANGUARD_EU_PRODUCT_ID],securityTypes:SECURITY_TYPES,lastItemKey:cursor,
+        portIds:[VANGUARD_EU_PRODUCT_ID],securityTypes:null,lastItemKey:cursor,
       }}),
     });
     if(!response.ok)throw new Error("Vanguard GPX HTTP "+response.status);
