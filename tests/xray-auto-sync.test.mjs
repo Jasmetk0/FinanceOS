@@ -1,0 +1,125 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  issuerFeedForIsin, ISHARES_FEEDS, parseIsharesHoldingsCsv, fetchIsharesHoldings,
+} from "../lib/xray/auto-ishares.ts";
+import { combineConstituentSources } from "../lib/xray/auto-merge.ts";
+import { calculateXRay } from "../lib/xray/engine.ts";
+
+const feed=ISHARES_FEEDS[0];
+const header="Fund Holdings as of,\"13/Oct/2026\"\n"+
+  "Ticker,Name,Sector,Asset Class,Market Value,Weight (%),Notional Value,Shares,Price,Location,Exchange,Market Currency\n";
+const equity=(ticker, name, market, exchange="NASDAQ", location="United States")=>
+  '"'+ticker+'","'+name+'","Information Technology","Equity","'+market+'","0.00","'+market+'","1.00","1.00","'+location+'","'+exchange+'","USD"\n';
+const other=(ticker,name,market,kind="Cash")=>
+  '"'+ticker+'","'+name+'","Cash and/or Derivatives","'+kind+'","'+market+'","0.00","'+market+'","1.00","1.00","United States","-","USD"\n';
+const csv=header +
+  equity("MSFT","MICROSOFT","400.00")+
+  equity("NVDA","NVIDIA","200.00")+
+  equity("AAPL","APPLE","100.00")+
+  equity("AMZN","AMAZON","50.00")+
+  equity("META","META PLATFORMS","50.00")+
+  equity("GOOG","ALPHABET CLASS C","40.00")+
+  equity("GOOGL","ALPHABET CLASS A","40.00")+
+  equity("AMD","ADVANCED MICRO DEVICES","20.00")+
+  equity("ORCL","ORACLE","20.00")+
+  equity("TSLA","TESLA","20.00")+
+  other("USD","USD CASH","40.00")+
+  other("EUR","EUR/USD","-0.01","FX");
+
+const holder=(id,symbol,kind,valueCzk,isin)=>({
+  id,symbol,name:symbol,assetClass:kind,isin:isin??null,canonicalKey:null,
+  valueCzk,quantity:1,accountName:"Invest",provider:"trading212"
+});
+
+test("fund selection is ISIN-only and cannot collide across trading venues",()=>{
+  assert.equal(issuerFeedForIsin("ie00b5bmr087")?.productId,"253743");
+  assert.equal(issuerFeedForIsin("IE00B4L5Y983")?.productId,"251882");
+  assert.equal(issuerFeedForIsin("IE00B6R52259")?.productId,"251850");
+  assert.equal(issuerFeedForIsin("IE00BKM4GZ66")?.productId,"264659");
+  assert.equal(issuerFeedForIsin("IE00BK5BQT80"),null);
+  assert.equal(issuerFeedForIsin(""),null);
+});
+
+test("iShares official CSV uses precise market value instead of rounded 0.00% weights",()=>{
+  const rows=parseIsharesHoldingsCsv(csv,feed,"SXR8");
+  const msft=rows.find(r=>r.securitySymbol==="MSFT");
+  const cash=rows.find(r=>r.securitySymbol.startsWith("OTHER-"));
+  assert.equal(rows.length,11);
+  assert.equal(rows[0].asOf,"2026-10-13");
+  assert.equal(rows[0].fundIsin,feed.isin);
+  assert.ok(msft.weightPct>39 && msft.weightPct<41);
+  assert.equal(cash.kind,"other");
+  assert.ok(Math.abs(rows.reduce((n,r)=>n+r.weightPct,0)-100)<1e-7);
+  const portfolio=calculateXRay([
+    holder("etf","SXR8","etf",1000,feed.isin),
+    holder("stock","MSFT","stock",300,"US5949181045"),
+  ],rows);
+  assert.equal(portfolio.denominatorCzk,1300);
+  assert.ok(portfolio.mappedCzk<1300);
+  assert.ok(portfolio.mappedCzk>1250);
+  assert.ok(Math.abs(portfolio.mappedCzk+portfolio.unallocatedCzk-1300)<1e-6);
+  assert.ok(portfolio.exposures.find(e=>e.ticker==="MSFT").viaFundsCzk>390);
+});
+
+test("issuer reader keeps distinct equity identities when same ticker has different companies",()=>{
+  const rewritten=csv.replace(equity("ORCL","ORACLE","20.00"),
+    equity("SAP","SAP SE","10.00","Xetra","Germany")+
+    equity("SAP","SAPUTO","10.00","Toronto Stock Exchange","Canada"));
+  const rows=parseIsharesHoldingsCsv(rewritten,feed,"SXR8");
+  const sap=rows.filter(r=>r.securitySymbol.startsWith("SAP@"));
+  assert.equal(sap.length,2);
+  assert.notEqual(sap[0].securitySymbol,sap[1].securitySymbol);
+});
+
+test("invalid issuer feed, dates, unexpected row and negatives fail closed",()=>{
+  assert.throws(()=>parseIsharesHoldingsCsv("<html>no data</html>",feed,"SXR8"),/Neplatný/);
+  assert.throws(()=>parseIsharesHoldingsCsv(csv.replace("13/Oct/2026","31/Feb/2026"),feed,"SXR8"),/datum/);
+  assert.throws(()=>parseIsharesHoldingsCsv(csv+"TICKER,EXTRA\n",feed,"SXR8"),/Neznámý/);
+  assert.throws(()=>parseIsharesHoldingsCsv(csv.replace('-0.01','-50.00'),feed,"SXR8"),/významné záporné/);
+});
+
+test("the verified public issuer endpoint is read with no Trading 212 credentials",async()=>{
+  let called;
+  const stub=async(url,init)=>{
+    called={url,init};
+    return new Response(csv,{status:200,headers:{"content-type":"text/plain"}});
+  };
+  const result=await fetchIsharesHoldings(feed,"SXR8",true,stub);
+  assert.equal(result.rows.length,11);
+  assert.equal(called.url,feed.url);
+  assert.equal(called.init.headers.Authorization,undefined);
+  assert.equal(result.cached,false);
+  const again=await fetchIsharesHoldings(feed,"CSPX",false,async()=>{throw Error("should be cached")});
+  assert.equal(again.cached,true);
+  assert.equal(again.rows[0].fundSymbol,"CSPX");
+  await assert.rejects(fetchIsharesHoldings({...feed,isin:"IE00AAAAAAA0"},"X",true,stub),/Neautorizovaný/);
+});
+
+test("auto wins at equal date; newer manual source wins; other funds are preserved",()=>{
+  const official=parseIsharesHoldingsCsv(csv,feed,"SXR8");
+  const older=[{...official[0],source:"manual-old",asOf:"2026-10-01",weightPct:3}];
+  const newer=[{...official[0],source:"manual-new",asOf:"2026-10-14",weightPct:4}];
+  const another=[{...official[0],fundIsin:"IE00ZZZZZZZ1",fundSymbol:"OTHER",asOf:"2026-10-10",source:"manual-other"}];
+  const first=combineConstituentSources([...older,...another],official);
+  assert.equal(first.filter(r=>r.fundIsin===feed.isin).length,official.length);
+  assert.equal(first.filter(r=>r.fundSymbol==="OTHER").length,1);
+  const second=combineConstituentSources([...newer,...another],official);
+  assert.equal(second.filter(r=>r.fundIsin===feed.isin).length,1);
+  assert.equal(second.find(r=>r.fundIsin===feed.isin).source,"manual-new");
+});
+
+test("route remains local-only and X-Ray triggers automatic refresh",()=>{
+  const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
+  const route=read("app/api/xray/auto/route.ts");
+  assert.ok(route.includes("localOnly(request)"));
+  assert.ok(route.includes("getXRayHoldings()"));
+  assert.ok(route.includes("fetchIsharesHoldings("));
+  const ui=read("components/portfolio-xray.tsx");
+  assert.ok(ui.includes("<XRayAutoSync onUpdate={setAutomaticRows}"));
+  assert.ok(ui.includes("combineConstituentSources"));
+  const sync=read("components/xray-auto-sync.tsx");
+  assert.ok(sync.includes('fetch("/api/xray/auto"'));
+  assert.ok(sync.includes("refresh(false,controller.signal)"));
+});

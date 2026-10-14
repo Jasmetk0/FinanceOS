@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { calculateXRay, validateXRayConstituents, type XRayConstituent, type XRayHolding } from "@/lib/xray/engine";
 import { parseXRayCompositionCsv } from "@/lib/xray/import";
 import { XRayIssuerImport } from "@/components/xray-issuer-import";
+import { XRayAutoSync } from "@/components/xray-auto-sync";
+import { combineConstituentSources } from "@/lib/xray/auto-merge";
 
 type Filter = "all" | "stock" | "crypto";
 const DB_NAME = "financeos-xray";
@@ -48,6 +50,11 @@ async function writeRows(rows: XRayConstituent[]): Promise<void> {
 
 export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
   const [constituents, setConstituents] = useState<XRayConstituent[]>([]);
+  const [automaticRows, setAutomaticRows] = useState<XRayConstituent[]>([]);
+  const effectiveRows = useMemo(() => {
+    try { return combineConstituentSources(constituents,automaticRows); }
+    catch { return constituents; }
+  },[constituents,automaticRows]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -69,9 +76,9 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
   }, []);
 
   const report = useMemo(() => {
-    try { return { data: calculateXRay(holdings, constituents), error: "" }; }
+    try { return { data: calculateXRay(holdings, effectiveRows), error: "" }; }
     catch (error) { return { data: null, error: error instanceof Error ? error.message : String(error) }; }
-  }, [holdings, constituents]);
+  }, [holdings, effectiveRows]);
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
@@ -170,10 +177,11 @@ export function PortfolioXRay({ holdings }: { holdings: XRayHolding[] }) {
   const usedFiles = [...new Set(constituents.map((r) => r.source))];
   return (
     <div className="space-y-4">
+      <XRayAutoSync onUpdate={setAutomaticRows} />
       <section className="finance-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold">Podkladová aktiva fondů</h2>
+            <h2 className="text-base font-semibold">Volitelný ruční import a záloha složení</h2>
             <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted)]">
               Přímé akcie a kryptoměny se zobrazují automaticky. Pro průhled do ETF nahraj jejich skutečné složení v CSV od emitenta.
               FinanceOS nikdy nedopočítává chybějící společnosti z odhadů nebo z předchozího agregovaného X-Ray reportu.
