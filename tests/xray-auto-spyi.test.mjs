@@ -117,7 +117,7 @@ test("real SPYI XLSX format: ignore terminal disclaimer and unassigned dash perc
 test("SPYI reader fails closed on invalid source instead of inventing ETF constituents",()=>{
   assert.throws(()=>parseSpyiXlsx(fixture({badDate:true}),"SPYI"),/datum/);
   assert.throws(()=>parseSpyiXlsx(fixture({missingHeader:true}),"SPYI"),/nepodporovanou/);
-  assert.throws(()=>parseSpyiXlsx(fixture({badWeight:true}),"SPYI"),/záporné/);
+  assert.throws(()=>parseSpyiXlsx(fixture({badWeight:true}),"SPYI"),/zápornou akciovou expozici/);
   const withoutCash=parseSpyiXlsx(fixture({addCash:false}),"SPYI");
   assert.equal(withoutCash.length,12);
   assert.ok(Math.abs(withoutCash.reduce((total,row)=>total+row.weightPct,0)-96)<1e-8,
