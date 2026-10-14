@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { localOnly } from "@/lib/server/local-only";
 import { getXRayHoldings } from "@/lib/server/xray";
 import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
+import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
 import type { XRayConstituent } from "@/lib/xray/engine";
 
 export const runtime = "nodejs";
@@ -25,7 +26,8 @@ export async function GET(request: Request) {
       if (h.assetClass !== "etf") continue;
       const isin = h.isin?.trim().toUpperCase() || null;
       const feed = issuerFeedForIsin(isin);
-      if (feed && isin) {
+      const supportsSpyi = isin === SPYI_ISIN;
+      if ((feed || supportsSpyi) && isin) {
         if (!funds.has(isin)) funds.set(isin,{isin,symbol:h.symbol});
       } else {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
@@ -40,9 +42,9 @@ export async function GET(request: Request) {
     // issuer must not invalidate all other, successfully fetched funds.
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
-      if (!feed) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
+      if (!feed && f.isin!==SPYI_ISIN) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
       try {
-        const fetched = await fetchIsharesHoldings(feed,f.symbol,force);
+        const fetched = feed ? await fetchIsharesHoldings(feed,f.symbol,force) : await fetchSpyiHoldings(f.symbol,force);
         return {isin:f.isin,symbol:f.symbol,status:"ok" as const,
           rows:fetched.rows,sourceUrl:fetched.sourceUrl,fetchedAt:fetched.fetchedAt,
           asOf:fetched.rows[0]?.asOf ?? "",cached:fetched.cached};
