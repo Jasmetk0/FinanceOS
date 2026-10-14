@@ -12,11 +12,11 @@ Toto rozhraní je veřejně používané ve webových klientech; **nejde o smluv
 
 ## Kontroly úplnosti a integrity
 
-- Pevně definovaný produkt a známé typy podkladů; žádné URL nebo GraphQL dotazy od uživatele.
+- Pevně definovaný produkt a **všechny** typy podkladů včetně FX CT.SPOT (bez filtru), protože totalHoldings zahrnuje i neakciové položky; žádné URL nebo GraphQL dotazy od uživatele.
 - Postupné načítání všech stránek pomocí kurzoru lastItemKey a totalHoldings. Limity 12 stran, maximálně 12 000 aktiv.
 - Důsledné odmítnutí nedostažené poslední strany, chybného počtu řádků, cyklických kurzorů, jiného fondu či smíšených dat snapshotů.
 - Podkladové váhy marketValuePercentage se chápou jako procenta, ne desetinná čísla 0–1. Součet vah musí být 90 až 100,15 %; menší chybějící část zůstane nerozložená, přebytek v rámci zaokrouhlení se normalizuje.
-- Kontrola záporných a neplatných vah; ETF/deriváty nejsou vydávány za přímo vlastněné akcie.
+- Kontrola záporných a neplatných vah: záporné akciové váhy jsou zakázané; malé záporné měnové/peněžní váhy se započítávají pouze proti kladným neakciovým položkám a významné short expozice se odmítnou. ETF/deriváty nejsou vydávány za akcie.
 - Opatrná identita: evropský GPX nabízí SEDOL, nikoliv spolehlivý ISIN každé akcie. Akcie se v X-Ray zobrazí pod rozpoznatelným označením TICKER@SEDOL (případně SEDOL-<id>, pokud ticker chybí), aby se nesloučily dvě nesouvisející společnosti se stejným tickerem. Některé stejné akcie z přímých nákupů proto zůstanou oddělené, dokud nebude ověřené mapování SEDOL → ISIN. Jde o vědomý kompromis ve prospěch finanční správnosti.
 - Pouze úspěšná celá data se používají a drží v serverové paměťové cache 12 hodin; aktualizovat je lze ručně v X-Ray.
 
@@ -24,6 +24,6 @@ Toto rozhraní je veřejně používané ve webových klientech; **nejde o smluv
 
 Regresní testy prověřují 3 stránky s 3 800 akciemi, zachování 98,8 % identifikované a 1,2 % nerozložené části, bezpečné identity a chybná data i stránkování.
 
-**Živé volání do GPX zatím nebylo možné provést z tohoto izolovaného build prostředí.** V případě změněného schématu nebo nedostupnosti zůstane fond nerozložený a aplikace nahlásí důvod; k provoznímu potvrzení je potřeba přímé vyzkoušení se skutečnou síťovou odpovědí na uživatelově instalaci FinanceOS.
+**Živé GPX volání bylo úspěšně ověřeno dne 14. 10. 2026** z GitHub Actions: úplných 4 093 vstupních řádků (1 500 + 1 500 + 1 093), validováno 3 764 akciových a agregovaných neakciových pozic. **Datum podkladů Vanguard bylo 31. 8. 2026 — data jsou zastaralá.** [Živý test](https://github.com/Jasmetk0/FinanceOS/actions/runs/38634828284). Ověření na uživatelském zařízení a novější podklady závisí na emitentovi.
 
-Následuje ověření zdrojových odpovědí, robustní převod identit SEDOL/ISIN, rozšíření dalších podkladových tříd a zdravotní monitoring issuer sync.
+Monitoring dostupnosti veřejných zdrojů běží jako oddělený denní GitHub Actions canary; pozice a jejich identifikátory se nadále skládají bezpečně bez předstírání vlastnictví podkladových akcií.
