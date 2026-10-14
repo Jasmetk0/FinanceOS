@@ -13,7 +13,7 @@ export const SPYI_OFFICIAL_URL="https://www.ssga.com/library-content/products/fu
 const DATE_PATTERNS=[
   /\b(\d{4})-(\d{2})-(\d{2})\b/,
   /\b(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})\b/,
-  /\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})\b/,
+  /\b(\d{1,2})[-\s]+([A-Za-z]{3,9})[-\s]+(\d{4})\b/,
   /\b([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(\d{4})\b/,
 ];
 function asOfOf(rows:string[][]):string{
