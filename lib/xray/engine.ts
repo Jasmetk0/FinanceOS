@@ -151,25 +151,29 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     tickerOnlyCzk:0,cryptoCzk:0,unmappedCzk:0,totalCzk:denominatorCzk,
   };
 
-  // Symbol-only matching to ISIN is allowed only when exactly one distinct ISIN
-  // exists for the symbol across both direct holdings and imported holdings.
-  // Only exact SEDOL-to-ISIN pairs from the same official issuer constituent
-  // are trusted. Different SEDOLs can represent different listings/classes.
+  // A shared ticker does NOT establish a common share class. For example,
+  // different exchanges and security types reuse tickers. Only exact ISIN
+  // or a checksum-validated SEDOL/ISIN crosswalk can merge direct positions
+  // with ETF constituents. Otherwise keep the economic exposures distinct.
   const crosswalk = buildSedolIsinCrosswalk(compositions);
-  const isinBySymbol = new Map<string, Set<string>>();
-  const register = (symbol: string, isin: string | null, kind: string) => {
-    if (kind !== "stock" || !strongIsin(isin)) return;
-    const s = norm(symbol);
-    if (!isinBySymbol.has(s)) isinBySymbol.set(s, new Set());
-    isinBySymbol.get(s)?.add(norm(isin));
+  const directStockKey = (holding: XRayHolding): string => {
+    const isin = strongIsin(holding.isin) ? norm(holding.isin) :
+      holding.canonicalKey?.startsWith("isin:") && strongIsin(holding.canonicalKey.slice(5))
+        ? norm(holding.canonicalKey.slice(5)) : null;
+    // Even two broker rows bearing the same ticker are not guaranteed to
+    // represent the same security without a trusted instrument ID.
+    return isin ? "isin:" + isin : "position:" + holding.id;
   };
-  for (const h of stocks) register(h.symbol, h.isin, "stock");
-  for (const c of compositions) register(c.securitySymbol, resolveSecurityIsin(c,crosswalk), c.kind);
-  const stockKey = (symbol: string, isin: string | null, canonicalKey?: string | null) => {
+  const constituentStockKey = (row: XRayConstituent): string => {
+    const isin = resolveSecurityIsin(row,crosswalk);
     if (strongIsin(isin)) return "isin:" + norm(isin);
-    if (canonicalKey?.startsWith("isin:") && strongIsin(canonicalKey.slice(5))) return "isin:" + canonicalKey.slice(5).toUpperCase();
-    const candidates = isinBySymbol.get(norm(symbol));
-    return candidates?.size === 1 ? "isin:" + [...candidates][0] : "symbol:" + norm(symbol);
+    const sedol = normalizedSedol(row.securitySedol);
+    if (sedol) return "sedol:" + sedol;
+    // No verified identifier: scope the ticker to its PARTICULAR fund
+    // rather than merging same-symbol securities across different issuers.
+    const fundKey = row.fundIsin ? "isin:" + norm(row.fundIsin) :
+      "symbol:" + norm(row.fundSymbol);
+    return "fund:" + fundKey + "|security:" + norm(row.securitySymbol);
   };
 
   type Mutable = Omit<XRayExposure, "weightPct" | "totalCzk" | "fundSymbols" | "accounts"> & { fundSymbols: Set<string>; accounts: Set<string> };
@@ -192,7 +196,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
 
   for (const h of direct) {
     const kind = h.assetClass === "crypto" ? "crypto" : "stock";
-    const key = kind === "crypto" ? "crypto:" + cryptoSymbol(h.symbol) : stockKey(h.symbol, h.isin, h.canonicalKey);
+    const key = kind === "crypto" ? "crypto:" + cryptoSymbol(h.symbol) : directStockKey(h);
     // Without an identifiable symbol or ISIN, keep the individual source row separate.
     const resolved = key.endsWith(":") || key.endsWith(":UNKNOWN") ? "position:" + h.id : key;
     add(resolved, kind, h.symbol, h.name, h.valueCzk, 0, h.quantity, h.provider + " · " + h.accountName);
@@ -226,12 +230,26 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     etfIsinsBySymbol.get(s)?.add(norm(h.isin) || "unknown");
   }
   const warnings = new Set<string>();
+  const directMissingIdentity = stocks.filter((h) =>
+    !strongIsin(h.isin) &&
+    !(h.canonicalKey?.startsWith("isin:") && strongIsin(h.canonicalKey.slice(5)))
+  ).length;
+  if (directMissingIdentity > 0) warnings.add(
+    directMissingIdentity + " přímo držených akciových pozic nemá ISIN. " +
+    "Kvůli ochraně před chybným sloučením jsou vedené odděleně od ETF a jiných účtů."
+  );
   const coverage: XRayFundCoverage[] = [];
   for (const h of funds) {
     const candidates = h.isin ? byIsin.get(norm(h.isin)) : undefined;
     const tickerOnly = bySymbol.get(norm(h.symbol));
     const ambiguousTicker = (etfIsinsBySymbol.get(norm(h.symbol))?.size ?? 0) > 1;
-    const holdingsList = candidates ?? (!ambiguousTicker ? tickerOnly : undefined);
+    // Known ETF ISIN must match the declared ISIN in its issuer snapshot.
+    // A symbol-only manual CSV is never sufficient to identify a different
+    // fund that happens to use the same exchange ticker.
+    const holdingsList = candidates ?? (!h.isin && !ambiguousTicker ? tickerOnly : undefined);
+    if (h.isin && !candidates && tickerOnly) {
+      warnings.add("ETF " + h.symbol + " (" + h.isin + ") nelze přiřadit k CSV bez fund_isin. Doplň ISIN fondu; neověřený rozklad zůstává nezapočten.");
+    }
     if (ambiguousTicker && !candidates && tickerOnly) warnings.add("ETF " + h.symbol + " má více ISIN. Import bez ISIN nelze bezpečně přiřadit.");
     if (!holdingsList?.length) {
       coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: 0, mappedCzk: 0, unmappedCzk: h.valueCzk, source: null, asOf: null, note: "Chybí rozklad ETF" });
@@ -256,7 +274,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       if (c.kind === "other" || c.weightPct === 0) continue;
       const part = h.valueCzk * c.weightPct / 100;
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
-        stockKey(c.securitySymbol, resolveSecurityIsin(c,crosswalk));
+        constituentStockKey(c);
       add(key, c.kind, c.securitySymbol, c.securityName, 0, part, 0, undefined, h.symbol);
       if(c.kind==="crypto") identityCoverage.cryptoCzk+=part;
       else if(strongIsin(c.securityIsin)) identityCoverage.isinCzk+=part;
