@@ -227,7 +227,7 @@ export function XRayAutoSync({
         </div>
       </details>:null}
       <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
-        Podporované zdroje: Vanguard VWCE, State Street SPYI a vybrané fondy iShares.
+        Podporované zdroje: Vanguard VWCE / VWRA / VWRP, State Street SPYI / IMIE / IMID a vybrané fondy iShares.
         Aktuálnost se posuzuje podle data skutečného složení, ne podle času, kdy jsme soubor stáhli.
         Zálohované automatické podklady jsou v tomto prohlížeči uchovávány maximálně 60 dní.
         Neúplné či chybné zdroje se nepovažují za živé.
