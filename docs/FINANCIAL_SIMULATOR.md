@@ -38,3 +38,23 @@ Referenční scénář: 500 000 Kč, nominální CAGR 12 %, inflace 2,9 %, cíl 
 5. Stresové scénáře a reprodukovatelné Monte Carlo s jasnými modelovými předpoklady.
 
 Tato první verze není osobní investiční doporučení ani predikce budoucích tržních výnosů.
+
+## Pravidelné životní fáze (2026-10-14)
+
+Každé pravidlo má název, jednoznačné ID, typ, první a poslední aktivní měsíc (oba včetně), nominální měsíční částku a vlastní roční indexaci. Datum je relativní k začátku simulace. Věk v UI slouží jako pohodlný převod na měsíce; jeho pozdější změna **nemění** uložené relativní měsíce.
+
+- **Změna základního vkladu:** nahrazuje standardní měsíční vklad pouze v období pravidla. Mimo období se znovu použije základní měsíční vklad s jeho původní indexací. Dvě taková období se nesmějí překrývat ani hraničním měsícem.
+- **Dodatečný vklad:** v daném měsíci se přičte k běžnému vkladu, jednorázovým kladným událostem a ostatním dodatečným vkladům.
+- **Pravidelný výběr:** v daném měsíci se sečte s jednorázovými zápornými událostmi. Pokud by přesáhl hodnotu portfolia po zhodnocení a všech vkladech, skutečný výběr se omezí na disponibilní kapitál a požadovaný rozdíl se vykáže jako neuspokojená částka.
+- Indexace pravidla začíná až po celých dvanácti měsících jeho vlastní aktivity. Odlišuje se tedy od globální indexace základního vkladu.
+- V této etapě jde o investiční cash flow; pravidelná mzda či nájem z jiného majetku **nepřitéká automaticky** do investičního portfolia.
+
+Všechny metody solve (včetně inverzního dopočtu) a simulate používají stejný seznam pravidel. Neplatné případy, duplicity ID a kolizní období jsou odmítnuty ještě před výpočtem.
+
+### Kompatibilita uložených scénářů
+
+Nové uložení používá `financeos-financial-simulator-v2` s verzí 2 a se seznamem pravidel i počátečním věkem. Načítání nejdřív kontroluje v2, ale stále rozpozná v1. Načtený stav se před použitím ověřuje a stará v1 data se automaticky nemažou.
+
+### Další vývoj
+
+Plán: více uložených pojmenovaných scénářů, vizuální srovnávací graf pro dvě a více variant, editace jednotlivých pravidel, příjmový/výdajový rozpočet mimo investiční portfolio, samostatné modely čerpání důchodu a rizika.
