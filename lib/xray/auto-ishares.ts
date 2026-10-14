@@ -106,11 +106,17 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
   const combined = new Map<string,XRayConstituent>();
   for (const row of pending) {
     if (row.value <= 0) continue;
-    const conflict = row.kind === "stock" && (bySymbol.get(row.ticker)?.size ?? 0) > 1;
-    // Ambiguous cross-market ticker must not be mistaken for a US security.
-    // Keep a distinct identity even if it prevents merging with direct stock.
+    const conflict = row.kind === "stock" && (
+      row.ticker === "-" || (bySymbol.get(row.ticker)?.size ?? 0) > 1
+    );
+    // Some official EM IMI holdings use a literal "-" ticker for multiple
+    // *different companies on the same exchange*. Exchange-only suffixes
+    // collide and make a complete, legitimate feed fail validation.
+    // Distinguish each ambiguous SOURCE ROW instead; never infer a ticker
+    // or pretend an anonymous line is the same security as a direct share.
     const symbol = row.kind === "other" ? "OTHER-" + row.index :
-      conflict ? row.ticker + "@" + row.exchange.replace(/\s+/g,"-").slice(0,30) : row.ticker;
+      conflict ? row.ticker + "@" + row.exchange.replace(/\s+/g,"-").slice(0,30) +
+        "#row" + (row.index+1) : row.ticker;
     const id = row.kind + "|" + symbol + "|" + (conflict ? row.name : "");
     const previous = combined.get(id);
     const weightPct = 100 * row.value / positive;
