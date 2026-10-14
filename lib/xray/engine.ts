@@ -173,7 +173,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     // rather than merging same-symbol securities across different issuers.
     const fundKey = row.fundIsin ? "isin:" + norm(row.fundIsin) :
       "symbol:" + norm(row.fundSymbol);
-    return "fund:" + fundKey + "|security:" + norm(row.securitySymbol);
+    return "fund:" + JSON.stringify([fundKey, norm(row.securitySymbol)]);
   };
 
   type Mutable = Omit<XRayExposure, "weightPct" | "totalCzk" | "fundSymbols" | "accounts"> & { fundSymbols: Set<string>; accounts: Set<string> };
