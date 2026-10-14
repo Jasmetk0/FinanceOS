@@ -38,7 +38,8 @@ function asOfOf(rows:string[][]):string{
 const header=(s:string)=>s.toLowerCase().trim().replace(/[\s_/()%.-]+/g," ");
 function number(value:string):number{
   const cleaned=value.trim().replace(/[, %]/g,"");
-  if(!/^-?\d+(?:\.\d+)?$/.test(cleaned))throw new RangeError("Neplatná váha podkladu SPDR: "+value);
+  if(!/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d{1,3})?$/.test(cleaned))
+    throw new RangeError("Neplatná váha podkladu SPDR: "+value);
   const n=Number(cleaned);if(!Number.isFinite(n))throw new RangeError("Nekonečná váha.");
   return n;
 }
