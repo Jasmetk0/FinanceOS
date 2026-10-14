@@ -59,11 +59,36 @@ await debug("Vanguard real GPX page shapes",async()=>{
   catch(e){console.log("Filtered query failed:",e instanceof Error?e.message:String(e));}
   console.log("--- Repeat with NO security type filter (all official holdings) ---");
   pages=0;
+  const observedRows=[];
   const unfiltered=async(url,options)=>{
     const query=JSON.parse(String(options.body));
     query.variables.securityTypes=null;
-    return wrapper(url,{...options,body:JSON.stringify(query)});
+    const result=await wrapper(url,{...options,body:JSON.stringify(query)});
+    const payload=await result.clone().json();
+    observedRows.push(...(payload?.data?.borHoldings?.[0]?.holdings?.items??[]));
+    return result;
   };
-  const result=await fetchVwceHoldings("VWCE",true,unfiltered);
-  console.log("Unfiltered parsed rows",result.rows.length);
+  try {
+    const result=await fetchVwceHoldings("VWCE",true,unfiltered);
+    console.log("Unfiltered parsed rows",result.rows.length);
+  } finally {
+    const invalid=observedRows.filter(r=>r.marketValuePercentage==null ||
+      !Number.isFinite(Number(r.marketValuePercentage)) || Number(r.marketValuePercentage)<0);
+    console.log("Unfiltered data summary",{
+      count:observedRows.length,
+      invalidWeights:invalid.length,
+      invalidExamples:invalid.slice(0,12).map(x=>({
+        type:x.securityType,weight:x.marketValuePercentage,
+        name:String(x.securityLongDescription??"").slice(0,55),
+        date:x.effectiveDate,
+      })),
+      missingType:observedRows.filter(r=>!r.securityType).length,
+      missingName:observedRows.filter(r=>!r.securityLongDescription&&!r.issuerName).length,
+      dateValues:[...new Set(observedRows.map(r=>r.effectiveDate))].slice(0,9),
+      sums:{
+        positive:observedRows.reduce((a,r)=>a+Math.max(0,Number(r.marketValuePercentage)||0),0),
+        negative:observedRows.reduce((a,r)=>a+Math.min(0,Number(r.marketValuePercentage)||0),0),
+      },
+    });
+  }
 });
