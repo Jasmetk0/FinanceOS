@@ -1,7 +1,7 @@
 "use client";
 
-import { validateXRayConstituents, type XRayConstituent } from "./engine";
-import type { IssuerFundStatus } from "./issuer-reliability";
+import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
+import type { IssuerFundStatus } from "./issuer-reliability.ts";
 
 const DB_NAME="financeos-xray";
 const STORE_NAME="imports";
