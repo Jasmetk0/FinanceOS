@@ -48,20 +48,20 @@ export function XRayAutoSync({
   const [showingSaved,setShowingSaved]=useState(false);
   const rowsRef=useRef<XRayConstituent[]>([]);
   const loaded=useRef(false);
-  const running=useRef(false);
+  const cacheSavedAt=useRef<string|null>(null);
 
   const refresh=useCallback(async(force:boolean,signal?:AbortSignal)=>{
-    if(running.current || signal?.aborted)return;
-    running.current=true;
+    if(signal?.aborted)return;
     setLoading(true);
     setError("");
     try {
       if(!loaded.current){
-        loaded.current=true;
         try {
           const saved=await loadCachedIssuerSnapshots();
           if(signal?.aborted)return;
+          loaded.current=true;
           if(saved) {
+            cacheSavedAt.current=saved.savedAt;
             rowsRef.current=saved.rows;
             onUpdate(saved.rows);
             setRetainedIsins([...new Set(saved.rows.map(row=>issuerKey(row.fundIsin)).filter(Boolean))]);
@@ -76,6 +76,7 @@ export function XRayAutoSync({
             setShowingSaved(true);
           }
         } catch {
+          loaded.current=true;
           // Malformed/blocked IndexedDB is not a reason to suppress online
           // issuer fetch. Never trust corrupt local backup data.
         }
@@ -100,11 +101,15 @@ export function XRayAutoSync({
       setShowingSaved(false);
       setStatus(value);
       try {
+        // An outage must not renew the expiry date of old automatic data.
+        const saveTime=result.retainedIsins.length&&cacheSavedAt.current ?
+          cacheSavedAt.current : new Date().toISOString();
         await storeCachedIssuerSnapshots({
-          version:1,savedAt:new Date().toISOString(),
+          version:1,savedAt:saveTime,
           rows:result.rows,
           funds:value.funds.map(f=>({...f})),
         });
+        cacheSavedAt.current=saveTime;
       } catch {
         // Current valid network snapshot is usable even if browser storage
         // was denied. The UI explains that cache is best-effort.
@@ -115,7 +120,6 @@ export function XRayAutoSync({
       // Retain the last known-good portfolio exposure (memory or IndexedDB).
       if(rowsRef.current.length)setShowingSaved(true);
     } finally {
-      running.current=false;
       if(!signal?.aborted)setLoading(false);
     }
   },[onUpdate]);
