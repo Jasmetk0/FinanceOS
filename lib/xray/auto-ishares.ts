@@ -21,7 +21,7 @@ export const ISHARES_FEEDS: readonly IssuerFeed[] = [
   { isin: "IE00B4L5Y983", name: "iShares Core MSCI World UCITS ETF (IWDA/EUNL)", productId: "251882",
     url: "https://www.ishares.com/uk/professionals/en/products/251882/ishares-core-msci-world-ucits-etf/latest-holdings.csv" },
   { isin: "IE00B6R52259", name: "iShares MSCI ACWI UCITS ETF (SSAC/IUSQ)", productId: "251850",
-    url: "https://www.ishares.com/uk/individual/en/products/251850/ishares-msci-acwi-ucits-etf/latest-holdings.csv" },
+    url: "https://www.ishares.com/uk/individual/en/products/251850/ishares-msci-all-country-world-ucits-etf/latest-holdings.csv" },
   { isin: "IE00BKM4GZ66", name: "iShares Core MSCI EM IMI UCITS ETF (EIMI/IS3N)", productId: "264659",
     url: "https://www.ishares.com/uk/individual/en/products/264659/ishares-core-msci-em-imi-ucits-etf/latest-holdings.csv" },
 ];
@@ -77,7 +77,7 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
     // The public CSV's trailing disclaimers are not constituents: fail closed
     // on any nonempty row with a mismatched structure.
     if (f.length !== names.length) throw new RangeError("Neznámý/poškozený řádek iShares CSV: "+(i+1));
-    const kind = f[classIdx].trim().toLowerCase() === "equity" ? "stock" : "other";
+    const kind = f[classIdx].trim().toLowerCase() === "equity" && !/\b(ETF|ISHARES)\b/i.test(f[nameIdx]) ? "stock" : "other";
     const name = f[nameIdx].trim();
     const ticker = f[tickerIdx].trim().toUpperCase();
     const value = marketNumber(f[valueIdx]);
