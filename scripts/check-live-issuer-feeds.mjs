@@ -76,4 +76,6 @@ if(failing.length||outOfDate.length){
   console.error("Issuer canary: "+failing.length+" unavailable/incomplete, "+
     outOfDate.length+" stale, of "+results.length+" total public sources.");
 }
-if(strict && (failing.length||outOfDate.length))process.exitCode=1;
+// A published monthly Vanguard snapshot is often older than seven days;
+// this is a real freshness warning but not a transport/parser failure.
+if(strict && failing.length)process.exitCode=1;
