@@ -60,7 +60,7 @@ export function XRayAutoSync({
 
   useEffect(()=>{
     const controller=new AbortController();
-    void refresh(false,controller.signal);
+    void Promise.resolve().then(() => refresh(false,controller.signal));
     return ()=>controller.abort();
   },[refresh]);
 
