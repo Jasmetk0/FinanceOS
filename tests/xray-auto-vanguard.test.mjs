@@ -69,8 +69,8 @@ test("different SEDOLs with identical tickers do not collide or silently merge",
 
 test("never accept truncated, inconsistent or cyclicly paginated fund holdings",()=>{
   assert.throws(()=>parseVanguardHoldings(pages.slice(0,2),"VWCE"),/všechny podklady/);
-  assert.throws(()=>parseVanguardHoldings([page(source.slice(0,1500),3800,"p2"),page(source.slice(1500),3799,null)],"VWCE"),/všechny podklady/);
-  assert.throws(()=>parseVanguardHoldings([page(source.slice(0,1500),3800,"p2"),page(source.slice(1500),3800,null)],"VWCE"),/všechny podklady/);
+  assert.throws(()=>parseVanguardHoldings([page(source.slice(0,1500),3800,"p2"),page(source.slice(1500,3000),3799,"p3"),page(source.slice(3000),3799,null)],"VWCE"),/všechny podklady/);
+  assert.throws(()=>parseVanguardHoldings([page(source.slice(0,1500),3800,"p2"),page(source.slice(1500,3000),3800,null)],"VWCE"),/všechny podklady/);
   assert.throws(()=>parseVanguardHoldings([
     page(source.slice(0,1500),3800,"p2"),
     page(source.slice(1500,3000).map((x,i)=>i===0?{...x,effectiveDate:"2026-07-31"}:x),3800,"p3"),
