@@ -105,7 +105,7 @@ export function parseXRayCompositionCsv(raw: string, fileLabel: string): XRayCon
   for (let i = 1; i < parsed.length; i++) {
     const fields = parsed[i];
     if (fields.length !== names.length) {
-      throw new RangeError("Nesprávný počet polí na datovém řádku " + (i + 2) + ".");
+      throw new RangeError("Nesprávný počet polí na datovém řádku " + (i + 1) + ".");
     }
     const get = (k: string) => columns[k] < 0 ? "" : fields[columns[k]].trim();
     try {
@@ -121,7 +121,7 @@ export function parseXRayCompositionCsv(raw: string, fileLabel: string): XRayCon
         source: get("source") || fileLabel,
       });
     } catch (error) {
-      throw new RangeError("Řádek " + (i + 2) + ": " + (error instanceof Error ? error.message : String(error)));
+      throw new RangeError("Řádek " + (i + 1) + ": " + (error instanceof Error ? error.message : String(error)));
     }
   }
   validateXRayConstituents(rows);
