@@ -3,6 +3,8 @@
  * Pure math: no provider data, network access, storage or side effects.
  * All rates represent EFFECTIVE annual rates. Payments occur at month end.
  */
+import { timelineMonthFlows, validateTimelineRules, type TimelineRule } from "./timeline.ts";
+
 export type SolveKey = "years" | "initialCzk" | "monthlyContributionCzk" | "annualReturnPct" | "targetMonthlyIncomeCzk";
 
 export interface SimulatorInputs {
@@ -30,6 +32,9 @@ export interface SimulatorPoint {
   withdrawnCzk: number;
   shortfallCzk: number;
   targetNominalCzk: number;
+  monthlyDepositCzk: number;
+  monthlyWithdrawalCzk: number;
+  monthlyShortfallCzk: number;
 }
 
 export interface SimulatorForecast {
@@ -86,8 +91,10 @@ export function simulate(
   input: SimulatorInputs,
   months: number,
   events: SimulatorEvent[] = [],
+  rules: TimelineRule[] = [],
 ): SimulatorForecast {
   assertValid(input, months, events);
+  validateTimelineRules(rules);
   const rate = Math.pow(1 + input.annualReturnPct / 100, 1 / 12) - 1;
   const inflation = 1 + input.annualInflationPct / 100;
   const contributionGrowth = 1 + input.annualContributionIncreasePct / 100;
@@ -105,17 +112,24 @@ export function simulate(
   const points: SimulatorPoint[] = [];
 
   for (let month = 0; month <= months; month++) {
+    let monthlyDepositCzk = 0;
+    let monthlyWithdrawalCzk = 0;
+    let monthlyShortfallCzk = 0;
     if (month > 0) {
-      const deposit = input.monthlyContributionCzk *
-        Math.pow(contributionGrowth, Math.floor((month - 1) / 12));
+      const schedule = timelineMonthFlows(rules, month);
+      const baseDeposit = schedule.contributionOverrideCzk ??
+        input.monthlyContributionCzk *
+          Math.pow(contributionGrowth, Math.floor((month - 1) / 12));
       const eventAmount = eventTotals.get(month) ?? 0;
-      const beforeWithdrawal = balance * (1 + rate) + deposit + Math.max(0, eventAmount);
-      const requestedWithdrawal = Math.max(0, -eventAmount);
-      const actualWithdrawal = Math.min(beforeWithdrawal, requestedWithdrawal);
-      shortfall += requestedWithdrawal - actualWithdrawal;
-      balance = beforeWithdrawal - actualWithdrawal;
-      paidIn += deposit + Math.max(0, eventAmount);
-      withdrawn += actualWithdrawal;
+      monthlyDepositCzk = baseDeposit + schedule.extraDepositCzk + Math.max(0, eventAmount);
+      const beforeWithdrawal = balance * (1 + rate) + monthlyDepositCzk;
+      const requestedWithdrawal = schedule.withdrawalCzk + Math.max(0, -eventAmount);
+      monthlyWithdrawalCzk = Math.min(Math.max(0, beforeWithdrawal), requestedWithdrawal);
+      monthlyShortfallCzk = requestedWithdrawal - monthlyWithdrawalCzk;
+      shortfall += monthlyShortfallCzk;
+      balance = beforeWithdrawal - monthlyWithdrawalCzk;
+      paidIn += monthlyDepositCzk;
+      withdrawn += monthlyWithdrawalCzk;
     }
     const factor = Math.pow(inflation, month / 12);
     const realCzk = balance / factor;
@@ -130,6 +144,9 @@ export function simulate(
       withdrawnCzk: withdrawn,
       shortfallCzk: shortfall,
       targetNominalCzk: target * factor,
+      monthlyDepositCzk,
+      monthlyWithdrawalCzk,
+      monthlyShortfallCzk,
     };
     if (firstGoalMonth === null && realCzk >= target) firstGoalMonth = month;
     points.push(point);
@@ -141,10 +158,11 @@ export function solve(
   input: SimulatorInputs,
   unknown: SolveKey,
   events: SimulatorEvent[] = [],
+  rules: TimelineRule[] = [],
 ): SolveResult {
   try {
     if (unknown === "years") {
-      const forecast = simulate(input, MAX_SIMULATION_MONTHS, events);
+      const forecast = simulate(input, MAX_SIMULATION_MONTHS, events, rules);
       return forecast.firstGoalMonth === null
         ? { value: null, error: "Cíl nebyl dosažen ani za 100 let při zadaných předpokladech." }
         : { value: forecast.firstGoalMonth / 12, error: null };
@@ -156,7 +174,7 @@ export function solve(
     }
     const target = goalRealCzk(input);
     if (unknown === "targetMonthlyIncomeCzk") {
-      const projected = simulate(input, months, events).last.realCzk;
+      const projected = simulate(input, months, events, rules).last.realCzk;
       return { value: projected * input.withdrawalRatePct / 100 / 12, error: null };
     }
 
@@ -168,7 +186,7 @@ export function solve(
     const key = unknown;
     const [lower, upper] = bounds[key];
     const projection = (value: number) =>
-      simulate({ ...input, [key]: value }, months, events).last.realCzk;
+      simulate({ ...input, [key]: value }, months, events, rules).last.realCzk;
     if (projection(lower) >= target) return { value: lower, error: null };
     if (projection(upper) < target) {
       return { value: null, error: "Při daných omezeních nelze najít řešení. Uprav cíl nebo časový horizont." };
