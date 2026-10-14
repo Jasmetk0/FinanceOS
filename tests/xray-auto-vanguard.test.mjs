@@ -46,7 +46,7 @@ test("Vanguard EU parser uses all 3800 holdings and preserves unallocated residu
   assert.ok(Math.abs(r.unmappedPct-1.2)<1e-7);
   assert.equal(r.rows[0].fundIsin,VWCE_ISIN);
   assert.equal(r.rows[0].securityIsin,null);
-  assert.equal(r.rows[0].securitySymbol,"SEDOL-A000001");
+  assert.equal(r.rows[0].securitySymbol,"STK1@A000001");
   const report=calculateXRay([
     holding("vwce","VWCE","etf",100_000,VWCE_ISIN),
     holding("stock","STK1","stock",10_000,"US5949181045"),
@@ -56,7 +56,7 @@ test("Vanguard EU parser uses all 3800 holdings and preserves unallocated residu
   assert.ok(Math.abs(report.unallocatedCzk-1200)<1e-5);
   assert.ok(Math.abs(report.mappedCzk+report.unallocatedCzk-report.denominatorCzk)<1e-5);
   assert.ok(report.exposures.some(x=>x.ticker==="STK1"),"Direct holding remains identifiable");
-  assert.ok(report.exposures.some(x=>x.ticker==="SEDOL-A000001"),"Fund security retains precise SEDOL identity");
+  assert.ok(report.exposures.some(x=>x.ticker==="STK1@A000001"),"Fund security retains readable ticker and precise SEDOL identity");
 });
 
 test("different SEDOLs with identical tickers do not collide or silently merge",()=>{
