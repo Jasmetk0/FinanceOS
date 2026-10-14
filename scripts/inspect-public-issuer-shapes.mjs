@@ -44,7 +44,7 @@ await debug("SPDR official XLSX schema",async()=>{
     .filter(r=>!r.weight||r.weight.trim()==="-");
   console.log("SPDR missing/dash weight cells",JSON.stringify({
     count:missingWeight.length,examples:missingWeight.slice(0,24),
-    last5Rows:rows.slice(-5),
+    last5Rows:rows.slice(-5).map(row=>row.map(cell=>cell.slice(0,80))),
   },null,2));
   const weighted=rows.slice(5).map((r,i)=>({
     row:i+6,isin:r[0],name:r[2],sector:r[8],weight:r[5],
