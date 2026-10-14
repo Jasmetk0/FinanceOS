@@ -14,6 +14,7 @@ export interface XRayHolding {
   valueCzk: number;
   provider: string;
   accountName: string;
+  updatedAt?: string | null; // timestamp of locally stored position, not exchange quote time
 }
 
 export type ExposureKind = "stock" | "crypto" | "other";
