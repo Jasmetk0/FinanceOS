@@ -290,7 +290,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     const totalCzk = item.directCzk + item.viaFundsCzk;
     // A derived equivalent share count is only meaningful for the SAME security
     // with a nonzero direct reference price, never for ADR or another share class.
-    const fundEquivalentQuantity = item.directQuantity > 0 && item.directCzk > 0
+    const fundEquivalentQuantity = item.viaFundsCzk > 0 && item.directQuantity > 0 && item.directCzk > 0
       ? item.viaFundsCzk / (item.directCzk / item.directQuantity) : null;
     return {
       ...item, totalCzk,
