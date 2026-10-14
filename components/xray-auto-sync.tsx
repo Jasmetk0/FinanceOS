@@ -45,6 +45,7 @@ export function XRayAutoSync({
   const [loading,setLoading]=useState(true);
   const [error,setError]=useState("");
   const [retainedIsins,setRetainedIsins]=useState<string[]>([]);
+  const [regressedIsins,setRegressedIsins]=useState<string[]>([]);
   const [showingSaved,setShowingSaved]=useState(false);
   const [visibleRows,setVisibleRows]=useState<XRayConstituent[]>([]);
   const [observedAt,setObservedAt]=useState(0);
@@ -69,6 +70,7 @@ export function XRayAutoSync({
             setObservedAt(Date.now());
             onUpdate(saved.rows);
             setRetainedIsins([...new Set(saved.rows.map(row=>issuerKey(row.fundIsin)).filter(Boolean))]);
+            setRegressedIsins([]);
             setStatus({
               rows:[],
               funds:saved.funds,
@@ -104,6 +106,7 @@ export function XRayAutoSync({
       setObservedAt(Date.now());
       onUpdate(result.rows);
       setRetainedIsins(result.retainedIsins);
+      setRegressedIsins(result.regressedIsins);
       setShowingSaved(false);
       setStatus(value);
       try {
@@ -174,7 +177,9 @@ export function XRayAutoSync({
           {failures.length?failures.length+" emitentů ohlásilo chybu. ":""}
           {retainedIsins.length?
             "Používám poslední ověřené složení "+retainedIsins.length+
-            " ETF ze zálohy; NEJDE o aktuální stav emitenta. ":""}
+            " ETF ze zálohy; NEJDE o nově ověřený stav emitenta. ":""}
+          {regressedIsins.length?
+            "U "+regressedIsins.length+" ETF emitent vrátil STARŠÍ datum podkladů; novější ověřené složení jsem zachoval. ":""}
           {showingSaved?"Poslední úspěšné podklady jsou zachované lokálně. ":""}
           {(!error&&!failures.length&&!retainedIsins.length&&showingSaved)?
             "Zkouším ověřit jejich aktuálnost.":""}
@@ -192,6 +197,7 @@ export function XRayAutoSync({
           {status.funds.map(f=>{
             const saved=visibleRows.find(r=>issuerKey(r.fundIsin)===issuerKey(f.isin));
             const fallback=savedSet.has(issuerKey(f.isin))||showingSaved;
+            const regressed=regressedIsins.includes(issuerKey(f.isin));
             const asOf=fallback?saved?.asOf:f.asOf;
             const freshness=classifyIssuerDate(asOf,observedAt);
             return <div key={f.isin} className="rounded-xl border border-[var(--border)] p-3">
@@ -199,12 +205,13 @@ export function XRayAutoSync({
                 <strong>{f.symbol} · {f.isin}</strong>
                 <span className={fallback||f.status!=="ok"||freshness.state==="stale"||
                   freshness.state==="future"?"text-[var(--warning)]":"text-[var(--accent)]"}>
-                  {fallback?"Záložní data · ":f.status==="ok"?"Zdroj funkční · ":"Chyba zdroje · "}
+                  {regressed?"Nově stažená data starší než záloha · ":
+                    fallback?"Záložní data · ":f.status==="ok"?"Zdroj funkční · ":"Chyba zdroje · "}
                   {staleLabel(asOf,observedAt)}
                 </span>
               </div>
               <p className="mt-1">Složení k: <strong>{asOf??"neuvedeno"}</strong>
-                {" · "}Poslední stažení: {stamp(f.fetchedAt)}
+                {" · "}Poslední pokus o stažení: {stamp(f.fetchedAt)}
                 {" · "}Počet podkladů: {fallback?
                   visibleRows.filter(r=>issuerKey(r.fundIsin)===issuerKey(f.isin)).length:
                   f.holdings??"neuvedeno"}
