@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { normalizedSedol, buildSedolIsinCrosswalk, resolveSecurityIsin } from "../lib/xray/security-identity.ts";
 import { calculateXRay, validateXRayConstituents } from "../lib/xray/engine.ts";
 
@@ -100,7 +101,7 @@ test("manual extra securitySedol metadata is optional; unchanged legacy data pas
 });
 
 test("Vanguard and SPDR ingest check-digit-sound SEDOL while preserving official source identity",()=>{
-  const read=p=>(await import("node:fs")).readFileSync(new URL("../"+p,import.meta.url),"utf8");
+  const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
   const [vgCode,spCode]=await Promise.all([read("lib/xray/auto-vanguard.ts"),read("lib/xray/auto-spyi.ts")]);
   assert.ok(vgCode.includes("securitySedol:kind==="));
   assert.ok(spCode.includes("securitySedol:isEquity?sedol:null"));
