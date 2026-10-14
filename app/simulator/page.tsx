@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { FinancialSimulator } from "@/components/financial-simulator";
 import { getPlanData } from "@/lib/server/plan";
 
@@ -20,6 +21,10 @@ export default function SimulatorPage() {
           Nastav si finanční cíl, zvol jednu neznámou k dopočítání a sleduj vývoj
           portfolia v dnešní kupní síle i nominálních korunách.
         </p>
+      </div>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--accent)]/20 bg-[var(--accent)]/[.045] px-4 py-3">
+        <p className="text-xs leading-5 text-[var(--muted)]">Chceš zjistit nejen cílový kapitál, ale i riziko propadů a udržitelnost důchodových výběrů?</p>
+        <Link href="/simulator/risk" prefetch={false} className="finance-action finance-action-primary">Otevřít Monte Carlo a FIRE riziko →</Link>
       </div>
       <FinancialSimulator trackedPortfolioCzk={trackedPortfolioCzk} />
     </main>
