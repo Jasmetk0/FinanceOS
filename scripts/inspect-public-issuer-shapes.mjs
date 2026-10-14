@@ -46,6 +46,18 @@ await debug("SPDR official XLSX schema",async()=>{
     count:missingWeight.length,examples:missingWeight.slice(0,24),
     last5Rows:rows.slice(-5),
   },null,2));
+  const weighted=rows.slice(5).map((r,i)=>({
+    row:i+6,isin:r[0],name:r[2],sector:r[8],weight:r[5],
+  })).filter(x=>x.weight && x.weight!=="-" && Number.isFinite(Number(x.weight)));
+  const negative=weighted.filter(x=>Number(x.weight)<0);
+  console.log("SPDR signed weight summary",JSON.stringify({
+    negativeCount:negative.length,
+    negativeRows:negative.slice(0,16),
+    positiveTotal:weighted.reduce((a,x)=>a+Math.max(0,Number(x.weight)),0),
+    negativeTotal:negative.reduce((a,x)=>a+Number(x.weight),0),
+    estimatedEquityTotal:weighted.filter(x=>/^[A-Z]{2}[A-Z0-9]{10}$/.test(x.isin??""))
+      .reduce((a,x)=>a+Math.max(0,Number(x.weight)),0),
+  },null,2));
 });
 await debug("Vanguard real GPX page shapes",async()=>{
   let pages=0;
