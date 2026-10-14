@@ -177,10 +177,14 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   for (const c of compositions) {
     if (c.fundIsin) {
       const k = norm(c.fundIsin);
-      byIsin.set(k, [...(byIsin.get(k) ?? []), c]);
+      const group = byIsin.get(k);
+      if (group) group.push(c);
+      else byIsin.set(k, [c]);
     } else {
       const k = norm(c.fundSymbol);
-      bySymbol.set(k, [...(bySymbol.get(k) ?? []), c]);
+      const group = bySymbol.get(k);
+      if (group) group.push(c);
+      else bySymbol.set(k, [c]);
     }
   }
   // Do not apply ticker-only files when the same ticker represents multiple ETFs.
@@ -208,6 +212,12 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     if (dates.length > 1) {
       warnings.add("Fond " + h.symbol + " má různé datumy rozkladu. Použij jeden snapshot.");
       coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: 0, mappedCzk: 0, unmappedCzk: h.valueCzk, source: null, asOf: null, note: "Nejednotné datum složení" });
+      continue;
+    }
+    const sources = [...new Set(holdingsList.map((c) => c.source).filter(Boolean))];
+    if (sources.length > 1) {
+      warnings.add("Fond " + h.symbol + " kombinuje podklady z různých zdrojů. Sjednoť soubor emitenta.");
+      coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: 0, mappedCzk: 0, unmappedCzk: h.valueCzk, source: null, asOf: dates[0] ?? null, note: "Nesmíšený zdroj nelze ověřit" });
       continue;
     }
     let mapped = 0;
