@@ -37,8 +37,8 @@ await debug("SPDR official XLSX schema",async()=>{
   const buf=new Uint8Array(await response.arrayBuffer());
   if(buf.length>MAX_BYTES)throw Error("response too big");
   const rows=parseXlsxGrid(buf);
-  console.log({xlsxBytes:buf.length,rowCount:rows.length,
-    first15Rows:rows.slice(0,15).map((r,i)=>({row:i+1,columns:r.slice(0,12).map(x=>x.slice(0,80))}))});
+  console.log(JSON.stringify({xlsxBytes:buf.length,rowCount:rows.length,
+    first15Rows:rows.slice(0,15).map((r,i)=>({row:i+1,columns:r.slice(0,12).map(x=>x.slice(0,80))}))},null,2));
 });
 await debug("Vanguard real GPX page shapes",async()=>{
   let pages=0;
@@ -55,5 +55,15 @@ await debug("Vanguard real GPX page shapes",async()=>{
       firstRowKeys:items?.items?.[0]?Object.keys(items.items[0]):[]});
     return response;
   };
-  await fetchVwceHoldings("VWCE",true,wrapper);
+  try { await fetchVwceHoldings("VWCE",true,wrapper); }
+  catch(e){console.log("Filtered query failed:",e instanceof Error?e.message:String(e));}
+  console.log("--- Repeat with NO security type filter (all official holdings) ---");
+  pages=0;
+  const unfiltered=async(url,options)=>{
+    const query=JSON.parse(String(options.body));
+    query.variables.securityTypes=null;
+    return wrapper(url,{...options,body:JSON.stringify(query)});
+  };
+  const result=await fetchVwceHoldings("VWCE",true,unfiltered);
+  console.log("Unfiltered parsed rows",result.rows.length);
 });
