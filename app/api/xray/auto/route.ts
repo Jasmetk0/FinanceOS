@@ -5,6 +5,7 @@ import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares
 import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
 import { VWCE_ISIN, fetchVwceHoldings } from "@/lib/xray/auto-vanguard";
 import type { XRayConstituent } from "@/lib/xray/engine";
+import { fundInsightForIsin } from "@/lib/xray/fund-insights";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,8 +36,11 @@ export async function GET(request: Request) {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
         if (!unavailable.has(id)) unavailable.set(id,{
           isin,symbol:h.symbol,
-          reason: isin ? "Pro tento ISIN zatím není ověřený automatický zdroj." :
-            "ETF nemá ISIN. Aktualizuj instrumenty z brokera.",
+          reason: isin ? (
+            fundInsightForIsin(isin)
+              ? fundInsightForIsin(isin)!.label + ". " + fundInsightForIsin(isin)!.explanation
+              : "Pro tento ISIN zatím není ověřený automatický zdroj."
+          ) : "ETF nemá ISIN. Aktualizuj instrumenty z brokera.",
         });
       }
     }
