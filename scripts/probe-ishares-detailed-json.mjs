@@ -24,9 +24,9 @@ for(const isin of ids){
     const lower=html.toLowerCase(),needle=term.toLowerCase();
     const at=lower.indexOf(needle);
     return {term,count:lower.split(needle).length-1,index:at,
-      around:at<0?null:html.slice(Math.max(0,at-170),at+420).replace(/\\s+/g," ").slice(0,620)};
+      around:at<0?null:html.slice(Math.max(0,at-170),at+420).replace(/\s+/g," ").slice(0,620)};
   });
-  const allEquityIsins=[...html.matchAll(/\\b(?:US|GB|CH|NL|IE|DE)[0-9A-Z]{10}\\b/g)];
+  const allEquityIsins=[...html.matchAll(/\b(?:US|GB|CH|NL|IE|DE)[0-9A-Z]{10}\b/g)];
   console.log("ISHARES_UK_HTML_ISIN_SCAN "+JSON.stringify({isin,status:page.status,size:html.length,
     countAll:allEquityIsins.length,
     unique:new Set(allEquityIsins.map(x=>x[0])).size,
