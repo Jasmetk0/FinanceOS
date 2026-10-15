@@ -24,6 +24,16 @@ export const ISHARES_FEEDS: readonly IssuerFeed[] = [
     url: "https://www.ishares.com/uk/individual/en/products/251850/ishares-msci-all-country-world-ucits-etf/latest-holdings.csv" },
   { isin: "IE00BKM4GZ66", name: "iShares Core MSCI EM IMI UCITS ETF (EIMI/IS3N)", productId: "264659",
     url: "https://www.ishares.com/uk/individual/en/products/264659/ishares-core-msci-em-imi-ucits-etf/latest-holdings.csv" },
+
+  // Full daily holdings verified on the official issuer pages 15 Oct 2026.
+  // Both exchange ticker and country listing are deliberately irrelevant to
+  // feed selection: exact ISIN is the sole identity of the issuer fund.
+  { isin: "IE00BF4RFH31", name: "iShares MSCI World Small Cap UCITS ETF (WSML)", productId: "296576",
+    url: "https://www.ishares.com/uk/individual/en/products/296576/ishares-msci-world-small-cap-ucits-etf/latest-holdings.csv" },
+  { isin: "IE00B2QWCY14", name: "iShares S&P SmallCap 600 UCITS ETF (IUS3/ISP6)", productId: "251920",
+    url: "https://www.ishares.com/uk/individual/en/products/251920/ishares-s-p-smallcap-600-ucits-etf/latest-holdings.csv" },
+  { isin: "IE00BZCQB185", name: "iShares MSCI India UCITS ETF (QDV5/NDIA)", productId: "297617",
+    url: "https://www.ishares.com/uk/individual/en/products/297617/ishares-msci-india-ucits-etf/latest-holdings.csv" },
 ];
 
 const ISIN_FEEDS = new Map(ISHARES_FEEDS.map(f => [f.isin,f]));
