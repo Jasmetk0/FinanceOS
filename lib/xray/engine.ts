@@ -98,12 +98,14 @@ const TOTAL_TOLERANCE = 1e-7;
  * supplied checksum-valid securitySedol. Never strip arbitrary @ text.
  */
 export function displayXRayTicker(symbol: string, securitySedol?: string | null): string {
-  const sedol = normalizedSedol(securitySedol);
-  if (!sedol) return symbol;
-  const suffix = "@" + sedol;
-  return symbol.toUpperCase().endsWith(suffix) && symbol.length > suffix.length
-    ? symbol.slice(0, -suffix.length)
-    : symbol;
+  const match = /^([A-Z0-9.^-]{1,24})@([0-9A-Z]{7})$/i.exec(symbol.trim());
+  if (!match) return symbol;
+  const fromSuffix = normalizedSedol(match[2]);
+  const fromMetadata = normalizedSedol(securitySedol);
+  // Old browser-cached Vanguard rows had no separate securitySedol field;
+  // preserve their readable display without changing their identity key.
+  if (!fromSuffix || (securitySedol && fromSuffix !== fromMetadata)) return symbol;
+  return match[1].toUpperCase();
 }
 
 function assertHoldings(rows: XRayHolding[]) {
