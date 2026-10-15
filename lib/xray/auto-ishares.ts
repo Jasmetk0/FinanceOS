@@ -160,9 +160,8 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
     const previous = combined.get(id);
     const weightPct = 100 * row.value / positive;
     if (previous) {
-      if(previous.securityName!==row.name ||
-         (previous.securitySedol && row.sedol && previous.securitySedol!==row.sedol))
-        throw new RangeError("Jedna iShares identita označuje rozdílné akcie nebo SEDOL.");
+      if(previous.securityName!==row.name)
+        throw new RangeError("Jedna iShares identita označuje rozdílné akcie.");
       previous.weightPct += weightPct;
       // If two exchange listings share an ISIN but different SEDOL, their
       // share class is the SAME; SEDOL refers to the security listing, so
