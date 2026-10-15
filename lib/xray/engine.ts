@@ -90,6 +90,24 @@ const strongIsin = (isin: string | null | undefined) => /^[A-Z]{2}[A-Z0-9]{10}$/
 const MONEY_EPSILON = 1e-6;
 const TOTAL_TOLERANCE = 1e-7;
 
+/**
+ * Vanguard identifies many stock lines as TICKER@SEDOL. That string is an
+ * INTERNAL collision-safe identifier, not the exchange ticker a person
+ * should see. Keep the immutable exposure key (ISIN/SEDOL) untouched, but
+ * remove a suffix in the display label ONLY if it agrees with a separately
+ * supplied checksum-valid securitySedol. Never strip arbitrary @ text.
+ */
+export function displayXRayTicker(symbol: string, securitySedol?: string | null): string {
+  const match = /^([A-Z0-9.^-]{1,24})@([0-9A-Z]{7})$/i.exec(symbol.trim());
+  if (!match) return symbol;
+  const fromSuffix = normalizedSedol(match[2]);
+  const fromMetadata = normalizedSedol(securitySedol);
+  // Old browser-cached Vanguard rows had no separate securitySedol field;
+  // preserve their readable display without changing their identity key.
+  if (!fromSuffix || (securitySedol && fromSuffix !== fromMetadata)) return symbol;
+  return match[1].toUpperCase();
+}
+
 function assertHoldings(rows: XRayHolding[]) {
   if (!Array.isArray(rows) || rows.length > 30_000) throw new RangeError("Neplatný počet pozic.");
   for (const h of rows) {
@@ -275,7 +293,8 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       const part = h.valueCzk * c.weightPct / 100;
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
         constituentStockKey(c);
-      add(key, c.kind, c.securitySymbol, c.securityName, 0, part, 0, undefined, h.symbol);
+      add(key, c.kind, c.kind === "stock" ? displayXRayTicker(c.securitySymbol, c.securitySedol) : c.securitySymbol,
+        c.securityName, 0, part, 0, undefined, h.symbol);
       if(c.kind==="crypto") identityCoverage.cryptoCzk+=part;
       else if(strongIsin(c.securityIsin)) identityCoverage.isinCzk+=part;
       else if(strongIsin(resolveSecurityIsin(c,crosswalk))) identityCoverage.bridgedCzk+=part;

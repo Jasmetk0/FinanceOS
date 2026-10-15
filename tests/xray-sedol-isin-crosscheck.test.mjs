@@ -63,7 +63,8 @@ test("SPDR feed without actual SEDOL does NOT infer matching Vanguard shares fro
   ],c);
   assert.equal(r.exposures.length,2);
   assert.equal(r.exposures.find(e=>e.key==="stock|isin:"+msft).totalCzk,200);
-  assert.equal(r.exposures.find(e=>e.ticker==="MSFT@B1YW440").viaFundsCzk,100);
+  assert.equal(r.exposures.find(e=>e.key==="stock|sedol:B1YW440").ticker,"MSFT");
+  assert.equal(r.exposures.find(e=>e.key==="stock|sedol:B1YW440").viaFundsCzk,100);
 });
 
 test("conflicting SEDOL->two ISINs are quarantined without cross-provider false merge",()=>{
