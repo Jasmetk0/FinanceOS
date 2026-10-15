@@ -81,7 +81,8 @@ test("dictionary size is NOT presented as number of actually matched securities"
     const stem=String(i+100).padStart(6,"0");
     const weighted=[...stem].reduce((sum,d,index)=>sum+Number(d)*checkWeights[index],0);
     const sedol=stem+String((10-weighted%10)%10);
-    return spyiRef("UNUSED"+i,sedol,"US"+String(i+100).padStart(10,"0"));
+    return {...spyiRef("UNUSED"+i,sedol,"US"+String(i+100).padStart(10,"0")),
+      weightPct:0.001};
   });
   // Even a valid but irrelevant entry cannot change actual valued matches.
   const oneUnused=spyiRef("UNUSED","2588173","US0000000012");
