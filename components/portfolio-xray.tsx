@@ -96,7 +96,7 @@ export function PortfolioXRay({
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
     const needle = query.trim().toLocaleLowerCase("cs");
-    return !needle || [item.ticker, item.name, ...item.fundSymbols, ...item.accounts].some((v) => v.toLocaleLowerCase("cs").includes(needle));
+    return !needle || [item.ticker, item.name, item.key, ...item.fundSymbols, ...item.accounts].some((v) => v.toLocaleLowerCase("cs").includes(needle));
   }), [report.data, filter, query]);
 
   async function importFiles(event: ChangeEvent<HTMLInputElement>) {
@@ -256,6 +256,8 @@ export function PortfolioXRay({
                 <h2 className="text-base font-semibold">Skutečná expozice podle podkladu</h2>
                 <p className="mt-1 text-xs text-[var(--muted)]">
                   Součet přímé a nepřímé expozice. Každé ETF zůstává v celkovém základu pouze jednou.
+                  Sloupec Přímé kusy označuje pouze skutečně přímo držené akcie, nikoliv jejich hodnotu uvnitř ETF.
+                  Pomlčka znamená, že akcii držíš pouze nepřímo přes fondy.
                 </p>
               </div>
               <span className="text-xs font-semibold text-[var(--accent)]">{pct(data.mappedPct)} identifikováno</span>
@@ -283,7 +285,7 @@ export function PortfolioXRay({
                 <thead><tr>
                   <th>Akcie / krypto</th><th className="text-right">Přímo</th>
                   <th className="text-right">Přes fondy</th><th className="text-right">Celkem</th>
-                  <th className="text-right">Váha</th><th className="text-right">Přímé kusy</th>
+                  <th className="text-right">Váha</th><th className="text-right" title="Počet akcií, které přímo držíš mimo ETF. Pomlčka znamená pouze nepřímou expozici.">Přímé kusy</th>
                 </tr></thead>
                 <tbody>
                   {filtered.slice(0,visible).map((item)=>(
@@ -293,9 +295,18 @@ export function PortfolioXRay({
                           onClick={(e)=>{e.stopPropagation();setSelected(selected===item.key?null:item.key);}}>
                           <span className="block text-sm font-semibold">{item.ticker}</span>
                           <span className="block text-[11px] text-[var(--muted)]">{item.name}</span>
+                          {item.directCzk === 0 && item.viaFundsCzk > 0 ?
+                            <span className="block text-[10px] text-[var(--muted)]">Pouze přes ETF{item.kind==="stock" && item.key.startsWith("stock|sedol:") ?
+                              " · SEDOL " + item.key.slice("stock|sedol:".length) : ""}</span> : null}
                           {selected===item.key ? <span className="mt-2 block text-[11px] leading-5 text-[var(--muted)]">
                             {item.kind==="crypto"?"Krypto":"Akcie"} · Přes fondy: {item.fundSymbols.join(", ") || "žádné"}.
                             {" "}Přímo: {item.accounts.join(", ") || "žádné"}.
+                            {item.kind==="stock" && item.key.startsWith("stock|sedol:") ?
+                              " Přesný identifikátor: SEDOL " + item.key.slice("stock|sedol:".length) + "." : ""}
+                            {item.kind==="stock" && item.key.startsWith("stock|isin:") ?
+                              " Přesný identifikátor: ISIN " + item.key.slice("stock|isin:".length) + "." : ""}
+                            {item.directCzk === 0 && item.viaFundsCzk > 0 ?
+                              " Tuto akcii nevlastníš přímo; částka vyjadřuje pouze ekonomickou expozici přes ETF." : ""}
                             {item.kind==="stock" ?
                               item.key.startsWith("stock|isin:") ?
                                 " Identita: doložený ISIN." :
@@ -310,7 +321,8 @@ export function PortfolioXRay({
                       <td className="text-right">{money(item.viaFundsCzk)}</td>
                       <td className="text-right font-semibold">{money(item.totalCzk)}</td>
                       <td className="text-right font-semibold text-[var(--accent)]">{pct(item.weightPct)}</td>
-                      <td className="text-right">{quantity(item.directQuantity)}</td>
+                      <td className="text-right">{item.directCzk > 0 ? quantity(item.directQuantity) :
+                        <span className="text-[var(--muted)]" title="Žádné přímo držené akcie, pouze ekonomická expozice přes ETF">—</span>}</td>
                     </tr>
                   ))}
                 </tbody>
