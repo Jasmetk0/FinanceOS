@@ -81,6 +81,13 @@ export function combineConstituentSources(
     const local=manualByFund.get(key),remote=autoByFund.get(key);
     let choice=remote??local??[];
     if (local?.length && remote?.length) {
+      // Do not let a user's newer manual SPYI portfolio file replace the
+      // issuer-fetched security-ID reference used to identify Vanguard.
+      // This special source is never an owned SPYI NAV allocation.
+      if(remote.every(r=>r.source.endsWith("; identity-only reference"))) {
+        groups.push(...remote);
+        continue;
+      }
       const localEligible=sourceEligible(key,local,now);
       const remoteEligible=sourceEligible(key,remote,now);
       if(localEligible&&!remoteEligible)choice=local;
