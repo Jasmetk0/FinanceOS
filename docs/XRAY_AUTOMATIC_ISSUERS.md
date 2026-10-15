@@ -51,3 +51,12 @@ Poznámka: Některé iShares ETF drží jiné ETF (například NDIA, CNYA). Tyto
 - https://www.ishares.com/uk/individual/en/products/251911/ishares-global-clean-energy-ucits-etf/latest-holdings.csv
 
 **INRG:** Emitent uvádí, že část expozice může být realizována přes CFD. X-Ray proto ukazuje ekonomické podklady podle zveřejněné expozice a nikoliv počet fyzicky vlastněných akcií. Pokud emitentský soubor obsahuje významné záporné pozice, parser celý rozklad odmítne místo zamlčení rizika.
+
+
+## iShares CNDX + LYMS – oddělený proxy model (15. 10. 2026)
+
+Nový iShares oficiální feed: `IE00B53SZB19`, Nasdaq 100 (CNDX/SXRV), product ID `253741`, https://www.ishares.com/uk/individual/en/products/253741/ishares-nasdaq-100-ucits-etf/latest-holdings.csv.
+
+Když je držen **syntetický Amundi LYMS (LU1829221024)**, lze ze stejného veřejného úplného CNDX zdroje vytvořit **výslovně modelovaný ekonomický proxy rozklad**, označený `reference-index-proxy`. Nejmladší povolené stáří je 14 dní, minimální rozsah 90 akcií a součet jejich vah alespoň 98 %. Nejde o přesné složení indexu XNDXNNR, o žádné skutečně držené akcie v LYMS, ani o náhradní swapový koš. Nenahrazuje oficiální benchmarkové váhy, které by mohly být odlišné.
+
+BlackRock CNDX je samostatný desátý iShares feed a jeho fyzické držby se v X-Ray nikdy nemísí s fondem Amundi. Žádný další API klíč ani CSV uživatele.
