@@ -120,3 +120,18 @@ Dále je možné držet fyzické CNDX ve svém účtu: dostane samostatnou skute
 Zdroj pro cílový index: [Amundi LYMS](https://www.amundietf.com/amundi/bel/en/instit/LU1829221024).
 Zdroj pro proxy: [iShares CNDX](https://www.ishares.com/uk/individual/en/products/253741/ishares-nasdaq-100-ucits-etf).
 Vhodný další krok: přidat přímo ověřený plný a současný Nasdaq XNDXNNR endpoint s vyšší prioritou než odhad.
+
+
+## Výběr správných automatických a ručně nahraných podkladů (15. 10. 2026)
+
+Dříve se jedna lokální ručně importovaná skladba s novějším `asOf` upřednostnila před automatickým zdrojem podle ISIN **bez ohledu na typ ekonomické expozice**. U syntetického `LYMS` mohl nový *substitute swap basket* nebo neúplná tabulka přebít úplný model CNDX. Výpočet X-Ray pak správně odmítl přehodit swapový koš na indexové akcie, ale zbytečně zobrazil nulové pokrytí, přestože byl použitelný automatický model.
+
+Při přítomnosti **dvou konkurenčních snapshotů stejného ISIN** FinanceOS nově vybere nejprve takový, jehož provenience pro daný fond dává ekonomický smysl:
+- **LYMS / LU1829221024:** vyžaduje explicitní `reference-index` nebo `reference-index-proxy`, minimálně 90 akcií, minimálně 98 % a jedno správné datum. U modelu proxy zůstává bezpečnostní limit 14 dnů. `fund-holdings`, `substitute-basket`, smíšené a částečné seznamy mají nižší prioritu než platný model.
+- **EQQQ a EQAC:** odvozená referenční indexová tabulka se nesmí vydávat za fyzický seznam emitenta ani ho přebít pouze novějším datem.
+- **Když jsou oba zdroje použitelné**, stále vítězí novější `asOf`; při shodném datu se u LYMS upřednostní úplný referenční index před přibližným CNDX modelem. Ostatní shody vítězí automatické podklady.
+- **Pokud automatický zdroj chybí**, lokální seznam zůstane dostupný a konečný X-Ray engine rozhoduje, zda je bezpečné ho započítat. Nedochází k míchání řádků různých dat a zdrojů v rámci jednoho fondu.
+
+### NCLR / IE0003BJ2JS4
+
+WisdomTree Uranium and Nuclear Energy UCITS ETF je fyzické akciové ETF. Oficiální stránka ve veřejném náhledu zobrazuje top 10 a zbytek portfolia agregovaně. Automatický pokus přes veřejné stránky WisdomTree (IE a GB) na GitHub Actions 15. 10. 2026 vrátil **HTTP 403**. Úplné podklady nejsou tímto ověřeny a **NCLR se v této verzi nestahuje a nerozkládá automaticky**; známá fyzická struktura je uvedena ve vysvětlení zdroje. Samotné jméno uranového ETF neumožňuje odvodit investice do Cameca nebo všech podkladových akcií. Při budoucím získání ověřeného kompletního zdroje lze přidat plný adaptér bez zasahování do účetnictví.
