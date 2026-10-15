@@ -36,6 +36,12 @@ const ENTRIES: readonly XRayFundInsight[] = [
     issuerUrl:"https://www.invesco.com/be/en/financial-products/etfs/invesco-eqqq-nasdaq-100-ucits-etf-acc.html",
   },
   {
+    isin:"IE0003BJ2JS4",structure:"physical-equity",
+    label:"Fyzické akciové ETF · uran a jaderná energetika (NCLR)",
+    explanation:"WisdomTree Uranium and Nuclear Energy UCITS ETF replikuje akciový koš fyzicky. Veřejný přehled top 10 nezahrnuje přibližně polovinu portfolia; automatické stahování kompletních podkladů zatím nebylo ověřeno (přístup ze serveru vrací HTTP 403). Fond se proto nerozkládá na odhadované akcie. Pro pokračování je potřeba datovaný úplný seznam od emitenta.",
+    issuerUrl:"https://www.wisdomtree.com/ie/products/equities/wisdomtree-uranium-and-nuclear-energy-ucits-etf---usd-acc",
+  },
+  {
     isin:"IE00B4ND3602",structure:"physical-gold",
     label:"Fyzicky kryté zlato · ETC",
     explanation:"iShares Physical Gold ETC poskytuje expozici vůči zlatu, nikoli vůči akciím těžařů. Nulový akciový rozklad neznamená chybějící seznam akcií.",
