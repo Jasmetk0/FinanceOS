@@ -74,7 +74,7 @@ test("wrong response provenance and upstream HTTP errors are explicitly failed",
   assert.equal(timeout.error.includes("\n"),false);
 });
 
-test("server diagnostics never reads brokerage credentials and probes all nine fixed official funds",()=>{
+test("server diagnostics never reads brokerage credentials and probes all eleven fixed official funds",()=>{
   const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
   const server=read("app/api/xray/diagnostics/route.ts");
   const component=read("components/xray-issuer-diagnostics.tsx");
