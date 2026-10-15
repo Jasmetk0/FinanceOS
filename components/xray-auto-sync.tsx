@@ -166,7 +166,7 @@ export function XRayAutoSync({
       </div>
       <div className="mt-3 flex flex-wrap gap-3 text-xs text-[var(--muted)]">
         <span>{loading?"Ověřuji zdroje…":status?
-          status.ok+" z "+status.supportedTotal+" fondů úspěšně načteno":
+          status.ok+" z "+status.supportedTotal+" zdrojů úspěšně načteno":
           "Zatím bez automatického rozkladu"}</span>
         {status?<span>Bez automatického zdroje: {status.unsupported.length}</span>:null}
         {status?<span>Poslední kontrola: {stamp(status.refreshedAt)}</span>:null}
@@ -193,7 +193,7 @@ export function XRayAutoSync({
 
       {status?.funds.length?<details className="mt-3 text-xs text-[var(--muted)]" open={false}>
         <summary className="w-fit cursor-pointer font-semibold text-[var(--accent)]">
-          Stav a přesná data složení fondů ({status.funds.length})
+          Stav a přesná data zdrojů ETF ({status.funds.length})
         </summary>
         <div className="mt-2 space-y-2">
           {status.funds.map(f=>{
@@ -204,7 +204,9 @@ export function XRayAutoSync({
             const freshness=classifyIssuerDate(asOf,observedAt);
             return <div key={f.isin} className="rounded-xl border border-[var(--border)] p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong>{f.symbol} · {f.isin}</strong>
+                <strong>{f.symbol} · {f.isin}
+                  {f.identityOnly?" · identita, NE investice":""}
+                </strong>
                 <span className={fallback||f.status!=="ok"||freshness.state==="stale"||
                   freshness.state==="future"?"text-[var(--warning)]":"text-[var(--accent)]"}>
                   {regressed?"Nově stažená data starší než záloha · ":
@@ -218,6 +220,10 @@ export function XRayAutoSync({
                   visibleRows.filter(r=>issuerKey(r.fundIsin)===issuerKey(f.isin)).length:
                   f.holdings??"neuvedeno"}
               </p>
+              {f.identityOnly?<p className="mt-1 text-[11px]">
+                Nezávislý identifikační slovník pro akcie Vanguardu · nepřidává žádnou hodnotu ani držbu SPYI.
+                {typeof f.bridgePairs==="number"?" Ověřené vazby SEDOL ↔ ISIN: "+f.bridgePairs.toLocaleString("cs-CZ")+".":""}
+              </p>:null}
               {f.error?<p className="mt-1 text-[var(--warning)]">{f.error}</p>:null}
               {f.sourceUrl?<a href={f.sourceUrl} rel="noreferrer" target="_blank"
                 className="mt-1 inline-block text-[var(--accent)] underline">
@@ -246,7 +252,8 @@ export function XRayAutoSync({
         vybrané fondy iShares a archiv Invesco EQQQ / EQAC (Rebalix, nikoliv přímý feed emitenta).
         Aktuálnost se posuzuje podle data skutečného složení, ne podle času, kdy jsme soubor stáhli.
         Zálohované automatické podklady jsou v tomto prohlížeči uchovávány maximálně 60 dní.
-        Neúplné či chybné zdroje se nepovažují za živé.
+        U Vanguard ETF se SPYI může stáhnout i jen jako referenční slovník SEDOL ↔ ISIN,
+        bez fiktivního vlastnictví SPYI. Neúplné či chybné zdroje se nepovažují za živé.
       </p>
     </section>
   );

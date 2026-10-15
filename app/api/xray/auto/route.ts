@@ -3,6 +3,7 @@ import { localOnly } from "@/lib/server/local-only";
 import { getXRayHoldings } from "@/lib/server/xray";
 import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
 import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
+import { needsSpyiIdentityReference, assertSpyiIdentityReference } from "@/lib/xray/identity-reference";
 import { VWCE_ISIN, VALL_ISIN, fetchVwceHoldings, fetchVallHoldings } from "@/lib/xray/auto-vanguard";
 import { LYMS_ISIN, fetchLymsProxyHoldings } from "@/lib/xray/auto-lyms-proxy";
 import { invescoArchiveForIsin, fetchInvescoArchiveHoldings } from "@/lib/xray/auto-invesco";
@@ -28,7 +29,7 @@ export async function GET(request: Request) {
     const funds = new Map<string,{symbol:string; isin:string}>();
     const unavailable = new Map<string,{symbol:string;isin:string|null;reason:string}>();
     for (const h of getXRayHoldings()) {
-      if (h.assetClass !== "etf") continue;
+      if (h.assetClass !== "etf" || h.valueCzk<=0) continue;
       const isin = h.isin?.trim().toUpperCase() || null;
       const feed = issuerFeedForIsin(isin);
       const archive = invescoArchiveForIsin(isin);
@@ -52,6 +53,26 @@ export async function GET(request: Request) {
     }
     // A bounded number of allowlisted sources. Failure to read any one
     // issuer must not invalidate all other, successfully fetched funds.
+    // Vanguard's issuer GPX files expose SEDOL, often without security
+    // ISIN. Independently load complete SPYI holdings as a trusted identity
+    // dictionary. SPYI is NOT added as an investment when it is not owned.
+    const needsReference=needsSpyiIdentityReference(funds.keys());
+    const identityPromise=needsReference ? (async ()=>{
+      try {
+        const fetched=await fetchSpyiHoldings("SPYI",force);
+        const verified=assertSpyiIdentityReference(fetched.rows);
+        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
+          status:"ok" as const,rows:fetched.rows.map(r=>({
+            ...r,source:r.source+"; identity-only reference",
+          })),sourceUrl:fetched.sourceUrl,sourceKind:"official" as const,
+          asOf:verified.asOf,fetchedAt:fetched.fetchedAt,cached:fetched.cached,
+          bridgePairs:verified.bridges};
+      } catch(error) {
+        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
+          status:"error" as const,rows:[] as XRayConstituent[],
+          error:error instanceof Error?error.message:String(error)};
+      }
+    })():Promise.resolve(null);
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
       const archive = invescoArchiveForIsin(f.isin);
@@ -73,14 +94,16 @@ export async function GET(request: Request) {
           error:error instanceof Error?error.message:String(error)};
       }
     }));
-    const rows = results.flatMap(result => result.rows);
+    const identityReference=await identityPromise;
+    const allResults=identityReference?[...results,identityReference]:results;
+    const rows = allResults.flatMap(result => result.rows);
     return NextResponse.json({
       rows,
-      funds:results.map(({rows,...rest}) => ({...rest,holdings:rows.length})),
+      funds:allResults.map(({rows,...rest}) => ({...rest,holdings:rows.length})),
       unsupported:[...unavailable.values()],
       refreshedAt:new Date().toISOString(),
-      supportedTotal:funds.size,
-      ok:results.filter(result=>result.status==="ok").length,
+      supportedTotal:allResults.length,
+      ok:allResults.filter(result=>result.status==="ok").length,
     },{headers:{"Cache-Control":"private, no-store"}});
   } catch(error) {
     return NextResponse.json({

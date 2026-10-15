@@ -125,3 +125,12 @@ FinanceOS už nebere shodný ticker a název společnosti jako záruku stejné a
 **Rozšíření parseru pro zdroje se sloupci ISIN/SEDOL:** pokud úplný oficiální fondový CSV soubor tyto údaje opravdu dodá, parser je přebere pro konkrétní akcii po kontrole struktury ISIN a kontrolní číslice SEDOL. Použije se přesná identita `securityIsin` při sloučení s přímo drženou akcií a podklady jiných ETF; dva řádky s týmž tickerem, ale různým ISIN zůstanou oddělené. Jeden ISIN na dvou burzách může mít různé SEDOL, proto se burzovní SEDOL v takovém případě nepovažuje za jedinečný identifikátor pro celý fond. Když emitent sloupec nedodá, zůstává u tickeru výslovně méně spolehlivá identita, nikdy ne vymyšlený ISIN.
 
 **Bezpečnost:** žádné externí vyhledávání podle názvů, žádné přepsání hodnot a cen investičních pozic, žádný další API klíč. Sčítání expozic probíhá pouze podle skutečně dodaných identifikátorů. Nové kontroly pro stejný ticker a různou burzu brání falešnému sjednocení akcií do jedné expozice, ale mohou dočasně rozdělit neidentifikované řádky dokud nebude doložena jejich identita.
+
+
+## SPYI jako reference identifikace Vanguardu bez vlastnictví SPYI
+
+U VWCE/VALL bez vlastněného SPYI může API získat jeden další, přísně validovaný a datovaný veřejný State Street SPYI zdroj (`identityOnly=true`). V portfoliu to nepřidává žádný nový fond ani Kč; nástroje pracují výhradně se security-level SEDOL→ISIN páry. Když je SPYI skutečně vlastněno, nepřidává se duplicitní referenční dotaz. Není třeba další API klíč ani uživatelský CSV import.
+
+Reálně ověřené 15. 10. 2026: k `2026-10-14` je dostupno **5 962 jedinečných vazeb** v 5 963 akciových řádcích a 0 konfliktů. Pro přijetí identity-only snapshotu je vyžadováno min. 500 akciových řádků, 85 % akciových vah, min. 100 vazeb, jedno datum a stáří max. 14 dní. UI i interní zdrojové statusy explicitně uvádějí, že jde o **zdroj identit, nikoli vlastněné SPYI**; případné chybné datum nebo výpadek má vlastní upozornění. Náš přímý issuer SPYI fyzický rozklad se nemění.
+
+Při ověřování alternativy iShares 15. 10. 2026 bylo zjištěno, že staré `.ajax?tab=all&fileType=json` URL vracejí HTML, nikoli holdings JSON. Moderní iShares produktový HTML obsahuje i ISIN cizích **securities-lending collateral** portfolií, která by byla pro look-through zavádějící. Tyto neověřené HTML identifikátory se nikdy automaticky nepřiřazují k fondovým akciím. Nadále platí, že standardní iShares `latest-holdings.csv` neposkytuje podkladové ISIN.

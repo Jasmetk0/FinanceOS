@@ -26,3 +26,16 @@ Pokud má uživatel přímo akcii s ISIN US5949181045 a souběžně drží VWCE 
 - Podkladové zdroje Vanguard a State Street je stále nutné ověřit živým E2E v lokálním FinanceOS; regresní testy používají deterministická syntetická data.
 
 Externí technické informace o validaci SEDOL: https://commons.apache.org/proper/commons-validator/apidocs/org/apache/commons/validator/routines/checkdigit/SedolCheckDigit.html
+
+
+## Automatický identifikační slovník SPYI, i když SPYI nevlastním (15. 10. 2026)
+
+Předtím se přesný SEDOL→ISIN crosswalk z oficiálního State Street SPYI XLSX používal jen tehdy, pokud jej X-Ray již načetl jako vlastněné ETF. Pro uživatele s fyzickým **VWCE (IE00BK5BQT80)** nebo **VALL (IE000VAHT5T0)**, ale bez SPYI, tak mnoho identifikátorů zůstávalo pouze SEDOL a nemohlo se správně sloučit s přímými akciemi a jinými ETF.
+
+Nově FinanceOS při vlastnictví VWCE/VALL a absenci SPYI stahuje stejné **oficiální úplné SPYI XLSX** jako *samostatný identifikační zdroj*. **SPYI tím nevzniká jako fiktivní investice.** Všechny pozice SPYI se použijí pouze jako identifikační reference v `buildSedolIsinCrosswalk`, nikoliv jako držby s investovanou hodnotou; portfoliový jmenovatel, čisté vklady, ceny a počty držených fondů zůstávají nezměněné. Pokud SPYI už držíš, použije se jeho běžné jediné stažení a žádný druhý zdroj se nesestavuje.
+
+**Výsledek skutečného zdroje 15. 10. 2026:** produkční parser SPYI XLSX z `https://www.ssga.com/library-content/products/fund-data/etfs/emea/holdings-daily-emea-en-spyi-gy.xlsx` poskytl snapshot `2026-10-14`: 5 963 akciových řádků, **5 962 jednoznačných, kontrolním číslem SEDOL ověřených vazeb na ISIN**, **0 konfliktů**, součet vah akcií cca **99,69935 %**. To je počet potenciálně dostupných referenčních identit, nikoliv tvrzení, že 5 962 konkrétních investic ve VWCE/VALL nyní získalo nový ISIN. Skutečný průnik se odvíjí od aktuálních podkladů obou Vanguard fondů.
+
+**Ochrany:** reference se přijme jen ze stejného oficiálního SPYI zdroje, s jednotným platným datem max. 14 dní starým, nejméně 500 akciemi a 100 platnými SEDOL↔ISIN vazbami. Při chybě služby se dříve ověřená referenční data mohou uchovat, ale pokud je snapshot starší 14 dní, crosswalk takto označené zálohované páry automaticky odmítne. Konfliktní SEDOL se nikdy nenapojí na dva ISIN. Reference se záměrně stahuje paralelně s fondy uživatele a nespotřebuje žádný další broker API klíč. UI ji označuje jako **identita, NE investice**.
+
+Zůstává důležitá hranice: referenční seznam SPYI neobsahuje automaticky každou akcii všech trhů ve Vanguardu; bez průkazné shody SEDOL nelze jedinečnou ISIN identitu odhadnout podle tickeru nebo názvu. Ostatní fondy používají vlastní ISIN, jsou-li emitentem přímo dostupné.
