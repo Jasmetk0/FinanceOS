@@ -28,6 +28,7 @@ function sourceEligible(key:string,rows:XRayConstituent[],now:number):boolean {
   // A single snapshot cannot mix days or provenance. calculateXRay will
   // reject it anyway, so a malformed newer CSV must not beat a usable feed.
   if(!isValidDay(rows[0].asOf) || !rows[0].source.trim() ||
+     Date.parse(rows[0].asOf+"T00:00:00Z")>now+86_400_000 ||
      rows.some(r=>r.asOf!==rows[0].asOf||r.source!==rows[0].source))return false;
   const insight=key.startsWith("isin:")?fundInsightForIsin(key.slice(5)):null;
   const basis=basisOf(rows);
