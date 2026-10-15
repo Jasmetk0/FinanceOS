@@ -7,6 +7,12 @@ for (const isin of funds) {
     const response=await fetch(url,{headers:{"Accept":"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},signal:AbortSignal.timeout(15_000)});
     const bytes=new Uint8Array(await response.arrayBuffer());
     const grid=parseXlsxGrid(bytes);
+    const page=await fetch("https://rebalix.com/en/etf/"+isin,{signal:AbortSignal.timeout(15_000)});
+    const html=await page.text();
+    const needle=["Holdings as published by Invesco","holdings as at","Full portfolio declared by Invesco","1 October 2026"];
+    console.log(JSON.stringify({isin,pageStatus:page.status,htmlBytes:html.length,
+      snippets:needle.map(v=>({term:v,index:html.indexOf(v),around:html.indexOf(v)>=0?
+        html.slice(Math.max(0,html.indexOf(v)-150),html.indexOf(v)+270):null}))}));
     console.log(JSON.stringify({isin,status:response.status,url:response.url,bytes:bytes.length,
       sheetRows:grid.length,first:grid.slice(0,9).map(row=>row.slice(0,13)),
       last:grid.slice(-2).map(row=>row.slice(0,8))}));
