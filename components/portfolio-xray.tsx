@@ -10,6 +10,7 @@ import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
 import { combineConstituentSources } from "@/lib/xray/auto-merge";
+import { fundInsightForIsin } from "@/lib/xray/fund-insights";
 
 type Filter = "all" | "stock" | "crypto";
 const DB_NAME = "financeos-xray";
@@ -325,24 +326,36 @@ export function PortfolioXRay({
           </section>
           <section className="finance-surface p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div><h2 className="text-base font-semibold">Pokrytí podkladů jednotlivých ETF</h2>
-                <p className="mt-1 text-xs text-[var(--muted)]">Přiřazená hodnota a datum zdrojových dat jsou viditelné pro každý fond.</p></div>
+              <div><h2 className="text-base font-semibold">Pokrytí podkladů jednotlivých ETF / ETP</h2>
+                <p className="mt-1 text-xs text-[var(--muted)]">Souhrn podle ISIN (i při více účtech), způsob replikace, zdroj a datum podkladů pro každý produkt.</p></div>
               <button type="button" aria-expanded={showFunds} className="finance-action" onClick={()=>setShowFunds((v)=>!v)}>{showFunds?"Skrýt fondy":"Zobrazit fondy ("+data.funds.length+")"}</button>
             </div>
             {showFunds ? <div className="finance-scrollbar mt-3 overflow-x-auto">
               <table className="finance-data-table min-w-[600px] text-left">
-                <thead><tr><th>ETF</th><th className="text-right">Hodnota</th><th className="text-right">Pokrytí</th><th className="text-right">Nerozloženo</th><th>Zdroj / datum</th></tr></thead>
-                <tbody>{data.funds.map((f,i)=><tr key={f.symbol+"|"+f.isin+"|"+i}>
-                  <td><span className="font-semibold">{f.symbol}</span>{f.isin?<span className="block text-[10px] text-[var(--muted)]">{f.isin}</span>:null}</td>
-                  <td className="text-right">{money(f.valueCzk)}</td><td className="text-right">{pct(f.mappedPct)}</td>
-                  <td className="text-right">{money(f.unmappedCzk)}</td>
-                  <td className="max-w-[240px] text-[11px] text-[var(--muted)]">{f.asOf??"Datum neznámé"} · {f.source??f.note??"Zdroj neznámý"}</td>
-                </tr>)}</tbody>
+                <thead><tr><th>ETF / ETC / ETP</th><th className="text-right">Hodnota</th><th className="text-right">Pokrytí</th><th className="text-right">Nerozloženo</th><th>Zdroj / datum</th></tr></thead>
+                <tbody>{data.funds.map((f,i)=>{
+                  const insight=fundInsightForIsin(f.isin);
+                  return <tr key={f.isin??f.symbol+"|"+i}>
+                    <td>
+                      <span className="font-semibold">{f.symbol}</span>
+                      {f.isin?<span className="block text-[10px] text-[var(--muted)]">{f.isin}</span>:null}
+                      {insight?<span className="mt-1 block text-[10px] leading-4 text-[var(--accent)]">{insight.label}</span>:null}
+                    </td>
+                    <td className="text-right">{money(f.valueCzk)}</td><td className="text-right">{pct(f.mappedPct)}</td>
+                    <td className="text-right">{money(f.unmappedCzk)}</td>
+                    <td className="max-w-[320px] text-[11px] text-[var(--muted)]">
+                      {f.asOf??"Datum neznámé"} · {f.source??f.note??"Zdroj neznámý"}
+                      {insight&&f.source?<span className="mt-1 block">{insight.explanation}</span>:null}
+                      {insight?<a href={insight.issuerUrl} target="_blank" rel="noopener noreferrer"
+                        className="mt-1 inline-block text-[var(--accent)] underline">Struktura podle emitenta ↗</a>:null}
+                    </td>
+                  </tr>;
+                })}</tbody>
               </table>
             </div>:null}
           </section>
           <p className="rounded-xl border border-[var(--border)] bg-white/[.02] p-4 text-xs leading-5 text-[var(--muted)]">
-            <strong className="text-[var(--foreground)]">Omezení:</strong> Váhy se vztahují pouze k aktuálně evidovaným kladným pozicím akcií, ETF a kryptoměn, nikoliv k celému čistému jmění. Hotovost a P2P nejsou ve jmenovateli. Syntetická a páková expozice se automaticky neodvozuje. Neznámé podklady a ostatní instrumenty uvnitř fondů zůstávají v nerozložené části.
+            <strong className="text-[var(--foreground)]">Omezení:</strong> Váhy se vztahují pouze k aktuálně evidovaným kladným pozicím akcií, ETF/ETC/ETP a kryptoměn, nikoliv k celému čistému jmění. Hotovost a P2P nejsou ve jmenovateli. Syntetická a páková expozice se automaticky neodvozuje. Neznámé podklady a ostatní instrumenty uvnitř fondů zůstávají v nerozložené části.
             Ekvivalentní kusy přes ETF se zobrazí pouze při dostupné přímé referenční ceně stejného instrumentu. Podklady emitenta mohou být starší než aktuální ceny pozic.
           </p>
         </>
