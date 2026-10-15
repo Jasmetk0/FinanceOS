@@ -56,6 +56,7 @@ test("100 real proxy rows aggregate into economically estimated LYMS exposure wi
   assert.equal(result.funds.length,1);
   assert.equal(result.denominatorCzk,25416);
   assert.ok(Math.abs(result.mappedCzk-(25116*.99+300))<1e-7);
+  assert.ok(Math.abs(result.estimatedProxyCzk-25116*.99)<1e-7);
   assert.ok(Math.abs(result.unallocatedCzk-251.16)<1e-7);
   const msft=result.exposures.find(x=>x.key==="stock|isin:US5949181045");
   assert.ok(msft);
@@ -81,6 +82,7 @@ test("official CNDX itself remains an independently valued physical ETF if also 
   assert.equal(result.funds.find(x=>x.isin===CNDX_ISIN)?.exposureBasis,undefined);
   assert.equal(result.funds.find(x=>x.isin===LYMS_ISIN)?.exposureBasis,"reference-index-proxy");
   assert.ok(Math.abs(result.mappedCzk+result.unallocatedCzk-3000)<1e-7);
+  assert.ok(Math.abs(result.estimatedProxyCzk-1980)<1e-7);
 });
 
 test("proxy fails closed on missing source identity, malformed, insufficient or stale constituents",()=>{
@@ -105,6 +107,7 @@ test("synthetic LYMS index proxy with old date never appears as current indexed 
   const result=calculateXRay([holding("lyms","LYMS","etf",1000,LYMS_ISIN)],stale);
   assert.equal(result.mappedCzk,0);
   assert.equal(result.unallocatedCzk,1000);
+  assert.equal(result.estimatedProxyCzk,0);
   assert.match(result.funds[0].note,/14 dní/);
 });
 
@@ -131,6 +134,7 @@ test("automatic LYMS proxy performs only one issuer-allowlisted public fetch wit
 test("UI and API identify source explicitly as non-exact index-proxy",()=>{
   const read=x=>readFileSync(new URL("../"+x,import.meta.url),"utf8");
   assert.ok(read("components/portfolio-xray.tsx").includes('f.exposureBasis==="reference-index-proxy"'));
+  assert.ok(read("components/portfolio-xray.tsx").includes("data.estimatedProxyCzk>0"));
   assert.ok(read("components/xray-exposure-breakdown.tsx").includes('item.exposureBasis==="reference-index-proxy"'));
   assert.ok(read("app/api/xray/auto/route.ts").includes('sourceKind:"proxy-model"'));
 });
