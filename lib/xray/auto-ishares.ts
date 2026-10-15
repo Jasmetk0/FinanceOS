@@ -7,6 +7,7 @@
  */
 import { parseDelimited } from "./import.ts";
 import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
+import { normalizedIsin, normalizedSedol } from "./security-identity.ts";
 
 export interface IssuerFeed {
   isin: string;
@@ -86,7 +87,14 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
   const indices = required.map(name => names.indexOf(name));
   if (indices.some(idx => idx < 0)) throw new RangeError("iShares změnil formát sloupců. Rozklad se nepoužije.");
   const [tickerIdx,nameIdx,classIdx,valueIdx,exchangeIdx,locationIdx] = indices;
-  type Pending = { ticker:string; name:string; kind:"stock"|"other"; value:number; exchange:string; location:string; index:number };
+  // The verified daily "latest-holdings.csv" currently omits both columns
+  // (live-checked 15 Oct 2026). Some issuer variants may add these columns.
+  // Only explicit source-supplied IDs are usable; no ticker-name guessing.
+  const isinIdx=names.indexOf("isin");
+  const sedolIdx=names.indexOf("sedol");
+  const currencyIdx=names.indexOf("market currency");
+  type Pending = { ticker:string; name:string; kind:"stock"|"other"; value:number;
+    exchange:string; location:string; currency:string; isin:string|null; sedol:string|null; index:number };
   const pending: Pending[] = [];
   for (let i = 2; i < parsed.length; i++) {
     const f = parsed[i];
@@ -98,7 +106,16 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
     const ticker = f[tickerIdx].trim().toUpperCase();
     const value = marketNumber(f[valueIdx]);
     if (!name || !ticker) throw new RangeError("iShares podklad nemá název nebo ticker na řádku "+(i+1));
-    pending.push({ticker,name,kind,value,exchange:f[exchangeIdx].trim(),location:f[locationIdx].trim(),index:i});
+    const rawIsin=isinIdx>=0?(f[isinIdx]??"").trim(): "";
+    const rawSedol=sedolIdx>=0?(f[sedolIdx]??"").trim(): "";
+    const isin=kind==="stock" && rawIsin && rawIsin!=="-" ? normalizedIsin(rawIsin) : null;
+    const sedol=kind==="stock" && rawSedol && rawSedol!=="-" ? normalizedSedol(rawSedol) : null;
+    if(kind==="stock" && ((rawIsin && rawIsin!=="-" && !isin) ||
+       (rawSedol && rawSedol!=="-" && !sedol)))
+      throw new RangeError("iShares CSV obsahuje poškozený ISIN/SEDOL u akcie na řádku "+(i+1));
+    pending.push({ticker,name,kind,value,exchange:f[exchangeIdx].trim(),
+      location:f[locationIdx].trim(),currency:currencyIdx>=0?(f[currencyIdx]??"").trim():"",
+      isin,sedol,index:i});
   }
   if (pending.length < 10) throw new RangeError("Příliš málo podkladů pro kompletní iShares ETF.");
   const positive = pending.reduce((sum,r) => sum + Math.max(0,r.value),0);
@@ -115,14 +132,19 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
   for (const row of pending) {
     if (row.kind !== "stock") continue;
     if (!bySymbol.has(row.ticker)) bySymbol.set(row.ticker,new Set());
-    bySymbol.get(row.ticker)?.add(row.name.toUpperCase());
+    // Same ticker and company NAME can still be different security lines on
+    // different markets. A source without ISIN/SEDOL must not merge them.
+    bySymbol.get(row.ticker)?.add(JSON.stringify([
+      row.name.toUpperCase(),row.exchange.toUpperCase(),row.location.toUpperCase(),
+      row.currency.toUpperCase(),row.isin??"",
+    ]));
   }
 
   const source = "iShares official holdings (" + feed.productId + ", positive market value; " + asOf + ")";
   const combined = new Map<string,XRayConstituent>();
   for (const row of pending) {
     if (row.value <= 0) continue;
-    const conflict = row.kind === "stock" && (
+    const conflict = row.kind === "stock" && !row.isin && (
       row.ticker === "-" || (bySymbol.get(row.ticker)?.size ?? 0) > 1
     );
     // Some official EM IMI holdings use a literal "-" ticker for multiple
@@ -133,13 +155,22 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
     const symbol = row.kind === "other" ? "OTHER-" + row.index :
       conflict ? row.ticker + "@" + row.exchange.replace(/\s+/g,"-").slice(0,30) +
         "#row" + (row.index+1) : row.ticker;
-    const id = row.kind + "|" + symbol + "|" + (conflict ? row.name : "");
+    const id = row.kind + "|" + (row.isin ? "isin:"+row.isin :
+      symbol + "|" + (conflict ? row.name : ""));
     const previous = combined.get(id);
     const weightPct = 100 * row.value / positive;
-    if (previous) previous.weightPct += weightPct;
-    else combined.set(id,{
+    if (previous) {
+      if(previous.securityName!==row.name ||
+         (previous.securitySedol && row.sedol && previous.securitySedol!==row.sedol))
+        throw new RangeError("Jedna iShares identita označuje rozdílné akcie nebo SEDOL.");
+      previous.weightPct += weightPct;
+      // If two exchange listings share an ISIN but different SEDOL, their
+      // share class is the SAME; SEDOL refers to the security listing, so
+      // it can no longer be represented as a unique identifier here.
+      if(previous.securitySedol!==row.sedol)previous.securitySedol=null;
+    } else combined.set(id,{
       fundSymbol: ownedSymbol, fundIsin: feed.isin, securitySymbol: symbol,
-      securityIsin: null, securityName:row.name, weightPct,
+      securityIsin: row.isin, securitySedol:row.sedol,securityName:row.name, weightPct,
       kind:row.kind, asOf, source,
     });
   }
