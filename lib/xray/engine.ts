@@ -399,7 +399,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
         (!isSynthetic && (bases.has("reference-index") || bases.has("reference-index-proxy")))) {
       const reason=isSynthetic
         ? "Syntetické ETF: náhradní swapový koš nelze vydávat za referenční index. " +
-          "Indexová/proxy expozice vyžaduje výslovně označený úplný snapshot " +
+          "Indexová expozice nebo modelová proxy vyžaduje výslovně označený úplný snapshot " +
           "(alespoň 90 akciových řádků, váhy nejméně 98 % a datum). " +
           "Modelový proxy rozklad musí být maximálně 14 dní starý."
         : "Fyzické ETF nemůže používat podklady označené jako referenční index nebo proxy.";
