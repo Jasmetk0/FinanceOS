@@ -1,5 +1,5 @@
 // Read-only schema proof on exact allowlisted iShares files; no user data.
-import {ISHARES_FEEDS} from "../lib/xray/auto-ishares.ts";
+import {ISHARES_FEEDS,parseIsharesHoldingsCsv} from "../lib/xray/auto-ishares.ts";
 import {parseDelimited} from "../lib/xray/import.ts";
 for (const isin of ["IE00B5BMR087","IE00BF4RFH31","IE00B53SZB19"]){
   const feed=ISHARES_FEEDS.find(f=>f.isin===isin);
@@ -11,6 +11,12 @@ for (const isin of ["IE00B5BMR087","IE00BF4RFH31","IE00B53SZB19"]){
     const head=lines[1]||[];
     const idxIsin=head.findIndex(x=>x.trim().toLowerCase()==="isin");
     const idxSedol=head.findIndex(x=>x.trim().toLowerCase()==="sedol");
+    const parsed=parseIsharesHoldingsCsv(body,feed,isin);
+    console.log("ISHARES_LIVE_PARSER_PASS "+JSON.stringify({isin,count:parsed.length,
+      positiveEquity:parsed.filter(x=>x.kind==="stock").length,
+      verifiedIsins:parsed.filter(x=>x.kind==="stock"&&x.securityIsin).length,
+      weightTotal:parsed.reduce((sum,x)=>sum+x.weightPct,0),
+      asOf:parsed[0]?.asOf}));
     console.log("ISHARES_FULL_CSV_COLUMNS "+JSON.stringify({isin,status:response.status,bytes:body.length,
       count:lines.length,header:head,idxIsin,idxSedol,
       asOf:lines[0],examples:lines.slice(2,5).map(row=>({ticker:row[0],
