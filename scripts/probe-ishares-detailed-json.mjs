@@ -18,7 +18,7 @@ for(const isin of ids){
     "holdingsData","fundHoldings","portfolioHoldings","issuerTicker",
     "instrumentIsin","securityIsin","securityIdentifier","__NEXT_DATA__",
     "application/json","application/ld+json","window.__","dataLayer",
-    "holdings",""ISIN"","isin","securityId","detailedHoldings"
+    "holdings","ISIN","isin","securityId","detailedHoldings"
   ];
   const sample2=patterns.map(term=>{
     const lower=html.toLowerCase(),needle=term.toLowerCase();
