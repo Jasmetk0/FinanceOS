@@ -101,3 +101,42 @@ test("VALL API + diagnostics + canary integrate without altering VWCE routing",(
  assert.ok(canary.includes('fetchVallHoldings("VALL",true)'));
  assert.ok(api.includes("localOnly(request)"));
 });
+
+test("Vanguard VALL offsets only the two signed sides of the identical CT.SPOT contract",()=>{
+  const matched=[...items];
+  matched[0]={...matched[0],issuerName:"FX-PAIR-001",
+    securityLongDescription:"FX-PAIR-001",securityType:"CT.SPOT",
+    ticker:null,sedol1:null,marketValuePercentage:3};
+  matched[1]={...matched[1],issuerName:"FX-PAIR-001",
+    securityLongDescription:"FX-PAIR-001",securityType:"CT.SPOT",
+    ticker:null,sedol1:null,marketValuePercentage:-3};
+  const pages=[
+    parseVanguardPage(payload(matched.slice(0,1500),count,"second"),vanguardFeedForIsin(VALL_ISIN)),
+    parseVanguardPage(payload(matched.slice(1500),count,null),vanguardFeedForIsin(VALL_ISIN)),
+  ];
+  const x=parseVanguardHoldings(pages,"VALL",vanguardFeedForIsin(VALL_ISIN));
+  assert.equal(x.rows.length,count-2);
+  assert.ok(Math.abs(x.coveragePct-98.7976)<1e-7);
+  assert.ok(!x.rows.some(r=>r.securityName==="FX-PAIR-001"),"Signed FX pair is not represented as a stock");
+  const unmatched=[...matched];
+  unmatched[1]={...unmatched[1],issuerName:"ANOTHER-TRADE",
+    securityLongDescription:"ANOTHER-TRADE"};
+  const broken=[
+    parseVanguardPage(payload(unmatched.slice(0,1500),count,"second"),vanguardFeedForIsin(VALL_ISIN)),
+    parseVanguardPage(payload(unmatched.slice(1500),count,null),vanguardFeedForIsin(VALL_ISIN)),
+  ];
+  assert.throws(()=>parseVanguardHoldings(broken,"VALL",vanguardFeedForIsin(VALL_ISIN)),/záporné neakciové expozice/);
+});
+
+test("negative non-stock forward positions cannot hide behind a different matching CT.SPOT pair",()=>{
+  const modified=[...items];
+  modified[0]={...modified[0],securityType:"CT.FOREX",securityLongDescription:"FX Forward",
+    marketValuePercentage:-3};
+  modified[1]={...modified[1],securityType:"CRNY",securityLongDescription:"Cash USD",
+    marketValuePercentage:3};
+  const p=[
+    parseVanguardPage(payload(modified.slice(0,1500),count,"next"),vanguardFeedForIsin(VALL_ISIN)),
+    parseVanguardPage(payload(modified.slice(1500),count,null),vanguardFeedForIsin(VALL_ISIN)),
+  ];
+  assert.throws(()=>parseVanguardHoldings(p,"VALL",vanguardFeedForIsin(VALL_ISIN)),/záporné neakciové expozice/);
+});
