@@ -4,6 +4,7 @@
  * The model reports economic exposure, not direct ownership or tax lots.
  */
 import { buildSedolIsinCrosswalk, normalizedSedol, resolveSecurityIsin } from "./security-identity.ts";
+import { fundInsightForIsin } from "./fund-insights.ts";
 
 export interface XRayHolding {
   id: string;
@@ -167,6 +168,41 @@ export function validateXRayConstituents(rows: XRayConstituent[]) {
   }
 }
 
+/**
+ * One coverage row per verified ETF ISIN even when the investor owns that
+ * security through multiple broker accounts / trading venues. This is a
+ * PRESENTATION aggregation only; individual holdings are still allocated
+ * independently by calculateXRay, preserving value and source tracing.
+ */
+function aggregateFundCoverage(rows:XRayFundCoverage[]): XRayFundCoverage[] {
+  const groups = new Map<string, XRayFundCoverage[]>();
+  for(const row of rows){
+    const key=row.isin?"isin:"+norm(row.isin):"ticker:"+norm(row.symbol);
+    const existing=groups.get(key)??[];
+    existing.push(row);
+    groups.set(key,existing);
+  }
+  const result:XRayFundCoverage[]=[];
+  for(const group of groups.values()){
+    const valueCzk=group.reduce((total,r)=>total+r.valueCzk,0);
+    const mappedCzk=group.reduce((total,r)=>total+r.mappedCzk,0);
+    const unmappedCzk=group.reduce((total,r)=>total+r.unmappedCzk,0);
+    const sources=[...new Set(group.map(r=>r.source))];
+    const dates=[...new Set(group.map(r=>r.asOf))];
+    const notes=[...new Set(group.map(r=>r.note).filter((v):v is string=>Boolean(v)))];
+    result.push({
+      symbol:[...new Set(group.map(r=>r.symbol))].sort().join(" / "),
+      isin:group[0].isin,
+      valueCzk,mappedCzk,unmappedCzk,
+      mappedPct:valueCzk?mappedCzk/valueCzk*100:0,
+      source:sources.length===1?sources[0]:null,
+      asOf:dates.length===1?dates[0]:null,
+      note:notes.join(" ")||null,
+    });
+  }
+  return result.sort((a,b)=>b.unmappedCzk-a.unmappedCzk || b.valueCzk-a.valueCzk);
+}
+
 export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstituent[]): XRayResult {
   assertHoldings(holdings);
   validateXRayConstituents(compositions);
@@ -314,7 +350,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     }
     if (ambiguousTicker && !candidates && tickerOnly) warnings.add("ETF " + h.symbol + " má více ISIN. Import bez ISIN nelze bezpečně přiřadit.");
     if (!holdingsList?.length) {
-      coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: 0, mappedCzk: 0, unmappedCzk: h.valueCzk, source: null, asOf: null, note: "Chybí rozklad ETF" });
+      coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: 0, mappedCzk: 0, unmappedCzk: h.valueCzk, source: null, asOf: null, note: fundInsightForIsin(h.isin)?.explanation ?? "Chybí rozklad ETF" });
       continue;
     }
     // Dates/sources from different snapshots for a single fund can produce
@@ -346,7 +382,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       else identityCoverage.tickerOnlyCzk+=part;
       mapped += part;
     }
-    coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: mapped / h.valueCzk * 100, mappedCzk: mapped, unmappedCzk: Math.max(0, h.valueCzk - mapped), source: holdingsList[0].source || null, asOf: dates[0] ?? null, note: mapped === 0 ? "Rozklad neobsahuje akcie nebo kryptoměny" : null });
+    coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: mapped / h.valueCzk * 100, mappedCzk: mapped, unmappedCzk: Math.max(0, h.valueCzk - mapped), source: holdingsList[0].source || null, asOf: dates[0] ?? null, note: mapped === 0 ? (fundInsightForIsin(h.isin)?.explanation ?? "Rozklad neobsahuje akcie nebo kryptoměny") : null });
   }
 
   const exposures = [...exposed.values()].map((item): XRayExposure => {
@@ -394,7 +430,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   if (mappedCzk > denominatorCzk + MONEY_EPSILON) {
     throw new RangeError("Rozklad překročil hodnotu původního portfolia. Zkontroluj strukturu fondů.");
   }
-  const fundCoverage = coverage.sort((a, b) => b.unmappedCzk - a.unmappedCzk);
+  const fundCoverage = aggregateFundCoverage(coverage);
   return {
     identityCoverage,
     denominatorCzk, directCzk, fundsCzk, mappedCzk, unallocatedCzk,
