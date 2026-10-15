@@ -32,6 +32,10 @@ jobs:
       - name: Correctness regression tests
         run: npm test
 
+      - name: Temporary VALL GPX public identity probe
+        continue-on-error: true
+        run: node scripts/probe-vall-gpx.mjs
+
       - name: Build
         run: npm run build
 
