@@ -341,6 +341,7 @@ export function PortfolioXRay({
                       {f.isin?<span className="block text-[10px] text-[var(--muted)]">{f.isin}</span>:null}
                       {insight?<span className="mt-1 block text-[10px] leading-4 text-[var(--accent)]">{insight.label}</span>:null}
                       {f.exposureBasis==="reference-index"?<span className="mt-1 block text-[10px] text-[var(--warning)]">Referenční index · ne fyzická držba podkladů</span>:null}
+                      {f.exposureBasis==="reference-index-proxy"?<span className="mt-1 block text-[10px] font-semibold text-[var(--warning)]">⚠ Odhad z CNDX · NE skutečné váhy LYMS ani indexu</span>:null}
                     </td>
                     <td className="text-right">{money(f.valueCzk)}</td><td className="text-right">{pct(f.mappedPct)}</td>
                     <td className="text-right">{money(f.unmappedCzk)}</td>
