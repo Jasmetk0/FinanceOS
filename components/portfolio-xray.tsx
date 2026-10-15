@@ -6,10 +6,11 @@ import { parseXRayCompositionCsv } from "@/lib/xray/import";
 import { XRayIssuerImport } from "@/components/xray-issuer-import";
 import { XRayAutoSync } from "@/components/xray-auto-sync";
 import { XRayIdentityQuality } from "@/components/xray-identity-quality";
+import { XRaySourceSelectionAudit } from "@/components/xray-source-selection-audit";
 import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
-import { combineConstituentSources } from "@/lib/xray/auto-merge";
+import { explainConstituentSources } from "@/lib/xray/auto-merge";
 import { fundInsightForIsin } from "@/lib/xray/fund-insights";
 
 type Filter = "all" | "stock" | "crypto";
@@ -66,10 +67,16 @@ export function PortfolioXRay({
   },[]);
   const [constituents, setConstituents] = useState<XRayConstituent[]>([]);
   const [automaticRows, setAutomaticRows] = useState<XRayConstituent[]>([]);
-  const effectiveRows = useMemo(() => {
-    try { return combineConstituentSources(constituents,automaticRows); }
-    catch { return constituents; }
+  const selectedSources = useMemo(() => {
+    try { return {...explainConstituentSources(constituents,automaticRows),error:""}; }
+    catch(error) {
+      // Preserve usable manual rows, but make reconciliation failure visible.
+      // Never fabricate a successful source decision after a failed merge.
+      return {rows:constituents,decisions:[],
+        error:error instanceof Error?error.message:String(error)};
+    }
   },[constituents,automaticRows]);
+  const effectiveRows=selectedSources.rows;
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -251,6 +258,8 @@ export function PortfolioXRay({
               </div>
             ))}
           </section>
+          <XRaySourceSelectionAudit funds={data.funds}
+            decisions={selectedSources.decisions} error={selectedSources.error}/>
           <XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} bridgeAudit={data.bridgeAudit} />
           <section className="finance-surface p-4 sm:p-5">
             <div className="flex flex-wrap justify-between gap-3">
