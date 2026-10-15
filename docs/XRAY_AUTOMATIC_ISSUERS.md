@@ -114,3 +114,14 @@ VALL má i veřejně reportované futures `DE.IND`; jejich kladná netto aktiva 
 Druhý nezávislý běh GitHub Actions 15. 10. 2026 s produkčními parsery prokázal, že stránkování `E161` vrací **7 383 originálních GPX položek** v pěti stránkách (4 × 1 500 + 1 × 1 383). Po sloučení identických akciových identit a vynechání nulových vah bylo vytvořeno **6 972 výsledných řádků**, z toho **96,35365 % akciová expozice**, **3,64597 % ostatní netto aktiva** a **0,00038 % reziduum** způsobené publikovaným zaokrouhlením. Jednotné datum je **30. 9. 2026**. Tyto hodnoty vycházejí z opravdového emitentského souboru, nikoli z ukázkových testovacích vah.
 
 Pro audit živých zdrojů je k dispozici pravidelný `scripts/check-live-issuer-feeds.mjs`, který používá identický produkční fetcher. Není garantovaná budoucí dostupnost veřejného GPX rozhraní.
+
+
+## Identita podkladových akcií iShares — ISIN/SEDOL a kolize tickerů (15. 10. 2026)
+
+FinanceOS už nebere shodný ticker a název společnosti jako záruku stejné akciové třídy, pokud se liší burza či země kotace. Stejná značka (např. `ABC`) může označovat dva rozdílné instrumenty a bez doloženého identifikátoru je správné ponechat je jako dvě samostatné expozice.
+
+**Skutečně ověřené veřejné CSV BlackRock dne 15. 10. 2026:** standardní iShares `latest-holdings.csv` **SXR8, WSML a CNDX** obsahovaly sloupce `Ticker, Name, Sector, Asset Class, Market Value, Weight (%), Notional Value, Shares, Price, Location, Exchange, Market Currency` (u CNDX navíc `Type`). **Žádný z těchto tří oficiálních stahovaných CSV neměl ISIN nebo SEDOL podkladové akcie.** Přestože jejich veřejná webová tabulka může zobrazovat ISIN, není správné tato data domýšlet z názvu/tickeru. Samotná úprava parseru proto není nové automatické přiřazení ISIN pro těchto deset ETF.
+
+**Rozšíření parseru pro zdroje se sloupci ISIN/SEDOL:** pokud úplný oficiální fondový CSV soubor tyto údaje opravdu dodá, parser je přebere pro konkrétní akcii po kontrole struktury ISIN a kontrolní číslice SEDOL. Použije se přesná identita `securityIsin` při sloučení s přímo drženou akcií a podklady jiných ETF; dva řádky s týmž tickerem, ale různým ISIN zůstanou oddělené. Jeden ISIN na dvou burzách může mít různé SEDOL, proto se burzovní SEDOL v takovém případě nepovažuje za jedinečný identifikátor pro celý fond. Když emitent sloupec nedodá, zůstává u tickeru výslovně méně spolehlivá identita, nikdy ne vymyšlený ISIN.
+
+**Bezpečnost:** žádné externí vyhledávání podle názvů, žádné přepsání hodnot a cen investičních pozic, žádný další API klíč. Sčítání expozic probíhá pouze podle skutečně dodaných identifikátorů. Nové kontroly pro stejný ticker a různou burzu brání falešnému sjednocení akcií do jedné expozice, ale mohou dočasně rozdělit neidentifikované řádky dokud nebude doložena jejich identita.
