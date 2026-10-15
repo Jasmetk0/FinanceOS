@@ -25,6 +25,10 @@ function isValidDay(value:string):boolean {
 }
 function sourceEligible(key:string,rows:XRayConstituent[],now:number):boolean {
   if(!rows.length)return false;
+  // A single snapshot cannot mix days or provenance. calculateXRay will
+  // reject it anyway, so a malformed newer CSV must not beat a usable feed.
+  if(!isValidDay(rows[0].asOf) || !rows[0].source.trim() ||
+     rows.some(r=>r.asOf!==rows[0].asOf||r.source!==rows[0].source))return false;
   const insight=key.startsWith("isin:")?fundInsightForIsin(key.slice(5)):null;
   const basis=basisOf(rows);
   if(!basis)return false;
@@ -48,6 +52,29 @@ function sourceEligible(key:string,rows:XRayConstituent[],now:number):boolean {
   // Unknown products: reject explicitly mismatched or conflicting
   // provenance only when an eligible counterpart is available.
   return basis==="fund-holdings";
+}
+
+interface SnapshotEvidence {
+  complete:boolean;
+  investablePct:number;
+  rows:number;
+}
+/**
+ * A manual top-ten table often adds up to only ~50–80% of the fund.
+ * An optional "OTHER" remainder may make it sum to 100% without providing
+ * identities for the other shares. A current complete issuer basket must
+ * not be displaced by a newer materially weaker snapshot for that ISIN.
+ * This only arbitrates when BOTH candidate sources are present. A partial
+ * manual upload on its own remains visible as partial, never invented data.
+ */
+function snapshotEvidence(rows:XRayConstituent[]):SnapshotEvidence {
+  const total=rows.reduce((sum,row)=>sum+row.weightPct,0);
+  return {
+    complete:total>=95-1e-7 && total<=100+1e-7,
+    investablePct:rows.reduce((sum,row)=>
+      sum+(row.kind==="stock"||row.kind==="crypto"?row.weightPct:0),0),
+    rows:rows.filter(row=>row.weightPct>0).length,
+  };
 }
 
 /**
@@ -93,12 +120,36 @@ export function combineConstituentSources(
       if(localEligible&&!remoteEligible)choice=local;
       else if(!localEligible&&remoteEligible)choice=remote;
       else if(localEligible&&remoteEligible){
-        const localDate=local[0].asOf,remoteDate=remote[0].asOf;
-        choice=localDate>remoteDate?local:remote;
-        // When snapshots are equally dated, prefer full benchmark
-        // weights to a merely similar physically held CNDX basket.
-        if(localDate===remoteDate&&basisOf(local)==="reference-index"&&
-           basisOf(remote)==="reference-index-proxy")choice=local;
+        const manualEvidence=snapshotEvidence(local);
+        const issuerEvidence=snapshotEvidence(remote);
+        const manualLessComplete=!manualEvidence.complete&&issuerEvidence.complete;
+        const issuerLessComplete=!issuerEvidence.complete&&manualEvidence.complete;
+        // Do not let a newer top-ten excerpt or an "OTHER" residual mask
+        // hundreds of issuer-verified equities, while preserving normal
+        // newer-as-of manual corrections that are materially complete.
+        const manualMissingStocks=issuerEvidence.investablePct>=95 &&
+          manualEvidence.investablePct<90;
+        const issuerMissingStocks=manualEvidence.investablePct>=95 &&
+          issuerEvidence.investablePct<90;
+        const manualTruncated=issuerEvidence.investablePct>=95 &&
+          issuerEvidence.rows>=40 &&
+          manualEvidence.rows<issuerEvidence.rows*0.25 &&
+          manualEvidence.investablePct<=issuerEvidence.investablePct+1;
+        const issuerTruncated=manualEvidence.investablePct>=95 &&
+          manualEvidence.rows>=40 &&
+          issuerEvidence.rows<manualEvidence.rows*0.25 &&
+          issuerEvidence.investablePct<=manualEvidence.investablePct+1;
+        if((manualLessComplete||manualMissingStocks||manualTruncated) &&
+           !(issuerLessComplete||issuerMissingStocks||issuerTruncated))choice=remote;
+        else if((issuerLessComplete||issuerMissingStocks||issuerTruncated) &&
+           !(manualLessComplete||manualMissingStocks||manualTruncated))choice=local;
+        else {
+          const localDate=local[0].asOf,remoteDate=remote[0].asOf;
+          choice=localDate>remoteDate?local:remote;
+          // When equally dated, exact benchmark outranks approximate proxy.
+          if(localDate===remoteDate&&basisOf(local)==="reference-index"&&
+             basisOf(remote)==="reference-index-proxy")choice=local;
+        }
       } else {
         // Preserve previous preference; the engine will explicitly reject
         // an unsupported synthetic basket rather than inventing stocks.
