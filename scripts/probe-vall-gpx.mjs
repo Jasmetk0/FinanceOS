@@ -28,3 +28,41 @@ try{
  console.error("VALL_FULL_PRODUCTION_FAILED",error instanceof Error?error.stack:String(error));
  process.exitCode=1;
 }
+
+const items=[];
+let cursor=null;
+const seen=new Set();
+for(let i=0;i<12;i++){
+ const response=await fetch(url,{method:"POST",
+   headers:{"Accept":"application/json","Content-Type":"application/json","X-Consumer-ID":"ie0"},
+   body:JSON.stringify({query:"query FinanceOsVanguardHoldings($portIds:[String!],$lastItemKey:String){borHoldings(portIds:$portIds){holdings(limit:1500,securityTypes:null,lastItemKey:$lastItemKey){totalHoldings lastItemKey items{issuerName securityLongDescription marketValuePercentage sedol1 ticker securityType effectiveDate}}}}" ,
+     variables:{portIds:["E161"],lastItemKey:cursor}
+   }),signal:AbortSignal.timeout(30000)});
+ const data=await response.json();
+ if(data.errors?.length)throw new Error(JSON.stringify(data.errors));
+ const h=data.data?.borHoldings?.[0]?.holdings;
+ if(!h)throw new Error("Missing GPX page "+i);
+ items.push(...h.items);
+ console.log(JSON.stringify({detailPage:i+1,total:h.totalHoldings,count:h.items.length,
+   cursorPresent:Boolean(h.lastItemKey)}));
+ if(!h.lastItemKey)break;
+ if(seen.has(h.lastItemKey))throw Error("Cyclic");
+ seen.add(h.lastItemKey);cursor=h.lastItemKey;
+}
+const group=new Map();
+for(const x of items){
+ const typ=x.securityType??"NONE",w=Number(x.marketValuePercentage);
+ const g=group.get(typ)??{type:typ,count:0,positive:0,negative:0};
+ g.count++;
+ if(w>=0)g.positive+=w;else g.negative+=w;
+ group.set(typ,g);
+}
+console.log("VALL_RAW_ISSUER_BREAKDOWN "+JSON.stringify({count:items.length,
+ groups:[...group.values()].sort((a,b)=>Math.abs(b.negative)-Math.abs(a.negative)),
+ negativeNonStock:items.filter(x=>Number(x.marketValuePercentage)<0).sort((a,b)=>Number(a.marketValuePercentage)-Number(b.marketValuePercentage)).slice(0,18).map(x=>({
+   type:x.securityType,name:x.securityLongDescription,weight:x.marketValuePercentage,ticker:x.ticker
+ })),
+ positiveOther:items.filter(x=>!["EQ.DRCPT","EQ.FSH","EQ.PREF","EQ.PSH","EQ.REIT","EQ.STOCK"].includes(x.securityType)&&Number(x.marketValuePercentage)>0).sort((a,b)=>Number(b.marketValuePercentage)-Number(a.marketValuePercentage)).slice(0,15).map(x=>({
+ type:x.securityType,name:x.securityLongDescription,weight:x.marketValuePercentage,ticker:x.ticker
+ }))
+}));
