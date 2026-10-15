@@ -123,3 +123,16 @@ test("iShares CSV no longer identifies two unrelated exchange listings merely by
  assert.ok(code.includes("row.exchange.toUpperCase()"));
  assert.ok(code.includes("row.location.toUpperCase()"));
 });
+
+test("same exchange ticker/name with different official SEDOL and no ISIN stay separate",()=>{
+ const rows=base().map(row=>[...row,"",row[0]==="MSFT"?"2588173":""]);
+ rows.push(makeRow("MSFT","MICROSOFT",20,"NASDAQ","United States",
+   "Equity",["","2379504"]));
+ const parsed=parseIsharesHoldingsCsv(asCsv(rows,["ISIN","SEDOL"]),feed,"SXR8");
+ const matched=parsed.filter(r=>r.securitySedol);
+ assert.equal(matched.length,2);
+ assert.notEqual(matched[0].securitySymbol,matched[1].securitySymbol);
+ const report=calculateXRay([holding("fund","SXR8","etf",1000,feed.isin)],parsed);
+ assert.ok(report.exposures.some(r=>r.key==="stock|sedol:2588173"));
+ assert.ok(report.exposures.some(r=>r.key==="stock|sedol:2379504"));
+});
