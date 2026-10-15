@@ -109,8 +109,9 @@ test("X-Ray table tells direct shares apart from fund-only exposures and search 
   const view=readFileSync(new URL("../components/portfolio-xray.tsx",import.meta.url),"utf8");
   assert.ok(view.includes("item.directCzk > 0 ? quantity(item.directQuantity)"));
   assert.ok(view.includes("Pouze přes ETF"));
-  assert.ok(view.includes("SEDOL "));
-  assert.ok(view.includes("ISIN "));
+  const detail=readFileSync(new URL("../components/xray-exposure-breakdown.tsx",import.meta.url),"utf8");
+  assert.ok(detail.includes("SEDOL "));
+  assert.ok(detail.includes("ISIN "));
   assert.ok(view.includes("item.key, ...item.fundSymbols"));
   assert.ok(view.includes("pomlčka") || view.includes("Pomlčka"));
 });

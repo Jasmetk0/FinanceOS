@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { calculateXRay, validateXRayConstituents, type XRayConstituent, type XRayHolding } from "@/lib/xray/engine";
 import { parseXRayCompositionCsv } from "@/lib/xray/import";
 import { XRayIssuerImport } from "@/components/xray-issuer-import";
 import { XRayAutoSync } from "@/components/xray-auto-sync";
 import { XRayIdentityQuality } from "@/components/xray-identity-quality";
+import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
 import { combineConstituentSources } from "@/lib/xray/auto-merge";
@@ -279,7 +280,7 @@ export function PortfolioXRay({
               </label>
               <button type="button" className="finance-action" onClick={()=>{setFilter("all");setQuery("");setVisible(50);}}>Vymazat filtry</button>
             </div>
-            <p aria-live="polite" className="mt-3 text-[11px] text-[var(--muted)]">Zobrazeno {Math.min(visible, filtered.length)} z {filtered.length} sloučených titulů.</p>
+            <p aria-live="polite" className="mt-3 text-[11px] text-[var(--muted)]">Zobrazeno {Math.min(visible, filtered.length)} z {filtered.length} sloučených titulů. Klikni na akcii pro přesný rozpis podle ETF a investičního účtu.</p>
             <div className="finance-scrollbar mt-2 overflow-x-auto rounded-xl border border-[var(--border)]">
               <table className="finance-data-table min-w-[710px] text-left">
                 <thead><tr>
@@ -289,7 +290,8 @@ export function PortfolioXRay({
                 </tr></thead>
                 <tbody>
                   {filtered.slice(0,visible).map((item)=>(
-                    <tr key={item.key} className="cursor-pointer" onClick={()=>setSelected(selected===item.key?null:item.key)}>
+                    <Fragment key={item.key}>
+                    <tr className="cursor-pointer" onClick={()=>setSelected(selected===item.key?null:item.key)}>
                       <td className="max-w-60">
                         <button type="button" className="text-left" aria-expanded={selected===item.key}
                           onClick={(e)=>{e.stopPropagation();setSelected(selected===item.key?null:item.key);}}>
@@ -298,23 +300,7 @@ export function PortfolioXRay({
                           {item.directCzk === 0 && item.viaFundsCzk > 0 ?
                             <span className="block text-[10px] text-[var(--muted)]">Pouze přes ETF{item.kind==="stock" && item.key.startsWith("stock|sedol:") ?
                               " · SEDOL " + item.key.slice("stock|sedol:".length) : ""}</span> : null}
-                          {selected===item.key ? <span className="mt-2 block text-[11px] leading-5 text-[var(--muted)]">
-                            {item.kind==="crypto"?"Krypto":"Akcie"} · Přes fondy: {item.fundSymbols.join(", ") || "žádné"}.
-                            {" "}Přímo: {item.accounts.join(", ") || "žádné"}.
-                            {item.kind==="stock" && item.key.startsWith("stock|sedol:") ?
-                              " Přesný identifikátor: SEDOL " + item.key.slice("stock|sedol:".length) + "." : ""}
-                            {item.kind==="stock" && item.key.startsWith("stock|isin:") ?
-                              " Přesný identifikátor: ISIN " + item.key.slice("stock|isin:".length) + "." : ""}
-                            {item.directCzk === 0 && item.viaFundsCzk > 0 ?
-                              " Tuto akcii nevlastníš přímo; částka vyjadřuje pouze ekonomickou expozici přes ETF." : ""}
-                            {item.kind==="stock" ?
-                              item.key.startsWith("stock|isin:") ?
-                                " Identita: doložený ISIN." :
-                              item.key.startsWith("stock|sedol:") ?
-                                " Identita: SEDOL (bez potvrzeného ISIN)." :
-                                " Identita: není potvrzená. Stejný ticker se neslučuje s jinou akcií." : ""}
-                            {item.fundEquivalentQuantity!==null?" Teoretický ekvivalent z fondů: "+quantity(item.fundEquivalentQuantity)+" kusů.":""}
-                          </span>:null}
+
                         </button>
                       </td>
                       <td className="text-right">{money(item.directCzk)}</td>
@@ -324,6 +310,12 @@ export function PortfolioXRay({
                       <td className="text-right">{item.directCzk > 0 ? quantity(item.directQuantity) :
                         <span className="text-[var(--muted)]" title="Žádné přímo držené akcie, pouze ekonomická expozice přes ETF">—</span>}</td>
                     </tr>
+                    {selected===item.key ? <tr className="bg-white/[.015]">
+                      <td colSpan={6} className="p-3">
+                        <XRayExposureBreakdown exposure={item}/>
+                      </td>
+                    </tr> : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
