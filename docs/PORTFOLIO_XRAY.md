@@ -60,3 +60,23 @@ Při potvrzení do IndexedDB se nahrazuje pouze složení vybraného ETF. Ostatn
 Jestliže nová tabulka zná ISIN a starší tabulka stejného tickeru jej neznala, starší nejednoznačný ticker-only snapshot se odebere. Cizí fondy s jiným doloženým ISIN se neodstraňují.
 
 **Důležité limity:** Výběr data i fund identity vychází z uživatelského přiřazení; nejde o automaticky ověřený upstream feed. Někteří emitenti používají odlišné nativní formáty, XLSX nebo další nestandardní třídy aktiv — v takovém případě je nutné převést tabulku na standardní X-Ray CSV bez ztráty či zaokrouhlení podkladových záznamů. Kód úmyslně neodvozuje akcie z dříve agregovaného X-Ray reportu.
+
+
+## Rozlišování konstrukce fondů a duplicitních listingů (15. 10. 2026)
+
+**Jedno ISIN = jeden řádek pokrytí** i když broker vrátí tentýž fond vícekrát (dva účty nebo dvě burzovní kotace). Jejich CZK hodnoty i rozložené/neznámé části se sčítají. Expozice ve výpočtu stále vznikají z jednotlivých reálných pozic, takže nedochází k dvojímu započtení ani ke změně oceňování. Odlišné ISIN se neslučují jen kvůli shodnému tickeru.
+
+Při chybějícím automatickém seznamu podkladů se pro **výslovně ověřené ISIN** zobrazuje popis struktury produktu a přímý oficiální odkaz na emitenta:
+
+| ISIN | Příklad | Ověřená struktura | Zacházení s chybějícími podklady |
+|---|---|---|---|
+| LU1829221024 | LYMS | Amundi, syntetická Nasdaq-100 replikace swapem | Nesmí zaměnit fyzický náhradní koš se složením indexové expozice |
+| IE0032077012 | EQQQ | Invesco, fyzické Nasdaq-100 ETF Dist | Čeká se na úplný emitentský datovaný snapshot |
+| IE00BFZXGZ54 | EQAC | Invesco, fyzické Nasdaq-100 ETF Acc | Neodvozuje se automaticky složení jiné třídy ETF |
+| IE00B4ND3602 | IGLN | iShares Physical Gold ETC | Zlato, nikoli akcie těžařů |
+| JE00BN2CJ301 | WGLD | WisdomTree Core Physical Gold ETC | Fyzicky kryté zlato, nikoli přímé kusy kovu v uživatelském účtu |
+| GB00BTWSDN84 | BTC3EUR | Leverage Shares 3x Long Bitcoin ETP | 3× denní expozice přes futures/hotovost, nikoli 3× množství přímo držených BTC |
+
+**Důležité:** Tyto klasifikace samy o sobě nejsou podkladové CSV a **nezvyšují procento pokrytí akcií/kryptoměn**. Neověřené a pákové expozice zůstávají v nerozloženém zbytku, aby seděl jmenovatel portfolia. Pro LYMS je třeba případnou budoucí indexovou expozici označit zvlášť od držeb swapového koše. Tím se snižuje riziko falešné přesnosti.
+
+Oficiální odkazy jsou zapsané v `lib/xray/fund-insights.ts`; vybírají se pouze podle ISIN. Tabulka tak poskytuje informaci, proč fond ještě není rozložený, ale nedomýšlí si podklady.
