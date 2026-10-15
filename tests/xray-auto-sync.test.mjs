@@ -43,6 +43,7 @@ test("fund selection is ISIN-only and cannot collide across trading venues",()=>
   assert.equal(issuerFeedForIsin("IE00BZCQB185")?.productId,"297617");
   assert.equal(issuerFeedForIsin("IE000I8KRLL9")?.productId,"319084");
   assert.equal(issuerFeedForIsin("IE00B1XNHC34")?.productId,"251911");
+  assert.equal(issuerFeedForIsin("IE00B53SZB19")?.productId,"253741");
   assert.equal(issuerFeedForIsin("ie00bf4rfh31")?.isin,"IE00BF4RFH31");
   assert.equal(issuerFeedForIsin("IE00BK5BQT80"),null);
   assert.equal(issuerFeedForIsin(""),null);
@@ -144,9 +145,9 @@ test("route remains local-only and X-Ray triggers automatic refresh",()=>{
 
 
 test("all expanded iShares feeds are fixed, unique, official issuer URLs",()=>{
-  assert.equal(ISHARES_FEEDS.length,9);
-  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.isin)).size,9);
-  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.productId)).size,9);
+  assert.equal(ISHARES_FEEDS.length,10);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.isin)).size,10);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.productId)).size,10);
   for(const feed of ISHARES_FEEDS){
     assert.equal(new URL(feed.url).hostname,"www.ishares.com");
     assert.ok(feed.url.includes("/products/"+feed.productId+"/"));
