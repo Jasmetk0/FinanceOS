@@ -4,7 +4,6 @@ import type { XRayFundCoverage } from "@/lib/xray/engine";
 import type {
   XRaySourceDecision,XRaySourceReason,XRaySourceSnapshot,
 } from "@/lib/xray/auto-merge";
-import { classifyIssuerDate } from "@/lib/xray/issuer-reliability";
 
 const formatPct=(n:number)=>n.toLocaleString("cs-CZ",{maximumFractionDigits:3})+" %";
 const money=(n:number)=>n.toLocaleString("cs-CZ",{maximumFractionDigits:0})+" Kč";
@@ -84,18 +83,17 @@ export function XRaySourceSelectionAudit({
       {valued.map(f=>{
         const d=audit.get(fundKey(f));
         const snapshot=d?.selected==="manual"?d.manual:d?.automatic;
-        const age=classifyIssuerDate(snapshot?.asOf??f.asOf,Date.now());
-        const stale=age.state==="stale"||age.state==="unknown"||age.state==="future";
+        const uncertain=!snapshot?.eligible;
         return <details key={fundKey(f)}
           className="rounded-xl border border-[var(--border)] p-3 text-xs">
           <summary className="cursor-pointer">
             <div className="inline-flex w-[calc(100%-1rem)] flex-wrap items-center justify-between gap-x-3 gap-y-1 align-middle">
               <span className="font-semibold">{f.symbol} · {f.isin??"bez ISIN"}</span>
               <span className="tabular-nums">{money(f.valueCzk)} · rozloženo {formatPct(f.mappedPct)}</span>
-              <span className={"w-full text-[11px] "+(stale?"text-[var(--warning)]":"text-[var(--muted)]")}>
+              <span className={"w-full text-[11px] "+(uncertain?"text-[var(--warning)]":"text-[var(--muted)]")}>
                 {d?d.selected==="automatic"?"Automatický zdroj":"Ruční podklady":"Zdroj není dostupný"}
                 {" · "}{snapshot?.asOf??"datum neuvedeno"}
-                {stale?" · staré / neověřené datum":""}
+                {uncertain?" · použitelnost zdroje neověřena":""}
                 {snapshot?.exposureBasis==="reference-index-proxy"?" · ODHAD":""}
               </span>
             </div>
@@ -120,7 +118,8 @@ export function XRaySourceSelectionAudit({
     <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
       Při několika účtech se stejný ISIN ETF zobrazuje jednou a jeho hodnota se správně
       sčítá. Ruční zálohy se nemažou; rozklady z archivu třetí strany nejsou přímými
-      daty emitenta. Výběr kandidáta nezaručuje autenticitu souboru ani jeho aktuálnost.
+      daty emitenta. Stáří dat a případné výpadky sleduj také v panelu automatického rozkladu.
+      Výběr kandidáta nezaručuje autenticitu souboru ani jeho aktuálnost.
     </p>
   </section>;
 }
