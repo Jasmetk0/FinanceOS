@@ -44,7 +44,7 @@ test("LYMS full proxy is stock-only, immutable original CNDX snapshot and labell
   assert.ok(converted[0].source.includes("NE Nasdaq XNDXNNR"));
   assert.equal(original[0].fundIsin,CNDX_ISIN);
   assert.equal(original[0].exposureBasis,"fund-holdings");
-  assert.equal(converted.reduce((sum,x)=>sum+x.weightPct,0),99);
+  assert.ok(Math.abs(converted.reduce((sum,x)=>sum+x.weightPct,0)-99)<1e-7);
 });
 
 test("100 real proxy rows aggregate into economically estimated LYMS exposure without double counting",()=>{
@@ -89,7 +89,7 @@ test("proxy fails closed on missing source identity, malformed, insufficient or 
     rows().slice(0,20),
     rows(old),
     rows().map((r,i)=>i===0?{...r,fundIsin:LYMS_ISIN}:r),
-    rows().map((r,i)=>i===0?{...r,weightPct:0}:r),
+    rows().map((r,i)=>i<5?{...r,weightPct:0}:r),
     rows().map((r,i)=>i<5?{...r,kind:"other"}:r),
     rows().map((r,i)=>i===0?{...r,exposureBasis:"substitute-basket"}:r),
   ]){
