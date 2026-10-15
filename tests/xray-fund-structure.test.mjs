@@ -66,6 +66,7 @@ test("verified issuer structures are exact-ISIN, never inferred from symbols",()
     ["LU1829221024","synthetic-equity"],
     ["IE0032077012","physical-equity"],
     ["IE00BFZXGZ54","physical-equity"],
+    ["IE0003BJ2JS4","physical-equity"],
     ["IE00B4ND3602","physical-gold"],
     ["JE00BN2CJ301","physical-gold"],
     ["GB00BTWSDN84","leveraged-crypto"],
@@ -77,6 +78,10 @@ test("verified issuer structures are exact-ISIN, never inferred from symbols",()
   }
   assert.equal(fundInsightForIsin("US0000000001"),null);
   assert.equal(fundInsightForIsin("BTC3EUR"),null);
+  const nclr=fundInsightForIsin("IE0003BJ2JS4");
+  assert.match(nclr.explanation,/top 10/);
+  assert.match(nclr.explanation,/HTTP 403/);
+  assert.match(nclr.label,/NCLR/);
   assert.equal(fundInsightForIsin(null),null);
   assert.equal(fundInsightForIsin(" ie0032077012 ")?.isin,"IE0032077012");
 });
