@@ -138,7 +138,7 @@ test("route remains local-only and X-Ray triggers automatic refresh",()=>{
   assert.ok(route.includes("fetchIsharesHoldings("));
   const ui=read("components/portfolio-xray.tsx");
   assert.ok(ui.includes("<XRayAutoSync onUpdate={setAutomaticRows}"));
-  assert.ok(ui.includes("combineConstituentSources"));
+  assert.ok(ui.includes("explainConstituentSources"));
   const sync=read("components/xray-auto-sync.tsx");
   assert.ok(sync.includes('fetch("/api/xray/auto"'));
   assert.ok(sync.includes("refresh(Boolean(refreshSignal?.force),controller.signal)"));
