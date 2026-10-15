@@ -13,6 +13,8 @@ Trading 212 API poskytuje skutečné pozice, ocenění a metadata včetně ISIN.
 | IE00BF4RFH31 | MSCI World Small Cap (WSML) | 296576 |
 | IE00B2QWCY14 | S&P SmallCap 600 (IUS3/ISP6) | 251920 |
 | IE00BZCQB185 | MSCI India (QDV5/NDIA) | 297617 |
+| IE000I8KRLL9 | MSCI Global Semiconductors (SEMI) | 319084 |
+| IE00B1XNHC34 | Global Clean Energy Transition (INRG) | 251911 |
 
 Automatický tok při otevření X-Ray:
 1. GET /api/xray/auto čte skutečná ETF a jejich ISIN z lokální SQLite.
@@ -30,7 +32,7 @@ Výpočet vah iShares preferuje přesné tržní hodnoty uvedené v oficiálním
 - Oddělená hlášení o nedostupných a nepodporovaných fondech; výpadek emitenta nesmaže jiné podklady.
 - Bez změny účetního ledgeru, pozic a transakcí.
 - **VWCE (Vanguard) a SPYI (State Street) jsou nyní automaticky podporovány** z veřejných kompletních (nikoliv jen top 10) emitentských zdrojů. Další, dosud nepodporovaná ETF zůstanou nerozložená. Ani Trading 212 API klíč neumí nahradit nezveřejněné podklady třetích stran.
-- Reálná kompatibilita původních šesti podporovaných fondů byla ověřena na GitHub Actions 14. 10. 2026. Tři nově přidané iShares produkty byly ověřeny vůči originálním CSV od emitenta 15. 10. 2026; pravidelný síťový canary následně hlídá všech devět zdrojů. Další plán: rozšíření ISIN pokrytí, důvěryhodnější identita podkladů, historie snapshotů a trvalá kontrola přesnosti. VWCE má nadále zastaralé emitentské složení k 31. 8. 2026.
+- Reálná kompatibilita původních šesti podporovaných fondů byla ověřena na GitHub Actions 14. 10. 2026. Tři nově přidané iShares produkty byly ověřeny vůči originálním CSV od emitenta 15. 10. 2026; pravidelný síťový canary následně hlídá všech jedenáct zdrojů. Nové SEMI a INRG endpointy je nutné ověřit síťovým canary na finální větvi. Další plán: rozšíření ISIN pokrytí, důvěryhodnější identita podkladů, historie snapshotů a trvalá kontrola přesnosti. VWCE má nadále zastaralé emitentské složení k 31. 8. 2026.
 
 ## Oficiální zdroje
 
@@ -44,3 +46,8 @@ Poznámka: Některé iShares ETF drží jiné ETF (například NDIA, CNYA). Tyto
 - https://www.ishares.com/uk/individual/en/products/296576/ishares-msci-world-small-cap-ucits-etf/latest-holdings.csv
 - https://www.ishares.com/uk/individual/en/products/251920/ishares-s-p-smallcap-600-ucits-etf/latest-holdings.csv
 - https://www.ishares.com/uk/individual/en/products/297617/ishares-msci-india-ucits-etf/latest-holdings.csv
+
+- https://www.ishares.com/uk/individual/en/products/319084/ishares-msci-global-semiconductors-ucits-etf/latest-holdings.csv
+- https://www.ishares.com/uk/individual/en/products/251911/ishares-global-clean-energy-ucits-etf/latest-holdings.csv
+
+**INRG:** Emitent uvádí, že část expozice může být realizována přes CFD. X-Ray proto ukazuje ekonomické podklady podle zveřejněné expozice a nikoliv počet fyzicky vlastněných akcií. Pokud emitentský soubor obsahuje významné záporné pozice, parser celý rozklad odmítne místo zamlčení rizika.
