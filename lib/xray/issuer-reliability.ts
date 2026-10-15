@@ -4,6 +4,9 @@ export interface IssuerFundStatus {
   isin: string;
   symbol: string;
   status: "ok" | "error" | "unsupported";
+  /** SPYI used ONLY as a source of security identities, not an owned fund. */
+  identityOnly?: boolean;
+  bridgePairs?: number;
   asOf?: string;
   fetchedAt?: string;
   cached?: boolean;
@@ -51,7 +54,7 @@ export interface ReconciledIssuerRows {
  * Conversely, a successful refresh must replace the whole fund atomically,
  * never mix different dates/issuer snapshots for the same ISIN.
  *
- * Only still-held, explicitly reported fund ISINs survive. A sold fund does
+ * Only still-held fund ISINs and explicitly requested identity-reference sources survive. A sold fund does
  * not remain indefinitely cached as if it were held.
  */
 export function reconcileIssuerRows(
