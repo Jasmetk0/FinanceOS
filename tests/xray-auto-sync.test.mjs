@@ -38,6 +38,10 @@ test("fund selection is ISIN-only and cannot collide across trading venues",()=>
   assert.equal(issuerFeedForIsin("IE00B4L5Y983")?.productId,"251882");
   assert.equal(issuerFeedForIsin("IE00B6R52259")?.productId,"251850");
   assert.equal(issuerFeedForIsin("IE00BKM4GZ66")?.productId,"264659");
+  assert.equal(issuerFeedForIsin("IE00BF4RFH31")?.productId,"296576");
+  assert.equal(issuerFeedForIsin("IE00B2QWCY14")?.productId,"251920");
+  assert.equal(issuerFeedForIsin("IE00BZCQB185")?.productId,"297617");
+  assert.equal(issuerFeedForIsin("ie00bf4rfh31")?.isin,"IE00BF4RFH31");
   assert.equal(issuerFeedForIsin("IE00BK5BQT80"),null);
   assert.equal(issuerFeedForIsin(""),null);
 });
@@ -134,4 +138,53 @@ test("route remains local-only and X-Ray triggers automatic refresh",()=>{
   const sync=read("components/xray-auto-sync.tsx");
   assert.ok(sync.includes('fetch("/api/xray/auto"'));
   assert.ok(sync.includes("refresh(Boolean(refreshSignal?.force),controller.signal)"));
+});
+
+
+test("all expanded iShares feeds are fixed, unique, official issuer URLs",()=>{
+  assert.equal(ISHARES_FEEDS.length,7);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.isin)).size,7);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.productId)).size,7);
+  for(const feed of ISHARES_FEEDS){
+    assert.equal(new URL(feed.url).hostname,"www.ishares.com");
+    assert.ok(feed.url.includes("/products/"+feed.productId+"/"));
+    assert.ok(feed.url.endsWith("/latest-holdings.csv"));
+    assert.ok(/^IE[0-9A-Z]{10}$/.test(feed.isin));
+  }
+});
+
+test("extra Type column in real IUS3 feed does not shift asset class or market value",()=>{
+  const withType=csv.split("\n").map((line,i)=>{
+    if(i===1)return line.replace("Ticker,Name,Sector,","Ticker,Name,Type,Sector,");
+    if(i<2||!line.startsWith('"'))return line;
+    const secondQuoteEnd=line.indexOf('","',line.indexOf('","')+3);
+    if(secondQuoteEnd<0)throw new Error("Invalid synthetic issuer fixture");
+    return line.slice(0,secondQuoteEnd+3) + '"'+
+      (line.includes('"Cash and/or Derivatives"')?"CASH":"EQUITY")+
+      '",' + line.slice(secondQuoteEnd+3);
+  }).join("\n");
+  const smallcap=ISHARES_FEEDS.find(f=>f.isin==="IE00B2QWCY14");
+  assert.ok(smallcap);
+  const result=parseIsharesHoldingsCsv(withType,smallcap,"IUS3");
+  assert.equal(result.length,11);
+  assert.equal(result.find(r=>r.securitySymbol==="MSFT")?.kind,"stock");
+  assert.ok(result.find(r=>r.securitySymbol==="MSFT")?.weightPct>39);
+  assert.equal(result.find(r=>r.securitySymbol.startsWith("OTHER-"))?.kind,"other");
+});
+
+test("different issuer ISINs never share snapshots even if listings use the same symbol",()=>{
+  const wsml=ISHARES_FEEDS.find(f=>f.isin==="IE00BF4RFH31");
+  const india=ISHARES_FEEDS.find(f=>f.isin==="IE00BZCQB185");
+  assert.ok(wsml&&india);
+  const a=parseIsharesHoldingsCsv(csv,wsml,"DUP");
+  const b=parseIsharesHoldingsCsv(csv,india,"DUP");
+  const merged=calculateXRay([
+    holder("world","DUP","etf",2872,wsml.isin),
+    holder("india","DUP","etf",68,india.isin),
+  ],[...a,...b]);
+  assert.equal(merged.funds.length,2);
+  assert.equal(merged.funds[0].isin,wsml.isin);
+  assert.equal(merged.funds[1].isin,india.isin);
+  assert.ok(Math.abs(merged.mappedCzk+merged.unallocatedCzk-2940)<1e-6);
+  assert.equal(merged.exposures.some(x=>x.directCzk>0),false);
 });
