@@ -136,7 +136,7 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
     // different markets. A source without ISIN/SEDOL must not merge them.
     bySymbol.get(row.ticker)?.add(JSON.stringify([
       row.name.toUpperCase(),row.exchange.toUpperCase(),row.location.toUpperCase(),
-      row.currency.toUpperCase(),row.isin??"",
+      row.currency.toUpperCase(),row.isin??"",row.sedol??"",
     ]));
   }
 
@@ -156,6 +156,7 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
       conflict ? row.ticker + "@" + row.exchange.replace(/\s+/g,"-").slice(0,30) +
         "#row" + (row.index+1) : row.ticker;
     const id = row.kind + "|" + (row.isin ? "isin:"+row.isin :
+      row.sedol ? "sedol:"+row.sedol :
       symbol + "|" + (conflict ? row.name : ""));
     const previous = combined.get(id);
     const weightPct = 100 * row.value / positive;
