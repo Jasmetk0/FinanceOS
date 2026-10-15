@@ -10,6 +10,7 @@
  */
 import { parseDelimited, delimiterOf } from "./import.ts";
 import { validateXRayConstituents, type ExposureKind, type XRayConstituent } from "./engine.ts";
+import { fundInsightForIsin } from "./fund-insights.ts";
 
 export interface IssuerCsvOptions {
   fundSymbol: string;
@@ -92,6 +93,11 @@ export function parseIssuerCsv(raw: string, options: IssuerCsvOptions): IssuerCs
   }
   if (!options || !options.fundSymbol?.trim() || !options.source?.trim()) {
     throw new RangeError("Vyber fond a zdroj originálního souboru.");
+  }
+  // A native issuer file for swap ETFs can be a *substitute basket*.
+  // It must not silently be interpreted as index stock exposure.
+  if (fundInsightForIsin(options.fundIsin)?.structure === "synthetic-equity") {
+    throw new RangeError("Syntetické ETF: soubor náhradního koše není rozklad referenčního indexu. Pro ekonomickou expozici použij úplný indexový snapshot výslovně označený exposure_basis=reference-index ve standardním X-Ray CSV.");
   }
   validateDate(options.asOf);
   if (!["percent","fraction"].includes(options.weightFormat)) {

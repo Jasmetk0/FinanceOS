@@ -60,6 +60,7 @@ const aliases: Record<string, string[]> = {
   kind: ["kind","asset_class","type"],
   as_of: ["as_of","asof","holdings_date"],
   source: ["source","issuer_source"],
+  exposure_basis: ["exposure_basis","basis","replication_basis"],
 };
 
 const parseWeight = (raw: string) => {
@@ -117,6 +118,7 @@ export function parseXRayCompositionCsv(raw: string, fileLabel: string): XRayCon
         securityName: get("security_name"),
         weightPct: parseWeight(get("weight_pct")),
         kind: toKind(get("kind")),
+        ...(get("exposure_basis") ? {exposureBasis:get("exposure_basis") as XRayConstituent["exposureBasis"]} : {}),
         asOf: get("as_of"),
         source: get("source") || fileLabel,
       });
