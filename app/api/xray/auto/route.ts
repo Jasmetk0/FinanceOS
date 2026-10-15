@@ -53,6 +53,26 @@ export async function GET(request: Request) {
     }
     // A bounded number of allowlisted sources. Failure to read any one
     // issuer must not invalidate all other, successfully fetched funds.
+    // Vanguard's issuer GPX files expose SEDOL, often without security
+    // ISIN. Independently load complete SPYI holdings as a trusted identity
+    // dictionary. SPYI is NOT added as an investment when it is not owned.
+    const needsReference=needsSpyiIdentityReference(funds.keys());
+    const identityPromise=needsReference ? (async ()=>{
+      try {
+        const fetched=await fetchSpyiHoldings("SPYI",force);
+        const verified=assertSpyiIdentityReference(fetched.rows);
+        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
+          status:"ok" as const,rows:fetched.rows.map(r=>({
+            ...r,source:r.source+"; identity-only reference",
+          })),sourceUrl:fetched.sourceUrl,sourceKind:"official" as const,
+          asOf:verified.asOf,fetchedAt:fetched.fetchedAt,cached:fetched.cached,
+          bridgePairs:verified.bridges};
+      } catch(error) {
+        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
+          status:"error" as const,rows:[] as XRayConstituent[],
+          error:error instanceof Error?error.message:String(error)};
+      }
+    })():Promise.resolve(null);
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
       const archive = invescoArchiveForIsin(f.isin);
@@ -74,26 +94,7 @@ export async function GET(request: Request) {
           error:error instanceof Error?error.message:String(error)};
       }
     }));
-    // Vanguard's issuer GPX files expose SEDOL, often without security
-    // ISIN. Independently load complete SPYI holdings as a trusted identity
-    // dictionary. SPYI is NOT added as an investment when it is not owned.
-    const needsReference=needsSpyiIdentityReference(funds.keys());
-    const identityReference=needsReference ? await (async ()=>{
-      try {
-        const fetched=await fetchSpyiHoldings("SPYI",force);
-        const verified=assertSpyiIdentityReference(fetched.rows);
-        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
-          status:"ok" as const,rows:fetched.rows.map(r=>({
-            ...r,source:r.source+"; identity-only reference",
-          })),sourceUrl:fetched.sourceUrl,sourceKind:"official" as const,
-          asOf:verified.asOf,fetchedAt:fetched.fetchedAt,cached:fetched.cached,
-          bridgePairs:verified.bridges};
-      } catch(error) {
-        return {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true as const,
-          status:"error" as const,rows:[] as XRayConstituent[],
-          error:error instanceof Error?error.message:String(error)};
-      }
-    })():null;
+    const identityReference=await identityPromise;
     const allResults=identityReference?[...results,identityReference]:results;
     const rows = allResults.flatMap(result => result.rows);
     return NextResponse.json({
