@@ -94,7 +94,7 @@ test("quality UI explains source identifiers, shows each category, never require
   const read=p=>readFileSync(new URL("../"+p,import.meta.url),"utf8");
   const quality=read("components/xray-identity-quality.tsx");
   const app=read("components/portfolio-xray.tsx");
-  assert.ok(app.includes("<XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} />"));
+  assert.ok(app.includes("<XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} bridgeAudit={data.bridgeAudit} />"));
   assert.ok(app.includes("CSV slouží pouze jako volitelná záloha."));
   for(const key of ["isinCzk","bridgedCzk","sedolOnlyCzk","tickerOnlyCzk","cryptoCzk","unmappedCzk"]){
     assert.ok(quality.includes(key),"Missing "+key);

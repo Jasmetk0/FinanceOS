@@ -251,7 +251,7 @@ export function PortfolioXRay({
               </div>
             ))}
           </section>
-          <XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} />
+          <XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} bridgeAudit={data.bridgeAudit} />
           <section className="finance-surface p-4 sm:p-5">
             <div className="flex flex-wrap justify-between gap-3">
               <div>

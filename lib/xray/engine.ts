@@ -92,8 +92,32 @@ export interface XRayIdentityCoverage {
   unmappedCzk: number;   // fund residual, cash, fixed income, no issuer snapshot
   totalCzk: number;
 }
+/** Actual links USED by valued holdings, not the size of the SPYI dictionary. */
+export interface XRayBridgeFundAudit {
+  fundSymbol: string;
+  fundIsin: string | null;
+  bridgedLines: number;
+  unresolvedSedolLines: number;
+  bridgedCzk: number;
+  unresolvedSedolCzk: number;
+  /** Count of distinct security ISINs successfully linked within this fund. */
+  distinctBridgedIsins: number;
+}
+export interface XRayBridgeAudit {
+  /** Number of unique constituent lines across owned funds, not accounts. */
+  bridgedLines: number;
+  unresolvedSedolLines: number;
+  bridgedCzk: number;
+  unresolvedSedolCzk: number;
+  /** Unique ISINs bridged across all held funds. */
+  distinctBridgedIsins: number;
+  /** Unique bridged ISINs also held DIRECTLY, not account-count or fund-weight. */
+  matchedDirectIsins: number;
+  funds: XRayBridgeFundAudit[];
+}
 export interface XRayResult {
   identityCoverage: XRayIdentityCoverage;
+  bridgeAudit: XRayBridgeAudit;
   denominatorCzk: number;
   directCzk: number;
   fundsCzk: number;
@@ -348,6 +372,16 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     directMissingIdentity + " přímo držených akciových pozic nemá ISIN. " +
     "Kvůli ochraně před chybným sloučením jsou vedené odděleně od ETF a jiných účtů."
   );
+  type MutableBridgeAudit = {
+    symbols:Set<string>; isin:string|null; seenLines:Set<string>;
+    bridgedLines:number; unresolvedSedolLines:number;
+    bridgedCzk:number; unresolvedSedolCzk:number; linkedIsins:Set<string>;
+  };
+  const bridgeFunds=new Map<string,MutableBridgeAudit>();
+  const directStockIsins=new Set(stocks.map(h=>directStockKey(h))
+    .filter(key=>key.startsWith("isin:")).map(key=>key.slice(5)));
+  const allBridgedIsins=new Set<string>();
+  const directMatchedBridgeIsins=new Set<string>();
   const coverage: XRayFundCoverage[] = [];
   for (const h of funds) {
     const candidates = h.isin ? byIsin.get(norm(h.isin)) : undefined;
@@ -417,10 +451,37 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       warnings.add(h.symbol+": ODHAD ekonomické expozice podle fyzicky replikujícího ETF CNDX. " +
         "Jde o proxy, nikoliv skutečné váhy indexu XNDXNNR, ani skutečné akcie LYMS.");
     } else if (basis) warnings.add(h.symbol+": Ekonomická expozice dle indexu; akcie nejsou fyzicky drženy fondem.");
+    const bridgeFundKey=h.isin?"isin:"+norm(h.isin):"symbol:"+norm(h.symbol);
+    const bridgeFund=bridgeFunds.get(bridgeFundKey)??{
+      symbols:new Set<string>(),isin:h.isin?norm(h.isin):null,
+      seenLines:new Set<string>(),bridgedLines:0,unresolvedSedolLines:0,
+      bridgedCzk:0,unresolvedSedolCzk:0,linkedIsins:new Set<string>(),
+    };
+    bridgeFund.symbols.add(h.symbol);
+    bridgeFunds.set(bridgeFundKey,bridgeFund);
     let mapped = 0;
     for (const c of holdingsList) {
       if (c.kind === "other" || c.weightPct === 0 || c.exposureBasis==="substitute-basket") continue;
       const part = h.valueCzk * c.weightPct / 100;
+      // Count only valued, actually selected fund constituents. The SPYI
+      // identity-only reference contains thousands of rows but is NOT a
+      // held fund and therefore contributes zero to these statistics.
+      if(c.kind==="stock" && !strongIsin(c.securityIsin) &&
+         normalizedSedol(c.securitySedol)) {
+        const linked=resolveSecurityIsin(c,crosswalk);
+        const lineId=JSON.stringify([norm(c.securitySymbol),normalizedSedol(c.securitySedol)]);
+        if(linked && strongIsin(linked)) {
+          if(!bridgeFund.seenLines.has(lineId))bridgeFund.bridgedLines++;
+          bridgeFund.bridgedCzk+=part;
+          bridgeFund.linkedIsins.add(norm(linked));
+          allBridgedIsins.add(norm(linked));
+          if(directStockIsins.has(norm(linked)))directMatchedBridgeIsins.add(norm(linked));
+        }else {
+          if(!bridgeFund.seenLines.has(lineId))bridgeFund.unresolvedSedolLines++;
+          bridgeFund.unresolvedSedolCzk+=part;
+        }
+        bridgeFund.seenLines.add(lineId);
+      }
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
         constituentStockKey(c);
       add(key, c.kind, c.kind === "stock" ? displayXRayTicker(c.securitySymbol, c.securitySedol) : c.securitySymbol,
@@ -485,13 +546,39 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   if (mappedCzk > denominatorCzk + MONEY_EPSILON) {
     throw new RangeError("Rozklad překročil hodnotu původního portfolia. Zkontroluj strukturu fondů.");
   }
+  const bridgeAuditFunds:XRayBridgeFundAudit[]=[...bridgeFunds.values()]
+    .filter(item=>item.bridgedLines+item.unresolvedSedolLines>0)
+    .map(item=>({
+      fundSymbol:[...item.symbols].sort().join(" / "),fundIsin:item.isin,
+      bridgedLines:item.bridgedLines,
+      unresolvedSedolLines:item.unresolvedSedolLines,
+      bridgedCzk:item.bridgedCzk,
+      unresolvedSedolCzk:item.unresolvedSedolCzk,
+      distinctBridgedIsins:item.linkedIsins.size,
+    })).sort((a,b)=>b.bridgedCzk-a.bridgedCzk ||
+      a.fundSymbol.localeCompare(b.fundSymbol));
+  const bridgeAudit:XRayBridgeAudit={
+    bridgedLines:bridgeAuditFunds.reduce((s,f)=>s+f.bridgedLines,0),
+    unresolvedSedolLines:bridgeAuditFunds.reduce((s,f)=>s+f.unresolvedSedolLines,0),
+    bridgedCzk:bridgeAuditFunds.reduce((s,f)=>s+f.bridgedCzk,0),
+    unresolvedSedolCzk:bridgeAuditFunds.reduce((s,f)=>s+f.unresolvedSedolCzk,0),
+    distinctBridgedIsins:allBridgedIsins.size,
+    matchedDirectIsins:directMatchedBridgeIsins.size,
+    funds:bridgeAuditFunds,
+  };
+  if(Math.abs(bridgeAudit.bridgedCzk-identityCoverage.bridgedCzk)>
+       Math.max(MONEY_EPSILON,denominatorCzk*1e-10) ||
+     Math.abs(bridgeAudit.unresolvedSedolCzk-identityCoverage.sedolOnlyCzk)>
+       Math.max(MONEY_EPSILON,denominatorCzk*1e-10)){
+    throw new RangeError("Audit SEDOL→ISIN se neshoduje s hodnotou podkladů.");
+  }
   const fundCoverage = aggregateFundCoverage(coverage);
   const estimatedProxyCzk = fundCoverage.filter(f=>f.exposureBasis==="reference-index-proxy")
     .reduce((sum,f)=>sum+f.mappedCzk,0);
   if(estimatedProxyCzk>mappedCzk+MONEY_EPSILON)
     throw new RangeError("Modelový rozklad je vyšší než celkové X-Ray expozice.");
   return {
-    identityCoverage,
+    identityCoverage,bridgeAudit,
     denominatorCzk, directCzk, fundsCzk, mappedCzk, estimatedProxyCzk, unallocatedCzk,
     mappedPct: denominatorCzk ? mappedCzk / denominatorCzk * 100 : 0,
     exposures, funds: fundCoverage, warnings: [...warnings],
