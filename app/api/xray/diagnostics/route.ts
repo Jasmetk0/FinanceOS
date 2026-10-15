@@ -79,7 +79,7 @@ async function runDiagnostics():Promise<DiagnosticReport>{
 /**
  * Explicit-on-click, genuine network and parser probe. Does not read stored
  * investment accounts and never sends their credentials to fund issuers.
- * All thirteen source URL/ISIN pairs are defined server-side; user input cannot
+ * All fourteen source URL/ISIN pairs are defined server-side; user input cannot
  * add endpoints, hostnames, or dynamic queries.
  */
 export async function POST(request:Request){
