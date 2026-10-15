@@ -66,7 +66,7 @@ BlackRock CNDX je samostatný desátý iShares feed a jeho fyzické držby se v 
 
 Na GitHub Actions 15. 10. 2026 (Windows, Node 24) se spustil **stejný produkční iShares parser** s přímým HTTPS stažením skutečného souboru product 253741. Výsledek: **106 položek, z toho 101 kladných akciových podkladů**, datum `2026-10-14`, po vyloučení neakciových pozic ekonomický podíl akcií **99,9539055 %**. Model prošel validačními limity bez klíče či uživatelských dat. To ověřuje dostupnost v době testu, nikoli nepřetržitou budoucí dostupnost. Další hlídání zdroje dělá existující veřejný iShares canary, který automaticky iteruje všechny položky whitelistu.
 
-**Diagnostika:** její původní pevný limit 6 zdrojů je odstraněn v navazujícím PR s Invesco archivy. Po spojení obou změn se počty ověřují dynamicky.
+**Diagnostika:** původní pevný limit 6 zdrojů je odstraněn. Po spojení obou změn se kontroluje všech 14 zdrojů dynamicky, včetně CNDX jako zvláštního proxy vstupu a obou nezávislých archivů Invesco.
 
 
 ## Úplné archivované Invesco podklady EQQQ / EQAC (15. 10. 2026)
