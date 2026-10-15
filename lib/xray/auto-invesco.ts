@@ -64,7 +64,7 @@ function numericWeight(raw:string):number {
 export function parseInvescoArchiveXlsx(
   bytes:Uint8Array,feed:InvescoArchiveFeed,symbol:string,asOf:string,
 ):XRayConstituent[] {
-  if(BY_ISIN.get(feed.isin)?.url!==feed.url ||
+  if((BY_ISIN.get(feed.isin)?.url!==feed.url || BY_ISIN.get(feed.isin)?.pageUrl!==feed.pageUrl) ||
      !/^\d{4}-\d{2}-\d{2}$/.test(asOf) || !symbol.trim())
     throw new RangeError("Neověřený fond nebo datum archivovaného Invesco XLSX.");
   const grid=parseXlsxGrid(bytes);
@@ -121,7 +121,7 @@ const CACHE=new Map<string,Cached>();
 export async function fetchInvescoArchiveHoldings(
   feed:InvescoArchiveFeed,symbol:string,force=false,fetchImpl:FetchLike=fetch,
 ){
-  if(BY_ISIN.get(feed.isin)?.url!==feed.url)throw new RangeError("Zdroj Invesco není povolený.");
+  if((BY_ISIN.get(feed.isin)?.url!==feed.url || BY_ISIN.get(feed.isin)?.pageUrl!==feed.pageUrl))throw new RangeError("Zdroj Invesco není povolený.");
   const old=CACHE.get(feed.isin),now=Date.now();
   if(!force&&old&&old.expiresAt>now)return {
     rows:old.rows.map(r=>({...r,fundSymbol:symbol})),fetchedAt:old.fetchedAt,
