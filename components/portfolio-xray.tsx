@@ -340,6 +340,7 @@ export function PortfolioXRay({
                       <span className="font-semibold">{f.symbol}</span>
                       {f.isin?<span className="block text-[10px] text-[var(--muted)]">{f.isin}</span>:null}
                       {insight?<span className="mt-1 block text-[10px] leading-4 text-[var(--accent)]">{insight.label}</span>:null}
+                      {f.exposureBasis==="reference-index"?<span className="mt-1 block text-[10px] text-[var(--warning)]">Referenční index · ne fyzická držba podkladů</span>:null}
                     </td>
                     <td className="text-right">{money(f.valueCzk)}</td><td className="text-right">{pct(f.mappedPct)}</td>
                     <td className="text-right">{money(f.unmappedCzk)}</td>
