@@ -105,3 +105,10 @@ test("X-Ray user interface renders issuer explanations with links while preservi
   assert.ok(ui.includes('rel="noopener noreferrer"'));
   assert.ok(ui.includes("Akcie / krypto"));
 });
+
+test("automatic issuer status also explains why known gold, swap and leveraged products stay unresolved",()=>{
+  const route=readFileSync(new URL("../app/api/xray/auto/route.ts",import.meta.url),"utf8");
+  assert.ok(route.includes("fundInsightForIsin(isin)"));
+  assert.ok(route.includes("insight.label + \". \" + insight.explanation"));
+  assert.ok(route.includes("const id = isin"));
+});
