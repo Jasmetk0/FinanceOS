@@ -7,6 +7,7 @@ import {
   parseInvescoArchiveXlsx,fetchInvescoArchiveHoldings,
 } from "../lib/xray/auto-invesco.ts";
 import {calculateXRay} from "../lib/xray/engine.ts";
+import {cndxAsLymsProxy,CNDX_ISIN,LYMS_ISIN} from "../lib/xray/auto-lyms-proxy.ts";
 
 function zip(entries) {
   const local=[],central=[];let start=0;
@@ -146,4 +147,51 @@ test("diagnostic UI has no six-source hard-coded guard; archive link is not call
   assert.ok(ui.includes("result.healthy+result.limited+result.failed!==result.sources.length"));
   assert.ok(sync.includes("Veřejný archiv · NE přímý zdroj emitenta"));
   assert.ok(route.includes("fetchInvescoArchiveHoldings"));
+});
+
+
+test("merged buuk supports LYMS + both Invesco share classes + directly held same stock exactly once",()=>{
+  const distRows=parseInvescoArchiveXlsx(workbook(),dist,"EQQQ","2026-10-01");
+  const accRows=parseInvescoArchiveXlsx(workbook(),acc,"EQAC","2026-10-01");
+  const asOf=new Date(Date.now()-86_400_000).toISOString().slice(0,10);
+  const physical=Array.from({length:100},(_,i)=>({
+    fundSymbol:"CNDX",fundIsin:CNDX_ISIN,
+    securitySymbol:i===0?"MSFT":"CNDX"+i,
+    securityName:i===0?"Microsoft Corporation":"Nasdaq constituent "+i,
+    securityIsin:i===0?"US5949181045":null,
+    weightPct:0.99,kind:"stock",asOf,
+    source:"Official iShares CNDX holdings",exposureBasis:"fund-holdings",
+  }));
+  const lymsRows=cndxAsLymsProxy(physical,"LYMS");
+  const input=[
+    holding("eqqq1","EQQQ",dist.isin,6601),
+    holding("eqqq2","EQQQ",dist.isin,666),
+    holding("eqac","EQAC",acc.isin,6804),
+    holding("lyms","LYMS",LYMS_ISIN,25116),
+    {...holding("msft-direct","MSFT","US5949181045",500),assetClass:"stock"},
+  ];
+  const x=calculateXRay(input,[...distRows,...accRows,...lymsRows]);
+  assert.equal(x.funds.length,3);
+  assert.equal(x.denominatorCzk,39687);
+  assert.equal(x.directCzk,500);
+  assert.equal(x.fundsCzk,39187);
+  assert.equal(x.funds.find(f=>f.isin===dist.isin).valueCzk,7267);
+  assert.equal(x.funds.find(f=>f.isin===acc.isin).valueCzk,6804);
+  assert.equal(x.funds.find(f=>f.isin===LYMS_ISIN).valueCzk,25116);
+  assert.equal(x.funds.find(f=>f.isin===LYMS_ISIN).exposureBasis,"reference-index-proxy");
+  assert.ok(Math.abs(x.estimatedProxyCzk-25116*0.99)<1e-7);
+  const msft=x.exposures.find(e=>e.key==="stock|isin:US5949181045");
+  assert.ok(msft);
+  assert.equal(msft.directCzk,500);
+  assert.equal(msft.fundContributions.length,3);
+  assert.ok(Math.abs(msft.totalCzk-(500+14071*0.0098+25116*0.0099))<1e-7);
+  assert.equal(msft.fundContributions.filter(f=>f.exposureBasis==="reference-index-proxy").length,1);
+  assert.ok(Math.abs(x.mappedCzk+x.unallocatedCzk-x.denominatorCzk)<1e-7);
+  assert.equal(x.identityCoverage.cryptoCzk,0);
+  assert.match(x.warnings.join(" "),/ODHAD/);
+  const api=readFileSync(new URL("../app/api/xray/auto/route.ts",import.meta.url),"utf8");
+  assert.ok(api.includes("fetchLymsProxyHoldings(f.symbol,force)"));
+  assert.ok(api.includes("fetchInvescoArchiveHoldings(archive!,f.symbol,force)"));
+  assert.ok(api.includes('sourceKind:f.isin===LYMS_ISIN ? "proxy-model"'));
+  assert.ok(api.includes('"third-party-archive"'));
 });
