@@ -32,6 +32,10 @@ jobs:
       - name: Correctness regression tests
         run: npm test
 
+      - name: Diagnose keyless Invesco XLSX schema (public-data smoke)
+        continue-on-error: true
+        run: node scripts/probe-public-invesco.mjs
+
       - name: Build
         run: npm run build
 
