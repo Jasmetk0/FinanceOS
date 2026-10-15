@@ -76,9 +76,13 @@ test("realized identity matches count held fund lines once across brokerage acco
 });
 
 test("dictionary size is NOT presented as number of actually matched securities",()=>{
-  const surplus=Array.from({length:600},(_,i)=>spyiRef(
-    "UNUSED"+i,String(i).padStart(6,"0")+"0","US"+String(i).padStart(10,"0"),
-  )).filter(r=>r.securitySedol===null);
+  const checkWeights=[1,3,1,7,3,9];
+  const surplus=Array.from({length:300},(_,i)=>{
+    const stem=String(i+100).padStart(6,"0");
+    const weighted=[...stem].reduce((sum,d,index)=>sum+Number(d)*checkWeights[index],0);
+    const sedol=stem+String((10-weighted%10)%10);
+    return spyiRef("UNUSED"+i,sedol,"US"+String(i+100).padStart(10,"0"));
+  });
   // Even a valid but irrelevant entry cannot change actual valued matches.
   const oneUnused=spyiRef("UNUSED","2588173","US0000000012");
   const r=calculateXRay(holdings,[...fundRows,...reference,oneUnused,...surplus]);
