@@ -86,3 +86,15 @@ Stránky: https://rebalix.com/en/etf/IE0032077012, https://rebalix.com/en/etf/IE
 Souborová URL: https://rebalix.com/api/etf/composizione?isin=IE0032077012&lang=en a analogicky pro `IE00BFZXGZ54`.
 
 Zůstává otevřené: přímé denní API Invesca pro originální držby, které se nepodařilo bezpečně ověřit. Pokud takový zdroj bude k dispozici, má být upřednostněn před archivem se starším datem.
+
+
+## Vanguard FTSE Global All-Cap — VALL / VGLA / VALU (15. 10. 2026)
+
+Nový **přímý veřejný emitentský** zdroj pro `IE000VAHT5T0`, interní veřejné Vanguard GPX `portId=E161` (na rozdíl od VWCE s `9679`). Ověřeno přímým dotazem z GitHub Actions 15. 10. 2026: oficiální profil `Vanguard FTSE Global All-Cap UCITS ETF USD Acc`, 7 383 podkladových položek v `totalHoldings`, skutečný `effectiveDate=2026-09-30`. Stránky je nutné všechny stáhnout; počet položek se musí shodovat s `totalHoldings`, vždy stejný název fondu, stejný den, žádné opakované pagination tokeny.
+
+Hodnoty GPX jsou **tržní váhy pozic fondu**, nikoli automaticky všechny váhy referenčního FTSE indexu. Fond fyzicky používá reprezentativní držby; X-Ray nedoplňuje společnosti chybějící v samotném fondu. Rozklad sleduje konkrétní ISIN `IE000VAHT5T0` nezávisle na VWCE a burzovních tickerech. Cache se ukládá samostatně pro každý fond, podkladové akcie bez ISIN se s jinými akciemi slučují pouze pomocí ověřených identifikátorů (např. validní SEDOL bridge), nikoliv stejného tickeru.
+
+Aktualizace je **automatická a bez uživatelského API klíče nebo CSV**, ale samotný soubor emitenta je zveřejňován se zpožděním. K 15. 10. 2026 byl viditelný snapshot k 30. 9. 2026, takže jej aplikace správně označí jako zastaralý. Přístup k API není smluvně garantovaný a budoucí změna struktury může způsobit bezpečné odmítnutí podkladů.
+
+Oficiální stránka: https://www.vanguard.co.uk/professional/product/etf/equity/E161/vanguard-ftse-global-all-cap-ucits-etf-usd-acc
+Vanguard GPX: https://www.ie.vanguard/gpx/graphql
