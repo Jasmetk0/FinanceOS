@@ -116,7 +116,7 @@ test("the verified public issuer endpoint is read with no Trading 212 credential
   await assert.rejects(fetchIsharesHoldings({...feed,isin:"IE00AAAAAAA0"},"X",true,stub),/Neautorizovaný/);
 });
 
-test("auto wins at equal date; newer manual source wins; other funds are preserved",()=>{
+test("complete automatic snapshot wins over single-row newer manual; other funds remain intact",()=>{
   const official=parseIsharesHoldingsCsv(csv,feed,"SXR8");
   const older=[{...official[0],source:"manual-old",asOf:"2026-10-01",weightPct:3}];
   const newer=[{...official[0],source:"manual-new",asOf:"2026-10-14",weightPct:4}];
@@ -125,8 +125,9 @@ test("auto wins at equal date; newer manual source wins; other funds are preserv
   assert.equal(first.filter(r=>r.fundIsin===feed.isin).length,official.length);
   assert.equal(first.filter(r=>r.fundSymbol==="OTHER").length,1);
   const second=combineConstituentSources([...newer,...another],official);
-  assert.equal(second.filter(r=>r.fundIsin===feed.isin).length,1);
-  assert.equal(second.find(r=>r.fundIsin===feed.isin).source,"manual-new");
+  assert.equal(second.filter(r=>r.fundIsin===feed.isin).length,official.length);
+  assert.ok(second.filter(r=>r.fundIsin===feed.isin).every(r=>r.source===official[0].source));
+  assert.equal(second.filter(r=>r.fundSymbol==="OTHER").length,1);
 });
 
 test("route remains local-only and X-Ray triggers automatic refresh",()=>{

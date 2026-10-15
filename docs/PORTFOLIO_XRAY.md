@@ -135,3 +135,18 @@ Při přítomnosti **dvou konkurenčních snapshotů stejného ISIN** FinanceOS 
 ### NCLR / IE0003BJ2JS4
 
 WisdomTree Uranium and Nuclear Energy UCITS ETF je fyzické akciové ETF. Oficiální stránka ve veřejném náhledu zobrazuje top 10 a zbytek portfolia agregovaně. Automatický pokus přes veřejné stránky WisdomTree (IE a GB) na GitHub Actions 15. 10. 2026 vrátil **HTTP 403**. Úplné podklady nejsou tímto ověřeny a **NCLR se v této verzi nestahuje a nerozkládá automaticky**; známá fyzická struktura je uvedena ve vysvětlení zdroje. Samotné jméno uranového ETF neumožňuje odvodit investice do Cameca nebo všech podkladových akcií. Při budoucím získání ověřeného kompletního zdroje lze přidat plný adaptér bez zasahování do účetnictví.
+
+
+## Ochrana úplného rozkladu před novějším částečným CSV (15. 10. 2026)
+
+Při výběru automatického a ručního seznamu **stejného ISIN fondu** FinanceOS nyní zohledňuje vedle data také datovou konzistenci a rozsah **pokrytí zveřejněných vah**. Nově importovaný „top 10“ soubor s pouhými 60–80 % pozic už nemůže pouze novějším datem nahradit 99% kompletní automatický rozklad. Stejně tak nemůže pouhý souhrnný řádek `OTHER` zakrýt 40 % neidentifikovaných akcií a snížit přesnost podkladových expozic, když jsou dostupné podrobnější data.
+
+Pravidla fungují **jen při porovnávání dvou kandidátních souborů stejného ISIN**:
+- Kandidát s jedním platným kalendářním datem, jedním původem a součtem vah přibližně **95–100 %** je z hlediska publikovaného součtu pokrytější než soubor s menším součtem. Nejde o kryptografický důkaz pravosti všech jeho jednotlivých položek.
+- Jestliže jeden seznam obsahuje přes **95 % akciové/krypto expozice** a druhý pod **90 %**, má přednost lépe identifikovaná skladba (i kdyby součet druhého dosáhl 100 % přes `OTHER`).
+- U rozsáhlého akciového fondu s minimálně **40 kladnými položkami** považujeme seznam s méně než **čtvrtinou** počtu řádků za podezřele zkrácený, pokud nevykazuje výrazně vyšší ekonomické pokrytí. Chrání i soubor, který chybně přepočítal prvních 10 akcií na 100 %.
+- Jestliže jsou oba zdroje věrohodně stejně rozsáhlé, **platí dosavadní priorita novějšího data** a pravidla pro syntetický LYMS (skutečný index proti proxy).
+- Neúplný ruční CSV **lze dál použít**, pokud pro fond není jiný zdroj. Chybějící hodnota zůstane jako `unallocated`, nikdy se nedopočítává smyšlenými pozicemi.
+- Smíchané datumy nebo provenience v jednom fondu už nemohou vytlačit soudržný automatický snapshot. API klíče, transakce ani stav účtů se tím nemění.
+
+Automatický zdroj v FinanceOS může být přímý emitentský soubor nebo výslovně označený archiv třetí strany (např. Invesco / Rebalix); tato arbitráž **nezaručuje nezávislé ověření jeho autenticity**, pouze brání ztrátě použitelných rozkladů při kolizi s očividně částečnými podklady.
