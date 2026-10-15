@@ -60,3 +60,10 @@ Nový iShares oficiální feed: `IE00B53SZB19`, Nasdaq 100 (CNDX/SXRV), product 
 Když je držen **syntetický Amundi LYMS (LU1829221024)**, lze ze stejného veřejného úplného CNDX zdroje vytvořit **výslovně modelovaný ekonomický proxy rozklad**, označený `reference-index-proxy`. Nejmladší povolené stáří je 14 dní, minimální rozsah 90 akcií a součet jejich vah alespoň 98 %. Nejde o přesné složení indexu XNDXNNR, o žádné skutečně držené akcie v LYMS, ani o náhradní swapový koš. Nenahrazuje oficiální benchmarkové váhy, které by mohly být odlišné.
 
 BlackRock CNDX je samostatný desátý iShares feed a jeho fyzické držby se v X-Ray nikdy nemísí s fondem Amundi. Žádný další API klíč ani CSV uživatele.
+
+
+### Živě ověřené napojení CNDX
+
+Na GitHub Actions 15. 10. 2026 (Windows, Node 24) se spustil **stejný produkční iShares parser** s přímým HTTPS stažením skutečného souboru product 253741. Výsledek: **106 položek, z toho 101 kladných akciových podkladů**, datum `2026-10-14`, po vyloučení neakciových pozic ekonomický podíl akcií **99,9539055 %**. Model prošel validačními limity bez klíče či uživatelských dat. To ověřuje dostupnost v době testu, nikoli nepřetržitou budoucí dostupnost. Další hlídání zdroje dělá existující veřejný iShares canary, který automaticky iteruje všechny položky whitelistu.
+
+**Pozor na diagnostiku:** PR #79 opravuje klientskou chybu pevně očekávaných šesti zdrojů. Mergni nejdříve #79, až potom toto PR. Bez #79 je současná klientská diagnostika již před touto změnou chybná.
