@@ -33,6 +33,19 @@ export interface XRayConstituent {
   source: string; // provenance: issuer URL, file label, etc.
 }
 
+export interface XRayFundContribution {
+  /** Exchange listing labels can differ while the ISIN stays identical. */
+  fundSymbol: string;
+  fundIsin: string | null;
+  valueCzk: number;
+}
+
+export interface XRayDirectContribution {
+  account: string;
+  valueCzk: number;
+  quantity: number;
+}
+
 export interface XRayExposure {
   key: string;
   kind: "stock" | "crypto";
@@ -46,6 +59,8 @@ export interface XRayExposure {
   fundEquivalentQuantity: number | null;
   fundSymbols: string[];
   accounts: string[];
+  fundContributions: XRayFundContribution[];
+  directContributions: XRayDirectContribution[];
 }
 export interface XRayFundCoverage {
   symbol: string;
@@ -194,20 +209,49 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     return "fund:" + JSON.stringify([fundKey, norm(row.securitySymbol)]);
   };
 
-  type Mutable = Omit<XRayExposure, "weightPct" | "totalCzk" | "fundSymbols" | "accounts"> & { fundSymbols: Set<string>; accounts: Set<string> };
+  type FundSource = { symbols: Set<string>; isin: string | null; valueCzk: number };
+  type Mutable = Omit<XRayExposure, "weightPct" | "totalCzk" |
+    "fundSymbols" | "accounts" | "fundContributions" | "directContributions"> & {
+      fundSymbols: Set<string>;
+      accounts: Set<string>;
+      fundsByIdentity: Map<string, FundSource>;
+      directByAccount: Map<string, XRayDirectContribution>;
+    };
   const exposed = new Map<string, Mutable>();
-  const add = (key: string, kind: "stock" | "crypto", ticker: string, name: string, directValue: number, viaFund: number, quantity: number, account?: string, fund?: string) => {
+  const add = (key: string, kind: "stock" | "crypto", ticker: string, name: string, directValue: number,
+    viaFund: number, quantity: number, account?: string, fund?: string, fundIsin?: string | null) => {
     const id = kind + "|" + key;
     let item = exposed.get(id);
     if (!item) {
-      item = { key: id, kind, ticker, name, directCzk: 0, viaFundsCzk: 0, directQuantity: 0, fundEquivalentQuantity: null, fundSymbols: new Set(), accounts: new Set() };
+      item = {
+        key: id, kind, ticker, name, directCzk: 0, viaFundsCzk: 0,
+        directQuantity: 0, fundEquivalentQuantity: null, fundSymbols: new Set(),
+        accounts: new Set(), fundsByIdentity: new Map(), directByAccount: new Map(),
+      };
       exposed.set(id, item);
     }
     item.directCzk += directValue;
     item.viaFundsCzk += viaFund;
     item.directQuantity += quantity;
-    if (account) item.accounts.add(account);
-    if (fund) item.fundSymbols.add(fund);
+    if (account) {
+      item.accounts.add(account);
+      const entry = item.directByAccount.get(account) ?? {account, valueCzk:0, quantity:0};
+      entry.valueCzk += directValue;
+      entry.quantity += quantity;
+      item.directByAccount.set(account,entry);
+    }
+    if (fund && viaFund > 0) {
+      item.fundSymbols.add(fund);
+      // Aggregate exchange listings of the SAME verified ETF ISIN.
+      // A symbol-only fund can aggregate only with that same symbol.
+      const fundKey = fundIsin ? "isin:" + norm(fundIsin) : "symbol:" + norm(fund);
+      const entry = item.fundsByIdentity.get(fundKey) ?? {
+        symbols:new Set<string>(), isin:fundIsin ? norm(fundIsin) : null, valueCzk:0,
+      };
+      entry.symbols.add(fund);
+      entry.valueCzk += viaFund;
+      item.fundsByIdentity.set(fundKey,entry);
+    }
     // Prefer direct identity labels over issuer-supplied abbreviations.
     if (directValue > 0 && name) { item.name = name; item.ticker = ticker; }
   };
@@ -294,7 +338,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       const key = c.kind === "crypto" ? "crypto:" + cryptoSymbol(c.securitySymbol) :
         constituentStockKey(c);
       add(key, c.kind, c.kind === "stock" ? displayXRayTicker(c.securitySymbol, c.securitySedol) : c.securitySymbol,
-        c.securityName, 0, part, 0, undefined, h.symbol);
+        c.securityName, 0, part, 0, undefined, h.symbol, h.isin);
       if(c.kind==="crypto") identityCoverage.cryptoCzk+=part;
       else if(strongIsin(c.securityIsin)) identityCoverage.isinCzk+=part;
       else if(strongIsin(resolveSecurityIsin(c,crosswalk))) identityCoverage.bridgedCzk+=part;
@@ -311,12 +355,29 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     // with a nonzero direct reference price, never for ADR or another share class.
     const fundEquivalentQuantity = item.viaFundsCzk > 0 && item.directQuantity > 0 && item.directCzk > 0
       ? item.viaFundsCzk / (item.directCzk / item.directQuantity) : null;
+    const fundContributions = [...item.fundsByIdentity.values()].map((fund) => ({
+      fundSymbol:[...fund.symbols].sort().join(" / "),
+      fundIsin:fund.isin,
+      valueCzk:fund.valueCzk,
+    })).sort((a,b)=>b.valueCzk-a.valueCzk || a.fundSymbol.localeCompare(b.fundSymbol));
+    const directContributions = [...item.directByAccount.values()]
+      .sort((a,b)=>b.valueCzk-a.valueCzk || a.account.localeCompare(b.account));
+    const sumFunds=fundContributions.reduce((v,f)=>v+f.valueCzk,0);
+    const sumDirect=directContributions.reduce((v,d)=>v+d.valueCzk,0);
+    const tolerance=Math.max(MONEY_EPSILON,totalCzk*1e-10);
+    if (Math.abs(sumFunds-item.viaFundsCzk)>tolerance ||
+        Math.abs(sumDirect-item.directCzk)>tolerance) {
+      throw new RangeError("Rozpis zdrojů X-Ray nesouhlasí s celkovou hodnotou pozice.");
+    }
     return {
-      ...item, totalCzk,
+      key:item.key,kind:item.kind,ticker:item.ticker,name:item.name,
+      directCzk:item.directCzk,viaFundsCzk:item.viaFundsCzk,
+      directQuantity:item.directQuantity,totalCzk,
       weightPct: denominatorCzk ? totalCzk / denominatorCzk * 100 : 0,
       fundEquivalentQuantity,
       fundSymbols: [...item.fundSymbols].sort(),
       accounts: [...item.accounts].sort(),
+      fundContributions,directContributions,
     };
   }).sort((a, b) => b.totalCzk - a.totalCzk || a.ticker.localeCompare(b.ticker));
   const mappedCzk = exposures.reduce((sum, row) => sum + row.totalCzk, 0);
