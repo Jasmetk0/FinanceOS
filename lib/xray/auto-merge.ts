@@ -78,56 +78,90 @@ function snapshotEvidence(rows:XRayConstituent[]):SnapshotEvidence {
   };
 }
 
+export interface XRaySourceSnapshot {
+  asOf:string|null;
+  source:string|null;
+  exposureBasis:Basis|null;
+  rows:number;
+  totalPct:number;
+  identifiedPct:number;
+  eligible:boolean;
+}
+export type XRaySourceChoice="manual"|"automatic";
+export type XRaySourceReason=
+  "manual-only"|"automatic-only"|"identity-reference"|
+  "manual-compatible"|"automatic-compatible"|
+  "manual-more-complete"|"automatic-more-complete"|
+  "manual-newer"|"automatic-newer"|"automatic-tie"|
+  "manual-exact-index-tie"|"ineligible-fallback";
+export interface XRaySourceDecision {
+  fundKey:string;
+  fundSymbol:string;
+  fundIsin:string|null;
+  selected:XRaySourceChoice;
+  reason:XRaySourceReason;
+  manual:XRaySourceSnapshot|null;
+  automatic:XRaySourceSnapshot|null;
+}
+export interface XRaySourceSelection {
+  rows:XRayConstituent[];
+  decisions:XRaySourceDecision[];
+}
+function inspectSource(rows:XRayConstituent[]|undefined,key:string,now:number):XRaySourceSnapshot|null {
+  if(!rows?.length)return null;
+  return {
+    asOf:rows[0].asOf||null,
+    source:rows[0].source||null,
+    exposureBasis:basisOf(rows),
+    rows:rows.length,
+    totalPct:rows.reduce((sum,r)=>sum+r.weightPct,0),
+    identifiedPct:snapshotEvidence(rows).investablePct,
+    eligible:sourceEligible(key,rows,now),
+  };
+}
+
 /**
- * Return one atomic snapshot per fund ISIN/ticker. Ordinary eligible sources
- * still use newest-as-of (automatic wins ties). A better-quality COMPLETE
- * direct reference-index snapshot outranks a CNDX proxy for synthetic funds
- * when dates are identical. Older real index snapshots do not silently
- * override newer proxies. On missing automatic data keep manual unchanged;
- * the engine remains the final fail-closed arbiter.
+ * The SAME arbitration drives both calculations and the UI audit.
+ * Reasons describe the actual branch taken, not guessed source quality.
  */
-export function combineConstituentSources(
-  manual:XRayConstituent[],automatic:XRayConstituent[],
-): XRayConstituent[] {
+export function explainConstituentSources(
+  manual:XRayConstituent[],automatic:XRayConstituent[],now=Date.now(),
+):XRaySourceSelection {
+  if(!Number.isFinite(now))throw new RangeError("Neplatný čas rozhodnutí o rozkladu.");
   validateXRayConstituents(manual);
   validateXRayConstituents(automatic);
   const manualByFund=new Map<string,XRayConstituent[]>();
   const autoByFund=new Map<string,XRayConstituent[]>();
   for (const row of manual) {
     const key=identity(row);
-    if (!manualByFund.has(key)) manualByFund.set(key,[]);
+    if(!manualByFund.has(key))manualByFund.set(key,[]);
     manualByFund.get(key)?.push(row);
   }
   for (const row of automatic) {
     const key=identity(row);
-    if (!autoByFund.has(key)) autoByFund.set(key,[]);
+    if(!autoByFund.has(key))autoByFund.set(key,[]);
     autoByFund.get(key)?.push(row);
   }
-  const now=Date.now();
-  const groups:XRayConstituent[]=[];
-  for (const key of new Set([...manualByFund.keys(),...autoByFund.keys()])) {
+  const rows:XRayConstituent[]=[];
+  const decisions:XRaySourceDecision[]=[];
+  for(const key of new Set([...manualByFund.keys(),...autoByFund.keys()])){
     const local=manualByFund.get(key),remote=autoByFund.get(key);
-    let choice=remote??local??[];
-    if (local?.length && remote?.length) {
-      // Do not let a user's newer manual SPYI portfolio file replace the
-      // issuer-fetched security-ID reference used to identify Vanguard.
-      // This special source is never an owned SPYI NAV allocation.
-      if(remote.every(r=>r.source.endsWith("; identity-only reference"))) {
-        groups.push(...remote);
-        continue;
-      }
+    let selected:XRaySourceChoice=remote?.length?"automatic":"manual";
+    let reason:XRaySourceReason=remote?.length?"automatic-only":"manual-only";
+    if(local?.length&&remote?.length){
       const localEligible=sourceEligible(key,local,now);
       const remoteEligible=sourceEligible(key,remote,now);
-      if(localEligible&&!remoteEligible)choice=local;
-      else if(!localEligible&&remoteEligible)choice=remote;
-      else if(localEligible&&remoteEligible){
+      if(remote.every(r=>r.source.endsWith("; identity-only reference"))){
+        selected="automatic";reason="identity-reference";
+      }else if(localEligible&&!remoteEligible){
+        selected="manual";reason="manual-compatible";
+      }else if(!localEligible&&remoteEligible){
+        selected="automatic";reason="automatic-compatible";
+      }else if(localEligible&&remoteEligible){
         const manualEvidence=snapshotEvidence(local);
         const issuerEvidence=snapshotEvidence(remote);
         const manualLessComplete=!manualEvidence.complete&&issuerEvidence.complete;
         const issuerLessComplete=!issuerEvidence.complete&&manualEvidence.complete;
-        // Do not let a newer top-ten excerpt or an "OTHER" residual mask
-        // hundreds of issuer-verified equities, while preserving normal
-        // newer-as-of manual corrections that are materially complete.
         const manualMissingStocks=issuerEvidence.investablePct>=95 &&
           manualEvidence.investablePct<90;
         const issuerMissingStocks=manualEvidence.investablePct>=95 &&
@@ -140,25 +174,45 @@ export function combineConstituentSources(
           manualEvidence.rows>=40 &&
           issuerEvidence.rows<manualEvidence.rows*0.25 &&
           issuerEvidence.investablePct<=manualEvidence.investablePct+1;
-        if((manualLessComplete||manualMissingStocks||manualTruncated) &&
-           !(issuerLessComplete||issuerMissingStocks||issuerTruncated))choice=remote;
-        else if((issuerLessComplete||issuerMissingStocks||issuerTruncated) &&
-           !(manualLessComplete||manualMissingStocks||manualTruncated))choice=local;
-        else {
-          const localDate=local[0].asOf,remoteDate=remote[0].asOf;
-          choice=localDate>remoteDate?local:remote;
-          // When equally dated, exact benchmark outranks approximate proxy.
-          if(localDate===remoteDate&&basisOf(local)==="reference-index"&&
-             basisOf(remote)==="reference-index-proxy")choice=local;
+        if((manualLessComplete||manualMissingStocks||manualTruncated)&&
+           !(issuerLessComplete||issuerMissingStocks||issuerTruncated)){
+          selected="automatic";reason="automatic-more-complete";
+        }else if((issuerLessComplete||issuerMissingStocks||issuerTruncated)&&
+                 !(manualLessComplete||manualMissingStocks||manualTruncated)){
+          selected="manual";reason="manual-more-complete";
+        }else if(local[0].asOf>remote[0].asOf){
+          selected="manual";reason="manual-newer";
+        }else if(local[0].asOf===remote[0].asOf &&
+                 basisOf(local)==="reference-index" &&
+                 basisOf(remote)==="reference-index-proxy"){
+          selected="manual";reason="manual-exact-index-tie";
+        }else{
+          selected="automatic";reason=local[0].asOf===remote[0].asOf?
+            "automatic-tie":"automatic-newer";
         }
-      } else {
-        // Preserve previous preference; the engine will explicitly reject
-        // an unsupported synthetic basket rather than inventing stocks.
-        choice=local[0].asOf>remote[0].asOf?local:remote;
+      }else{
+        selected=local[0].asOf>remote[0].asOf?"manual":"automatic";
+        reason="ineligible-fallback";
       }
     }
-    groups.push(...choice);
+    const chosen=selected==="automatic"?remote:local;
+    if(!chosen?.length)throw new RangeError("Chybí vybrané ETF podklady.");
+    rows.push(...chosen);
+    const first=chosen[0];
+    decisions.push({
+      fundKey:key,fundSymbol:first.fundSymbol,
+      fundIsin:first.fundIsin,selected,reason,
+      manual:inspectSource(local,key,now),
+      automatic:inspectSource(remote,key,now),
+    });
   }
-  validateXRayConstituents(groups);
-  return groups;
+  validateXRayConstituents(rows);
+  return {rows,decisions};
+}
+
+/** Backwards-compatible calculation entrypoint; never reimplement arbitration. */
+export function combineConstituentSources(
+  manual:XRayConstituent[],automatic:XRayConstituent[],
+):XRayConstituent[]{
+  return explainConstituentSources(manual,automatic).rows;
 }
