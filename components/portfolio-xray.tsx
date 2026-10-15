@@ -267,6 +267,11 @@ export function PortfolioXRay({
             <div role="progressbar" aria-label="Identifikované procento portfolia" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Number(data.mappedPct.toFixed(2))} className="mt-3 h-2 overflow-hidden rounded-full bg-white/[.075]">
               <div className="h-full rounded-full bg-[var(--accent)]" style={{width:data.mappedPct+"%"}}/>
             </div>
+            {data.estimatedProxyCzk>0 ? <p className="mt-2 text-xs font-medium text-[var(--warning)]">
+              ⚠ Z identifikovaných expozic představuje {money(data.estimatedProxyCzk)}
+              {" "}({pct(data.denominatorCzk?100*data.estimatedProxyCzk/data.denominatorCzk:0)} celého portfolia)
+              pouze přibližný model LYMS podle CNDX, nikoli doložené indexové váhy.
+            </p>:null}
             {data.warnings.length ? <div className="mt-3 space-y-1 text-xs text-[var(--warning)]">{data.warnings.map((text) => <p key={text}>⚠ {text}</p>)}</div> : null}
             <div className="mt-4 flex flex-wrap items-end gap-2">
               <label className="min-w-[180px] flex-1 text-[11px] text-[var(--muted)]">Najít akcii, krypto nebo fond
@@ -298,7 +303,9 @@ export function PortfolioXRay({
                           onClick={(e)=>{e.stopPropagation();setSelected(selected===item.key?null:item.key);}}>
                           <span className="block text-sm font-semibold">{item.ticker}</span>
                           <span className="block text-[11px] text-[var(--muted)]">{item.name}</span>
-                          {item.directCzk === 0 && item.viaFundsCzk > 0 ?
+                          {item.fundContributions.some(f=>f.exposureBasis==="reference-index-proxy")?
+                             <span className="block text-[10px] text-[var(--warning)]">⚠ Obsahuje odhad LYMS podle CNDX</span>:null}
+                           {item.directCzk === 0 && item.viaFundsCzk > 0 ?
                             <span className="block text-[10px] text-[var(--muted)]">Pouze přes ETF{item.kind==="stock" && item.key.startsWith("stock|sedol:") ?
                               " · SEDOL " + item.key.slice("stock|sedol:".length) : ""}</span> : null}
 
