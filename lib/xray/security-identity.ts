@@ -43,6 +43,13 @@ export function buildSedolIsinCrosswalk(rows:XRayConstituent[]):SedolIsinCrosswa
   const candidates=new Map<string,string>();
   const conflicted=new Set<string>();
   for(const row of rows){
+    if(row.source.includes("; identity-only reference")) {
+      // An issuer identity dictionary cached beyond 14 days must NEVER
+      // silently convert current Vanguard SEDOLs to stale ISINs.
+      const timestamp=Date.parse(row.asOf+"T00:00:00Z");
+      const age=(Date.now()-timestamp)/86_400_000;
+      if(!Number.isFinite(age)||age< -1||age>14)continue;
+    }
     if(row.kind!=="stock" || row.fundIsin!=="IE00B3YLTY66" ||
        !row.source.startsWith("State Street official daily SPYI XLSX; ")) continue;
     const sedol=normalizedSedol(row.securitySedol);
