@@ -34,12 +34,12 @@ export async function GET(request: Request) {
         if (!funds.has(isin)) funds.set(isin,{isin,symbol:h.symbol});
       } else {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
+        const insight=fundInsightForIsin(isin);
         if (!unavailable.has(id)) unavailable.set(id,{
           isin,symbol:h.symbol,
           reason: isin ? (
-            fundInsightForIsin(isin)
-              ? fundInsightForIsin(isin)!.label + ". " + fundInsightForIsin(isin)!.explanation
-              : "Pro tento ISIN zatím není ověřený automatický zdroj."
+            insight ? insight.label + ". " + insight.explanation :
+              "Pro tento ISIN zatím není ověřený automatický zdroj."
           ) : "ETF nemá ISIN. Aktualizuj instrumenty z brokera.",
         });
       }
