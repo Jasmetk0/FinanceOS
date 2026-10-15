@@ -52,15 +52,16 @@ test("100% portfolio denominator is conserved across SIX distinct confidence tie
   assert.equal(r.exposures.find(x=>x.key==="stock|isin:"+MSFT).totalCzk,300);
 });
 
-test("ticker inferred into a unique ISIN is still labelled ticker-only evidence",()=>{
+test("unverified direct ticker remains separate from ETF ISIN, with honest identity coverage",()=>{
   const r=calculateXRay([
     holding("direct","NVDA","stock",100),
     holding("etf","F","etf",200,"IE00B0000000"),
   ],[constituent("F","IE00B0000000","NVDA","stock",20,{
     securityIsin:"US67066G1040",source:"issuer-test",
   })]);
-  assert.equal(r.exposures.length,1);
-  assert.equal(r.exposures[0].totalCzk,140);
+  assert.equal(r.exposures.length,2);
+  assert.equal(r.exposures.find(x=>x.key==="stock|position:direct").totalCzk,100);
+  assert.equal(r.exposures.find(x=>x.key==="stock|isin:US67066G1040").totalCzk,40);
   assert.equal(r.identityCoverage.tickerOnlyCzk,100);
   assert.equal(r.identityCoverage.isinCzk,40);
   assert.equal(r.identityCoverage.unmappedCzk,160);

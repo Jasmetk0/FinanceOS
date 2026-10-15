@@ -54,13 +54,17 @@ test("two brokers holding the same ISIN merge while different shares do not", ()
   assert.equal(r.exposures.filter(x=>x.ticker==="ABC").length,2);
 });
 
-test("ticker-only direct position uses unambiguous ISIN from constituents", () => {
+test("ticker-only direct position NEVER inherits an ISIN merely from matching ETF ticker", () => {
   const h=[holding("one","NVDA","stock",100,1),holding("etf","FUND","etf",200,1)];
   const c=[part("FUND","NVDA",10,"stock","US67066G1040")];
   const r=calculateXRay(h,c);
-  assert.equal(r.exposures.length,1);
-  assert.equal(r.exposures[0].totalCzk,120);
-  assert.equal(r.exposures[0].directQuantity,1);
+  assert.equal(r.exposures.length,2);
+  assert.equal(r.exposures.find(x=>x.key==="stock|position:one").directCzk,100);
+  assert.equal(r.exposures.find(x=>x.key==="stock|isin:US67066G1040").viaFundsCzk,20);
+  assert.equal(r.exposures.find(x=>x.key==="stock|position:one").fundEquivalentQuantity,null);
+  assert.equal(r.denominatorCzk,300);
+  assert.equal(r.unallocatedCzk,180);
+  assert.match(r.warnings.join(" "),/nemá ISIN/);
 });
 
 test("ambiguous ISIN ticker never silently merges different securities", () => {
