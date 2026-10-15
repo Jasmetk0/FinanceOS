@@ -32,6 +32,10 @@ jobs:
       - name: Correctness regression tests
         run: npm test
 
+      - name: Temporary read-only public NCLR source probe
+        continue-on-error: true
+        run: node scripts/probe-wisdomtree-nclr.mjs
+
       - name: Build
         run: npm run build
 
