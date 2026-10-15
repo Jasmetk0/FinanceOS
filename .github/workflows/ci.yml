@@ -32,10 +32,6 @@ jobs:
       - name: Correctness regression tests
         run: npm test
 
-      - name: Verify live CNDX official public holdings (temporary source probe)
-        continue-on-error: true
-        run: node scripts/probe-cndx-source.mjs
-
       - name: Build
         run: npm run build
 
