@@ -32,6 +32,10 @@ jobs:
       - name: Correctness regression tests
         run: npm test
 
+      - name: Verify iShares detailed identifier endpoint (public only)
+        continue-on-error: true
+        run: node scripts/probe-ishares-detailed-json.mjs
+
       - name: Build
         run: npm run build
 
