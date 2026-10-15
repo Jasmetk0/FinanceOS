@@ -128,6 +128,24 @@ test("issuer-only reference is retained atomically on transient network failure 
   const noLongerNeeded=reconcileIssuerRows(failed.rows,[],[]);
   assert.equal(noLongerNeeded.rows.length,0);
 });
+test("issuer role transition cannot reuse cached unowned reference as real SPYI holdings or vice versa",()=>{
+ const oldReference=officialReference();
+ const oldOwned=dictionary();
+ const bought=reconcileIssuerRows(oldReference,[],[
+   {isin:SPYI_ISIN,symbol:"SPYI",status:"error"},
+ ]);
+ assert.equal(bought.rows.length,0);
+ const sold=reconcileIssuerRows(oldOwned,[],[
+   {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true,status:"error"},
+ ]);
+ assert.equal(sold.rows.length,0);
+ // A valid new issuer snapshot can replace a role-changed backup atomically.
+ const fresh=reconcileIssuerRows(oldOwned,oldReference,[
+   {isin:SPYI_ISIN,symbol:"SPYI (identita)",identityOnly:true,status:"ok",asOf:day(1)},
+ ]);
+ assert.equal(fresh.rows.length,550);
+ assert.ok(fresh.rows.every(r=>r.source.endsWith("; identity-only reference")));
+});
 test("the official reference cannot be overwritten by a later manual SPYI snapshot",()=>{
   const official=officialReference();
   const manual=dictionary(550,day(0)).map(r=>({...r,source:"manual-spyi.csv"}));
