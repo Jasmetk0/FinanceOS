@@ -65,8 +65,8 @@ export function XRayIssuerDiagnostics(){
     </summary>
     <p className="mt-2 leading-5">
       Tento test provede skutečná síťová volání z tvého spuštěného FinanceOS,
-      nikoli simulaci. Ověří aktuálně podporované ETF zdroje přes stejné
-      produkční parsery a zobrazí výsledek i chyby. Nespouští synchronizaci brokerů,
+      nikoli simulaci. Ověří všechny aktuálně podporované zdroje přes stejné
+      produkční parsery, včetně odděleně označeného archivu Rebalix, a zobrazí chyby. Nespouští synchronizaci brokerů,
       nepoužívá jejich API klíče a nemění hodnoty portfolia.
     </p>
     <div className="mt-2 flex flex-wrap items-center gap-3">
@@ -102,7 +102,7 @@ export function XRayIssuerDiagnostics(){
           </p>}
           <p className="mt-1">Doba požadavků: {(item.elapsedMs/1000).toLocaleString("cs-CZ",{maximumFractionDigits:1})} s</p>
           <a href={item.sourceUrl} target="_blank" rel="noreferrer"
-            className="mt-2 inline-block text-[var(--accent)] underline">Originální zdroj ↗</a>
+            className="mt-2 inline-block text-[var(--accent)] underline">Zdroj podkladů ↗</a>
         </div>)}
       </div>
       <p className="text-[11px] leading-5">
