@@ -242,7 +242,7 @@ export function XRayAutoSync({
       </details>:null}
       <XRayIssuerDiagnostics />
       <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
-        Podporované zdroje: Vanguard VWCE / VWRA / VWRP, State Street SPYI / IMIE / IMID,
+        Podporované zdroje: Vanguard VWCE / VWRA / VWRP a VALL / VGLA / VALU, State Street SPYI / IMIE / IMID,
         vybrané fondy iShares a archiv Invesco EQQQ / EQAC (Rebalix, nikoliv přímý feed emitenta).
         Aktuálnost se posuzuje podle data skutečného složení, ne podle času, kdy jsme soubor stáhli.
         Zálohované automatické podklady jsou v tomto prohlížeči uchovávány maximálně 60 dní.

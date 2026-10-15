@@ -7,6 +7,7 @@ FinanceOS nyní obsahuje volitelný **živý test emitentů**, oddělený od aut
 Po kliknutí na **Spustit skutečný test zdrojů** klient zavolá lokální POST /api/xray/diagnostics. Server provede skutečná externí HTTPS volání a použije **stejné vydavatelské adaptéry a validátory**, jaké již produkčně používá automatický ETF look-through:
 
 - Vanguard FTSE All-World VWCE — oficiální EU GPX GraphQL, ISIN IE00BK5BQT80
+- Vanguard FTSE Global All-Cap VALL — oficiální EU GPX GraphQL, ISIN IE000VAHT5T0 (vlastní `E161` fund ID, všechny stránky)
 - State Street SPDR ACWI IMI SPYI — oficiální XLSX, ISIN IE00B3YLTY66
 - iShares Core S&P 500 — ISIN IE00B5BMR087
 - iShares Core MSCI World — ISIN IE00B4L5Y983
@@ -21,7 +22,7 @@ Po kliknutí na **Spustit skutečný test zdrojů** klient zavolá lokální POS
 - Rebalix **archiv Invesco**, EQQQ Dist — ISIN IE0032077012
 - Rebalix **archiv Invesco**, EQAC Acc — ISIN IE00BFZXGZ54
 
-To je celkem čtrnáct ověřovaných konkrétních zdrojů (včetně dvou nezávislých archivů Rebalix, nikoliv přímých zdrojů emitenta). Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
+To je celkem patnáct ověřovaných konkrétních zdrojů (včetně dvou nezávislých archivů Rebalix, nikoliv přímých zdrojů emitenta). Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
 
 **Výsledek není jen odpověď HTTP 200.** Po úspěšném načtení parserem musí:
 
@@ -40,7 +41,7 @@ Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akc
 - **Neúplné váhy**: validní parsovaný podkladový seznam vykazuje méně než 98 % hodnoty; přiznaný zbytek se nedopočítává na akcie.
 - **Chyba stahování / parseru**: selhání dostupnosti, změna formátu, neplatná váha, chybný identifikátor či jiné neúspěšné ověření.
 
-Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 14 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
+Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 15 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
 
 ## Bezpečnost a hranice
 
@@ -52,3 +53,6 @@ Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akc
 - Pro reálné potvrzení funkčnosti Vanguard GPX a State Street XLSX je potřeba spustit diagnostiku na uživatelově zařízení s fungujícím přístupem k jejich doménám. CI testuje deterministické syntetické odpovědi; síťové externí testy se v CI nespouštějí.
 
 **Co při selhání:** nejprve se podívej na důvod u konkrétního ETF a jeho originální URL. FinanceOS zároveň zachovává poslední dříve validovaný podkladový snapshot v lokální záloze a označí jeho datum — nikdy si obsah automaticky nevymyslí.
+
+
+**VALL:** Ověřuje se samostatným `portId=E161`. Úspěch HTTP 200 nestačí: všechny stránky fondu musejí patřit FTSE Global All-Cap, obsahovat validní SEDOL (je-li použit k identifikaci), váhy a jednotné datum. Ověřený snapshot 30. 9. 2026 může být 15. 10. v diagnostice veden jako `stale`, i když je rozklad platný a síť funguje. Nezaměňujte datum stažení s `effectiveDate` od vydavatele.

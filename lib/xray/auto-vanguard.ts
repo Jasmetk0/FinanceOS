@@ -1,5 +1,5 @@
 /**
- * Vanguard EU UCITS GPX holdings connector for VWCE/VWRA/VWRP.
+ * Vanguard EU UCITS GPX holdings connector for VWCE/VWRA/VWRP and VALL/VGLA/VALU.
  *
  * One allowlisted ISIN -> one fixed Vanguard EU portId. No user-supplied URL,
  * query or credentials. All pages must be accounted for before any exposure
@@ -12,7 +12,25 @@ import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
 import { normalizedSedol } from "./security-identity.ts";
 
 export const VWCE_ISIN = "IE00BK5BQT80";
+export const VALL_ISIN = "IE000VAHT5T0";
 export const VANGUARD_EU_PRODUCT_ID = "9679";
+export const VANGUARD_VALL_PORT_ID = "E161";
+export interface VanguardFeed {
+  isin:string;
+  productId:string;
+  fundName:string;
+  namePattern:RegExp;
+}
+export const VANGUARD_FEEDS: readonly VanguardFeed[]=[
+  {isin:VWCE_ISIN,productId:VANGUARD_EU_PRODUCT_ID,
+    fundName:"Vanguard FTSE All-World UCITS ETF",namePattern:/FTSE\s+All.World/i},
+  {isin:VALL_ISIN,productId:VANGUARD_VALL_PORT_ID,
+    fundName:"Vanguard FTSE Global All-Cap UCITS ETF",namePattern:/FTSE\s+Global\s+All.Cap/i},
+];
+const FEED_BY_ISIN=new Map(VANGUARD_FEEDS.map(f=>[f.isin,f]));
+export function vanguardFeedForIsin(isin:string|null|undefined):VanguardFeed|null{
+  return FEED_BY_ISIN.get((isin??"").trim().toUpperCase())??null;
+}
 export const VANGUARD_EU_GRAPHQL_URL = "https://www.ie.vanguard/gpx/graphql";
 const VANGUARD_CONSUMER = "ie0";
 const MAX_PAGES = 12;
@@ -77,7 +95,7 @@ export interface VanguardPage {
   cursor: string | null;
   name: string;
 }
-export function parseVanguardPage(payload: unknown): VanguardPage {
+export function parseVanguardPage(payload: unknown, feed: VanguardFeed=VANGUARD_FEEDS[0]): VanguardPage {
   const root=record(payload);
   const errors=arr(root?.errors);
   if (errors?.length) {
@@ -91,7 +109,8 @@ export function parseVanguardPage(payload: unknown): VanguardPage {
   }
   const profile=record(record(funds[0])?.profile);
   const name=string(profile?.fundFullName)??"";
-  if (!/FTSE\s+All.World/i.test(name)) {
+  if (!VANGUARD_FEEDS.some(f=>f.isin===feed.isin&&f.productId===feed.productId) ||
+      !feed.namePattern.test(name)) {
     throw new RangeError("Vrácený fond neodpovídá Vanguard FTSE All-World ETF.");
   }
   const holdings=record(record(portfolios[0])?.holdings);
@@ -131,7 +150,12 @@ function isEquityType(value:string):boolean {
  * Until a trustworthy SEDOL-to-ISIN map exists, direct brokerage securities
  * may remain separate; correctness is more important than fake merging.
  */
-export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): VanguardParsed {
+export function parseVanguardHoldings(
+  pages:VanguardPage[],symbol:string,feed:VanguardFeed=VANGUARD_FEEDS[0],
+): VanguardParsed {
+  if (!VANGUARD_FEEDS.some(f=>f.isin===feed.isin&&f.productId===feed.productId) ||
+      !pages.every(p=>feed.namePattern.test(p.name)))
+    throw new RangeError("Vanguard snapshot se neshoduje s požadovaným ISIN fondu.");
   if (!pages.length || pages.length>MAX_PAGES) throw new RangeError("Chybí úplné stránkování Vanguard.");
   const all=pages.flatMap(p=>p.items);
   const expected=pages[0].total;
@@ -146,6 +170,10 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
   let stockWeight=0;
   let netOther=0;
   let negativeOther=0;
+  // GPX can report BOTH sides of the EXACT SAME FX spot trade. Only
+  // matching instrument IDs may offset each other. All other gross short
+  // positions remain subject to the conservative 2% guard.
+  const spotPairs=new Map<string,{positive:number;negative:number}>();
   for(let i=0;i<all.length;i++) {
     const r=all[i],weight=parseWeight(r.marketValuePercentage);
     const name=string(r.securityLongDescription)??string(r.issuerName);
@@ -166,7 +194,14 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
     // NEVER against underlying equities or by increasing their weights.
     if (kind==="other") {
       netOther+=weight;
-      if(weight<0)negativeOther+=-weight;
+      if(type==="CT.SPOT"){
+        // Contract descriptions are opaque transaction IDs. Do not net
+        // different contracts or pretend their gross notionals are shares.
+        const pair=spotPairs.get(name)??{positive:0,negative:0};
+        if(weight>=0)pair.positive+=weight;
+        else pair.negative+=-weight;
+        spotPairs.set(name,pair);
+      } else if(weight<0)negativeOther+=-weight;
       continue;
     }
     if(weight<0)throw new RangeError("Vanguard vrátil zápornou akciovou expozici.");
@@ -182,25 +217,29 @@ export function parseVanguardHoldings(pages:VanguardPage[],symbol:string): Vangu
       }
       previous.weightPct+=weight;
     } else rows.set(key,{
-      fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:kind==="stock"?displayTicker:identity,
+      fundSymbol:symbol,fundIsin:feed.isin,securitySymbol:kind==="stock"?displayTicker:identity,
       securityIsin:null,securitySedol:kind==="stock"?normalizedSedol(sedol):null,
       securityName:name,weightPct:weight,
       kind,asOf:date,source:"Vanguard EU official GPX holdings; "+date,
     });
   }
-  // Small offsetting FX/contract positions can safely reduce the
-  // non-equity cash bucket; material short exposure needs a different
-  // signed-notional model, so never silently normalize it into equities.
-  if(negativeOther>MAX_NEGATIVE_OTHER_PCT || netOther< -0.02) {
+  // CT.SPOT legs can be gross large, while cancelling to zero for the
+  // SAME instrument ID (VALL observed 2.67% long vs 2.67% short).
+  // Treat only residual unpaired short as risk, not the offsetting gross.
+  // Unpaired shorts elsewhere continue to count toward the 2% threshold.
+  const unpairedSpotNegative=[...spotPairs.values()].reduce(
+    (total,pair)=>total+Math.max(0,pair.negative-pair.positive),0);
+  const unmatchedNegative=negativeOther+unpairedSpotNegative;
+  if(unmatchedNegative>MAX_NEGATIVE_OTHER_PCT || netOther< -0.02) {
     throw new RangeError("Vanguard má významné záporné neakciové expozice: "+
-      negativeOther.toFixed(3)+" %.");
+      unmatchedNegative.toFixed(3)+" % (po odečtení přesně spárovaných spotových kontraktů).");
   }
   const weightSum=stockWeight+Math.max(0,netOther);
   if (dates.size!==1 ||weightSum<MIN_TOTAL_WEIGHT_PCT||weightSum>MAX_TOTAL_WEIGHT_PCT) {
     throw new RangeError("Vanguard složení je neúplné nebo jeho váhy přesahují 100 % ("+weightSum.toFixed(3)+" %).");
   }
   if(netOther>0)rows.set("OTHER-NET",{
-    fundSymbol:symbol,fundIsin:VWCE_ISIN,securitySymbol:"OTHER-NET",
+    fundSymbol:symbol,fundIsin:feed.isin,securitySymbol:"OTHER-NET",
     securityIsin:null,securitySedol:null,
     securityName:"Net non-equity assets, cash and FX contracts",
     weightPct:netOther,kind:"other",asOf:[...dates][0],
@@ -224,11 +263,13 @@ interface CacheItem {
 }
 const cached=new Map<string,CacheItem>();
 
-export async function fetchVwceHoldings(
-  symbol:string,force=false,fetchImpl:FetchLike=fetch,
+export async function fetchVanguardHoldings(
+  feed:VanguardFeed,symbol:string,force=false,fetchImpl:FetchLike=fetch,
 ):Promise<{rows:XRayConstituent[];asOf:string;fetchedAt:string;cached:boolean;sourceUrl:string}>{
+  if(!VANGUARD_FEEDS.some(f=>f.isin===feed.isin&&f.productId===feed.productId&&f.fundName===feed.fundName))
+    throw new RangeError("Neautorizovaný Vanguard fond.");
   const now=Date.now();
-  const available=cached.get(VWCE_ISIN);
+  const available=cached.get(feed.isin);
   if(!force&&available&&available.expiresAt>now) return {
     rows:available.rows.map(r=>({...r,fundSymbol:symbol})),
     asOf:available.rows[0].asOf,
@@ -243,7 +284,7 @@ export async function fetchVwceHoldings(
       method:"POST",signal:AbortSignal.timeout(30_000),redirect:"error",cache:"no-store",
       headers:{"Accept":"application/json","Content-Type":"application/json","X-Consumer-ID":VANGUARD_CONSUMER},
       body:JSON.stringify({query:HOLDINGS_QUERY,variables:{
-        portIds:[VANGUARD_EU_PRODUCT_ID],securityTypes:null,lastItemKey:cursor,
+        portIds:[feed.productId],securityTypes:null,lastItemKey:cursor,
       }}),
     });
     if(!response.ok)throw new Error("Vanguard GPX HTTP "+response.status);
@@ -256,7 +297,7 @@ export async function fetchVwceHoldings(
       throw new RangeError("Vanguard stránka podkladů překročila limit.");
     let json:unknown;
     try {json=JSON.parse(body);}catch {throw new RangeError("Vanguard vrátil neplatný JSON.");}
-    const page=parseVanguardPage(json);
+    const page=parseVanguardPage(json,feed);
     pages.push(page);
     if(!page.cursor)break;
     if(cursors.has(page.cursor)||page.cursor===cursor)
@@ -264,9 +305,18 @@ export async function fetchVwceHoldings(
     cursors.add(page.cursor);
     cursor=page.cursor;
   }
-  const parsed=parseVanguardHoldings(pages,symbol);
+  const parsed=parseVanguardHoldings(pages,symbol,feed);
   const fetchedAt=new Date().toISOString();
-  cached.set(VWCE_ISIN,{rows:parsed.rows,fetchedAt,expiresAt:Date.now()+CACHE_MS});
+  cached.set(feed.isin,{rows:parsed.rows,fetchedAt,expiresAt:Date.now()+CACHE_MS});
   return {rows:parsed.rows,asOf:parsed.asOf,fetchedAt,cached:false,
     sourceUrl:VANGUARD_EU_GRAPHQL_URL};
+}
+
+/** Backward-compatible VWCE entrypoint; cache isolation is strictly per fund ISIN. */
+export function fetchVwceHoldings(symbol:string,force=false,fetchImpl:FetchLike=fetch){
+  return fetchVanguardHoldings(VANGUARD_FEEDS[0],symbol,force,fetchImpl);
+}
+/** Vanguard FTSE Global All-Cap (VALL/VGLA/VALU), verified portId E161. */
+export function fetchVallHoldings(symbol:string,force=false,fetchImpl:FetchLike=fetch){
+  return fetchVanguardHoldings(VANGUARD_FEEDS[1],symbol,force,fetchImpl);
 }

@@ -14,7 +14,7 @@ import { appendFile, writeFile } from "node:fs/promises";
 import { probeIssuer } from "../lib/xray/issuer-diagnostics.ts";
 import { ISHARES_FEEDS, fetchIsharesHoldings } from "../lib/xray/auto-ishares.ts";
 import { SPYI_ISIN, SPYI_OFFICIAL_URL, fetchSpyiHoldings } from "../lib/xray/auto-spyi.ts";
-import { VWCE_ISIN, VANGUARD_EU_GRAPHQL_URL, fetchVwceHoldings } from "../lib/xray/auto-vanguard.ts";
+import { VWCE_ISIN, VALL_ISIN, VANGUARD_EU_GRAPHQL_URL, fetchVwceHoldings, fetchVallHoldings } from "../lib/xray/auto-vanguard.ts";
 import { INVESCO_ARCHIVE_FEEDS, fetchInvescoArchiveHoldings } from "../lib/xray/auto-invesco.ts";
 
 const strict=process.argv.includes("--strict");
@@ -32,6 +32,10 @@ const results=await Promise.all([
     provider:"Vanguard",name:"FTSE All-World (VWCE)",
     isin:VWCE_ISIN,symbol:"VWCE",sourceUrl:VANGUARD_EU_GRAPHQL_URL,
   },()=>fetchVwceHoldings("VWCE",true)),
+  probeIssuer({
+    provider:"Vanguard",name:"FTSE Global All-Cap (VALL)",
+    isin:VALL_ISIN,symbol:"VALL",sourceUrl:VANGUARD_EU_GRAPHQL_URL,
+  },()=>fetchVallHoldings("VALL",true)),
   ...INVESCO_ARCHIVE_FEEDS.map(feed=>probeIssuer({
     provider:"Rebalix archive",name:feed.name,isin:feed.isin,
     symbol:feed.isin==="IE0032077012"?"EQQQ":"EQAC",

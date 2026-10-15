@@ -86,3 +86,31 @@ Stránky: https://rebalix.com/en/etf/IE0032077012, https://rebalix.com/en/etf/IE
 Souborová URL: https://rebalix.com/api/etf/composizione?isin=IE0032077012&lang=en a analogicky pro `IE00BFZXGZ54`.
 
 Zůstává otevřené: přímé denní API Invesca pro originální držby, které se nepodařilo bezpečně ověřit. Pokud takový zdroj bude k dispozici, má být upřednostněn před archivem se starším datem.
+
+
+## Vanguard FTSE Global All-Cap — VALL / VGLA / VALU (15. 10. 2026)
+
+Nový **přímý veřejný emitentský** zdroj pro `IE000VAHT5T0`, interní veřejné Vanguard GPX `portId=E161` (na rozdíl od VWCE s `9679`). Ověřeno přímým dotazem z GitHub Actions 15. 10. 2026: oficiální profil `Vanguard FTSE Global All-Cap UCITS ETF USD Acc`, 7 383 podkladových položek v `totalHoldings`, skutečný `effectiveDate=2026-09-30`. Stránky je nutné všechny stáhnout; počet položek se musí shodovat s `totalHoldings`, vždy stejný název fondu, stejný den, žádné opakované pagination tokeny.
+
+Hodnoty GPX jsou **tržní váhy pozic fondu**, nikoli automaticky všechny váhy referenčního FTSE indexu. Fond fyzicky používá reprezentativní držby; X-Ray nedoplňuje společnosti chybějící v samotném fondu. Rozklad sleduje konkrétní ISIN `IE000VAHT5T0` nezávisle na VWCE a burzovních tickerech. Cache se ukládá samostatně pro každý fond, podkladové akcie bez ISIN se s jinými akciemi slučují pouze pomocí ověřených identifikátorů (např. validní SEDOL bridge), nikoliv stejného tickeru.
+
+Aktualizace je **automatická a bez uživatelského API klíče nebo CSV**, ale samotný soubor emitenta je zveřejňován se zpožděním. K 15. 10. 2026 byl viditelný snapshot k 30. 9. 2026, takže jej aplikace správně označí jako zastaralý. Přístup k API není smluvně garantovaný a budoucí změna struktury může způsobit bezpečné odmítnutí podkladů.
+
+Oficiální stránka: https://www.vanguard.co.uk/professional/product/etf/equity/E161/vanguard-ftse-global-all-cap-ucits-etf-usd-acc
+Vanguard GPX: https://www.ie.vanguard/gpx/graphql
+
+
+### Bezpečné započtení párovaných FX spotů VALL
+
+Reálný úplný GPX E161 soubor k 30. 9. 2026 obsahoval 7 383 řádků, včetně 355 kontraktů `CT.SPOT` s hrubými kladnými a zápornými vahami **2,68022 % / −2,66911 %**, plus opačné měnové forwardy. Původní bezpečnostní limit na **hrubé** záporné neakciové pozice 2 % je tak pro fyzický VALL příliš přísný a rozklad správně odmítl při prvním živém testu.
+
+Nový parser kompenzuje opačné spotové váhy **pouze pokud mají identický kontraktní identifikátor v `securityLongDescription`**. Nemůže kompenzovat jiný spot, FX forward, měnovou hotovost nebo zápornou akcii. Všechny nepárované záporné neakciové váhy se dále kontrolují proti konzervativnímu limitu 2 %. Celková záporná net cash expozice pod −0,02 % nebo záporná akcie stále znamená odmítnutí celého souboru. `CT.SPOT`, forwardy, futures a hotovost se **nepřičítají k akciím**.
+
+VALL má i veřejně reportované futures `DE.IND`; jejich kladná netto aktiva zůstávají v `other/unallocated`, protože samostatný futures-notional look-through není bezpečně implementovaný. Výsledné procento akcií proto může být < 100 %, aniž by byla chyba v účetnictví.
+
+
+### Produkční potvrzení kompletního VALL GPX feedu
+
+Druhý nezávislý běh GitHub Actions 15. 10. 2026 s produkčními parsery prokázal, že stránkování `E161` vrací **7 383 originálních GPX položek** v pěti stránkách (4 × 1 500 + 1 × 1 383). Po sloučení identických akciových identit a vynechání nulových vah bylo vytvořeno **6 972 výsledných řádků**, z toho **96,35365 % akciová expozice**, **3,64597 % ostatní netto aktiva** a **0,00038 % reziduum** způsobené publikovaným zaokrouhlením. Jednotné datum je **30. 9. 2026**. Tyto hodnoty vycházejí z opravdového emitentského souboru, nikoli z ukázkových testovacích vah.
+
+Pro audit živých zdrojů je k dispozici pravidelný `scripts/check-live-issuer-feeds.mjs`, který používá identický produkční fetcher. Není garantovaná budoucí dostupnost veřejného GPX rozhraní.

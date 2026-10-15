@@ -3,7 +3,7 @@ import { localOnly } from "@/lib/server/local-only";
 import { getXRayHoldings } from "@/lib/server/xray";
 import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
 import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
-import { VWCE_ISIN, fetchVwceHoldings } from "@/lib/xray/auto-vanguard";
+import { VWCE_ISIN, VALL_ISIN, fetchVwceHoldings, fetchVallHoldings } from "@/lib/xray/auto-vanguard";
 import { LYMS_ISIN, fetchLymsProxyHoldings } from "@/lib/xray/auto-lyms-proxy";
 import { invescoArchiveForIsin, fetchInvescoArchiveHoldings } from "@/lib/xray/auto-invesco";
 import type { XRayConstituent } from "@/lib/xray/engine";
@@ -34,8 +34,9 @@ export async function GET(request: Request) {
       const archive = invescoArchiveForIsin(isin);
       const supportsSpyi = isin === SPYI_ISIN;
       const supportsVwce = isin === VWCE_ISIN;
+      const supportsVall = isin === VALL_ISIN;
       const supportsLymsProxy = isin === LYMS_ISIN;
-      if ((feed || supportsSpyi || supportsVwce || supportsLymsProxy || archive) && isin) {
+      if ((feed || supportsSpyi || supportsVwce || supportsVall || supportsLymsProxy || archive) && isin) {
         if (!funds.has(isin)) funds.set(isin,{isin,symbol:h.symbol});
       } else {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
@@ -54,11 +55,12 @@ export async function GET(request: Request) {
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
       const archive = invescoArchiveForIsin(f.isin);
-      if (!feed && f.isin!==SPYI_ISIN && f.isin!==VWCE_ISIN && f.isin!==LYMS_ISIN && !archive) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
+      if (!feed && f.isin!==SPYI_ISIN && f.isin!==VWCE_ISIN && f.isin!==VALL_ISIN && f.isin!==LYMS_ISIN && !archive) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
       try {
         const fetched = feed ? await fetchIsharesHoldings(feed,f.symbol,force) :
           f.isin===SPYI_ISIN ? await fetchSpyiHoldings(f.symbol,force) :
           f.isin===VWCE_ISIN ? await fetchVwceHoldings(f.symbol,force) :
+          f.isin===VALL_ISIN ? await fetchVallHoldings(f.symbol,force) :
           f.isin===LYMS_ISIN ? await fetchLymsProxyHoldings(f.symbol,force) :
           await fetchInvescoArchiveHoldings(archive!,f.symbol,force);
         return {isin:f.isin,symbol:f.symbol,status:"ok" as const,

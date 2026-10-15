@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { localOnly } from "@/lib/server/local-only";
 import { ISHARES_FEEDS, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
 import { SPYI_ISIN, SPYI_OFFICIAL_URL, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
-import { VWCE_ISIN, VANGUARD_EU_GRAPHQL_URL, fetchVwceHoldings } from "@/lib/xray/auto-vanguard";
+import { VWCE_ISIN, VALL_ISIN, VANGUARD_EU_GRAPHQL_URL, fetchVwceHoldings, fetchVallHoldings } from "@/lib/xray/auto-vanguard";
 import { INVESCO_ARCHIVE_FEEDS, fetchInvescoArchiveHoldings } from "@/lib/xray/auto-invesco";
 import { probeIssuer, type IssuerHealthRecord, type IssuerHealthTarget } from "@/lib/xray/issuer-diagnostics";
 import type { XRayConstituent } from "@/lib/xray/engine";
@@ -42,6 +42,8 @@ const targets:readonly IssuerHealthTarget[]=[
     isin:SPYI_ISIN,symbol:"SPYI",sourceUrl:SPYI_OFFICIAL_URL},
   {provider:"Vanguard",name:"FTSE All-World (VWCE)",
     isin:VWCE_ISIN,symbol:"VWCE",sourceUrl:VANGUARD_EU_GRAPHQL_URL},
+  {provider:"Vanguard",name:"FTSE Global All-Cap (VALL)",
+    isin:VALL_ISIN,symbol:"VALL",sourceUrl:VANGUARD_EU_GRAPHQL_URL},
   ...INVESCO_ARCHIVE_FEEDS.map(feed=>({
     provider:"Rebalix archive" as const,name:feed.name,
     isin:feed.isin,symbol:feed.isin==="IE0032077012"?"EQQQ":"EQAC",
@@ -63,6 +65,8 @@ async function runDiagnostics():Promise<DiagnosticReport>{
         const feed=INVESCO_ARCHIVE_FEEDS.find(f=>f.isin===target.isin);
         if(!feed)throw new RangeError("Archivovaný zdroj nebyl na seznamu.");
         outcome=await fetchInvescoArchiveHoldings(feed,target.symbol,true);
+      } else if(target.isin===VALL_ISIN) {
+        outcome=await fetchVallHoldings(target.symbol,true);
       } else {
         outcome=await fetchVwceHoldings(target.symbol,true);
       }
@@ -79,7 +83,7 @@ async function runDiagnostics():Promise<DiagnosticReport>{
 /**
  * Explicit-on-click, genuine network and parser probe. Does not read stored
  * investment accounts and never sends their credentials to fund issuers.
- * All fourteen source URL/ISIN pairs are defined server-side; user input cannot
+ * All fifteen source URL/ISIN pairs are defined server-side; user input cannot
  * add endpoints, hostnames, or dynamic queries.
  */
 export async function POST(request:Request){
