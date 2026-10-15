@@ -41,6 +41,8 @@ test("fund selection is ISIN-only and cannot collide across trading venues",()=>
   assert.equal(issuerFeedForIsin("IE00BF4RFH31")?.productId,"296576");
   assert.equal(issuerFeedForIsin("IE00B2QWCY14")?.productId,"251920");
   assert.equal(issuerFeedForIsin("IE00BZCQB185")?.productId,"297617");
+  assert.equal(issuerFeedForIsin("IE000I8KRLL9")?.productId,"319084");
+  assert.equal(issuerFeedForIsin("IE00B1XNHC34")?.productId,"251911");
   assert.equal(issuerFeedForIsin("ie00bf4rfh31")?.isin,"IE00BF4RFH31");
   assert.equal(issuerFeedForIsin("IE00BK5BQT80"),null);
   assert.equal(issuerFeedForIsin(""),null);
@@ -142,9 +144,9 @@ test("route remains local-only and X-Ray triggers automatic refresh",()=>{
 
 
 test("all expanded iShares feeds are fixed, unique, official issuer URLs",()=>{
-  assert.equal(ISHARES_FEEDS.length,7);
-  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.isin)).size,7);
-  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.productId)).size,7);
+  assert.equal(ISHARES_FEEDS.length,9);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.isin)).size,9);
+  assert.equal(new Set(ISHARES_FEEDS.map(f=>f.productId)).size,9);
   for(const feed of ISHARES_FEEDS){
     assert.equal(new URL(feed.url).hostname,"www.ishares.com");
     assert.ok(feed.url.includes("/products/"+feed.productId+"/"));
@@ -187,4 +189,39 @@ test("different issuer ISINs never share snapshots even if listings use the same
   assert.equal(merged.funds[1].isin,india.isin);
   assert.ok(Math.abs(merged.mappedCzk+merged.unallocatedCzk-2940)<1e-6);
   assert.equal(merged.exposures.some(x=>x.directCzk>0),false);
+});
+
+
+test("new SEMI and INRG funds use genuine issuer holdings and preserve unknown residual",()=>{
+  const semi=issuerFeedForIsin("IE000I8KRLL9");
+  const inrg=issuerFeedForIsin("IE00B1XNHC34");
+  assert.ok(semi&&inrg);
+  const holdings=[
+    holder("semis","SEMI","etf",507,semi.isin),
+    holder("energy","INRG","etf",210,inrg.isin),
+  ];
+  const parsed=[
+    ...parseIsharesHoldingsCsv(csv,semi,"SEMI"),
+    ...parseIsharesHoldingsCsv(csv,inrg,"INRG"),
+  ];
+  const result=calculateXRay(holdings,parsed);
+  assert.equal(result.denominatorCzk,717);
+  assert.equal(result.funds.length,2);
+  assert.equal(result.funds.find(f=>f.isin===semi.isin)?.source?.includes("319084"),true);
+  assert.equal(result.funds.find(f=>f.isin===inrg.isin)?.source?.includes("251911"),true);
+  assert.ok(Math.abs(result.mappedCzk+result.unallocatedCzk-717)<1e-6);
+  assert.ok(result.mappedCzk<717);
+  assert.ok(result.unallocatedCzk>0);
+});
+
+test("failed new issuer request leaves source data untouched and never sends broker key",async()=>{
+  const newFund=issuerFeedForIsin("IE000I8KRLL9");
+  assert.ok(newFund);
+  await assert.rejects(
+    fetchIsharesHoldings(newFund,"SEMI",true,async(url,init)=>{
+      assert.equal(url,newFund.url);
+      assert.equal(init.headers.Authorization,undefined);
+      return new Response("<html>blocked</html>",{status:200});
+    }),/Neplatný/,
+  );
 });
