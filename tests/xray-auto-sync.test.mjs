@@ -159,9 +159,9 @@ test("extra Type column in real IUS3 feed does not shift asset class or market v
     if(i<2||!line.startsWith('"'))return line;
     const secondQuoteEnd=line.indexOf('","',line.indexOf('","')+3);
     if(secondQuoteEnd<0)throw new Error("Invalid synthetic issuer fixture");
-    return line.slice(0,secondQuoteEnd+3) + '"'+
+    return line.slice(0,secondQuoteEnd+2) + '"'+
       (line.includes('"Cash and/or Derivatives"')?"CASH":"EQUITY")+
-      '",' + line.slice(secondQuoteEnd+3);
+      '",' + line.slice(secondQuoteEnd+2);
   }).join("\n");
   const smallcap=ISHARES_FEEDS.find(f=>f.isin==="IE00B2QWCY14");
   assert.ok(smallcap);
