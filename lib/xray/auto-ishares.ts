@@ -34,6 +34,10 @@ export const ISHARES_FEEDS: readonly IssuerFeed[] = [
     url: "https://www.ishares.com/uk/individual/en/products/251920/ishares-s-p-smallcap-600-ucits-etf/latest-holdings.csv" },
   { isin: "IE00BZCQB185", name: "iShares MSCI India UCITS ETF (QDV5/NDIA)", productId: "297617",
     url: "https://www.ishares.com/uk/individual/en/products/297617/ishares-msci-india-ucits-etf/latest-holdings.csv" },
+  { isin: "IE000I8KRLL9", name: "iShares MSCI Global Semiconductors UCITS ETF (SEMI)", productId: "319084",
+    url: "https://www.ishares.com/uk/individual/en/products/319084/ishares-msci-global-semiconductors-ucits-etf/latest-holdings.csv" },
+  { isin: "IE00B1XNHC34", name: "iShares Global Clean Energy Transition UCITS ETF (INRG)", productId: "251911",
+    url: "https://www.ishares.com/uk/individual/en/products/251911/ishares-global-clean-energy-ucits-etf/latest-holdings.csv" },
 ];
 
 const ISIN_FEEDS = new Map(ISHARES_FEEDS.map(f => [f.isin,f]));
