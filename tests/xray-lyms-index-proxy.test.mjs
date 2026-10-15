@@ -136,5 +136,7 @@ test("UI and API identify source explicitly as non-exact index-proxy",()=>{
   assert.ok(read("components/portfolio-xray.tsx").includes('f.exposureBasis==="reference-index-proxy"'));
   assert.ok(read("components/portfolio-xray.tsx").includes("data.estimatedProxyCzk>0"));
   assert.ok(read("components/xray-exposure-breakdown.tsx").includes('item.exposureBasis==="reference-index-proxy"'));
-  assert.ok(read("app/api/xray/auto/route.ts").includes('sourceKind:"proxy-model"'));
+  const api=read("app/api/xray/auto/route.ts");
+  assert.ok(api.includes('"proxy-model" as const'));
+  assert.ok(api.includes("f.isin===LYMS_ISIN"));
 });
