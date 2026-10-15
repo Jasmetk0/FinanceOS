@@ -28,3 +28,18 @@ Procenta se počítají **vůči součtu skutečně analyzovaných akciových, E
 Tyto kategorie měří **identitu podkladu**, ne důvěryhodnost serverové domény, reálné cenové kotace nebo správnost původně nahlášených vah emitenta. Kvalita identifikace je jiná veličina než stáří dat složení ETF (as-of), které FinanceOS ukazuje samostatně. Bez skutečných issuer dat se celý nerozložený ETF fund vykáže jako nerozložený, a ne jako 100% identifikovaný z názvu.
 
 Skutečný browserový E2E a ověření živého Vanguard GPX / SPDR XLSX z uživatelovy lokální instalace zůstávají dalším krokem.
+
+
+## Skutečně dosažené párování SEDOL → ISIN (PR #85)
+
+Po zavedení nezávislého oficiálního SPYI slovníku pro VWCE/VALL není **velikost slovníku (5 962 dostupných párů z 15. 10. 2026)** sama o sobě odpovědí na to, kolik cenných papírů v investičním účtu se podařilo identifikovat. Nová karta **Skutečné využití SEDOL → ISIN** proto měří pouze příspěvky akcií z *opravdu držených a pro výpočet přijatých fondů*.
+
+- **Spárované řádky** = počet jedinečných akciových položek v jednotlivých držených fondech se SEDOL, které neměly vlastní ISIN a získaly jej přes jednoznačnou ověřenou vazbu. Dva brokerské účty držící stejné ETF nepřidají druhou kopii těchto řádků.
+- **Spárovaná hodnota v Kč** = součet poměrných tržních hodnot těchto položek ze všech skutečně vlastněných ETF/účtů. Může být odlišná od počtu řádků kvůli vahám akcií. Tento součet se musí rovnat stávající kategorii `identityCoverage.bridgedCzk`.
+- **Jedinečné ISIN** = počet různých ověřených ISIN napříč drženými ETF. Stejná akcie ve VWCE i VALL je tedy započtena jako *jeden* unikátní ISIN, ale její podíl v každém ETF stále patří do hodnoty portfolia.
+- **Shody s přímo drženou akcií** = počet unikátních ISIN z těchto nově spárovaných řádků, které jsou rovněž explicitně doloženy jako přímo vlastněné akcie. Shoda tickerů bez ISIN se nepočítá.
+- **Nerozpoznané SEDOL řádky** a jejich hodnota jsou vykazované po fondech odděleně; jejich hodnota musí souhlasit se stávající kategorií `identityCoverage.sedolOnlyCzk`.
+
+V přehledu podle fondu se položky agregují podle **ISIN fondu**, takže různé burzovní tickery téhož ETF zobrazí jeden souhrn. **SPYI identity-only reference**, pokud ji uživatel nevlastní, se nikdy nezapočítává jako skutečný fond ani jako 5 962 okamžitě identifikovaných investic. Výsledek je okamžitě přepočten při změně live holdings i dat emitentů, neobsahuje fiktivní cenu a neukládá žádná další data mimo již existující X-Ray výpočet.
+
+Úplnost a pravdivost *zdroje* zůstává oddělená od identity. Samotný identifikovaný ISIN **nedokazuje**, že je emitentský snapshot dnešní nebo že LYMS skutečně drží akcie CNDX; jde výhradně o doloženou identitu relevantního akciového instrumentu.
