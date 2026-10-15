@@ -150,3 +150,14 @@ Pravidla fungují **jen při porovnávání dvou kandidátních souborů stejné
 - Smíchané datumy nebo provenience v jednom fondu už nemohou vytlačit soudržný automatický snapshot. API klíče, transakce ani stav účtů se tím nemění.
 
 Automatický zdroj v FinanceOS může být přímý emitentský soubor nebo výslovně označený archiv třetí strany (např. Invesco / Rebalix); tato arbitráž **nezaručuje nezávislé ověření jeho autenticity**, pouze brání ztrátě použitelných rozkladů při kolizi s očividně částečnými podklady.
+
+
+## Audit výběru skutečného zdroje podkladů pro jednotlivé ETF (15. 10. 2026)
+
+V **Portfolio X-Ray → Audit zdrojů rozkladu ETF** je u každého aktuálně drženého fondu (ISIN agregovaný napříč burzami/účty) nově možné rozbalit podrobnosti skutečného výběru mezi ručním a automatickým zdrojem. Jde o **stejnou rozhodovací větev** jako ve funkci `combineConstituentSources` – `explainConstituentSources` vrací zároveň vybrané podklady a přesnou příčinu jejich výběru. UI tak nepředstírá, že rozhodnutí zrekonstruovalo až dodatečně podle načteného souboru.
+
+Zobrazuje pro oba kandidáty, jsou-li dostupní: datum `asOf`, původ `source`, typ expozice, počet pozic, sumu publikovaných vah a procento identifikovaných akciových/kryptoměnových aktiv. Výslovně rozlišuje novější podklady, úplnější akciové pozice, neplatnou provenienci/data, přednost úplného referenčního indexu před CNDX proxy, fallback obou odmítnutých podkladů a samostatnou identifikační referenci. Přehled u každého fondu zároveň ukazuje **skutečně výpočtem přijatou hodnotu rozloženou a nerozloženou v Kč**. Pokud byl zvolený soubor následně odmítnut enginem (např. syntetický swapový koš), je vidět upozornění místo tvrzení, že fond byl rozložen.
+
+Automatický zdroj může být i starší cache; datum složení se zobrazí bez garance denního live stavu. Externí archiv Invesco zůstává archivem třetí strany, nikoli oficiálním přímým feedem. Model `reference-index-proxy` je výslovně označen **ODHAD**. Nezávislá reference `SPYI (identita)`, pokud ji nevlastníš, se do seznamu držených ETF ani do jejich Kč **nezapočítává**.
+
+Tento audit nemění broker transakce, přímé držby, kurzové ocenění ani výběr fondu; zavádí přezkoumatelné vysvětlení téhož výběru. Při chybě porovnání je zobrazeno varování a stávající bezpečná ruční záloha, nikoli falešné tvrzení o úspěšném výběru zdroje.
