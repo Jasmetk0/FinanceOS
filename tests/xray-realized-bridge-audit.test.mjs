@@ -96,9 +96,9 @@ test("without SPYI security identity, only checked SEDOL is known; no invented d
   assert.equal(r.bridgeAudit.bridgedLines,0);
   assert.equal(r.bridgeAudit.unresolvedSedolLines,5);
   assert.equal(r.bridgeAudit.bridgedCzk,0);
-  assert.equal(r.bridgeAudit.unresolvedSedolCzk,650);
+  assert.equal(r.bridgeAudit.unresolvedSedolCzk,725);
   assert.equal(r.bridgeAudit.matchedDirectIsins,0);
-  assert.equal(r.identityCoverage.sedolOnlyCzk,650);
+  assert.equal(r.identityCoverage.sedolOnlyCzk,725);
   assert.ok(Math.abs(r.mappedCzk+r.unallocatedCzk-r.denominatorCzk)<1e-7);
 });
 
@@ -110,7 +110,7 @@ test("stale identity-only reference stops creating matches even with browser cac
   const r=calculateXRay(holdings,[...fundRows,...old]);
   assert.equal(r.bridgeAudit.bridgedLines,0);
   assert.equal(r.bridgeAudit.matchedDirectIsins,0);
-  assert.equal(r.bridgeAudit.unresolvedSedolCzk,650);
+  assert.equal(r.bridgeAudit.unresolvedSedolCzk,725);
 });
 
 test("direct stock with same ticker but NO reliable ISIN remains a separate position",()=>{
