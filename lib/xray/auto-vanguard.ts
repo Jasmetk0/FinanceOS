@@ -170,6 +170,10 @@ export function parseVanguardHoldings(
   let stockWeight=0;
   let netOther=0;
   let negativeOther=0;
+  // GPX can report BOTH sides of the EXACT SAME FX spot trade. Only
+  // matching instrument IDs may offset each other. All other gross short
+  // positions remain subject to the conservative 2% guard.
+  const spotPairs=new Map<string,{positive:number;negative:number}>();
   for(let i=0;i<all.length;i++) {
     const r=all[i],weight=parseWeight(r.marketValuePercentage);
     const name=string(r.securityLongDescription)??string(r.issuerName);
@@ -190,7 +194,14 @@ export function parseVanguardHoldings(
     // NEVER against underlying equities or by increasing their weights.
     if (kind==="other") {
       netOther+=weight;
-      if(weight<0)negativeOther+=-weight;
+      if(type==="CT.SPOT"){
+        // Contract descriptions are opaque transaction IDs. Do not net
+        // different contracts or pretend their gross notionals are shares.
+        const pair=spotPairs.get(name)??{positive:0,negative:0};
+        if(weight>=0)pair.positive+=weight;
+        else pair.negative+=-weight;
+        spotPairs.set(name,pair);
+      } else if(weight<0)negativeOther+=-weight;
       continue;
     }
     if(weight<0)throw new RangeError("Vanguard vrátil zápornou akciovou expozici.");
@@ -212,12 +223,16 @@ export function parseVanguardHoldings(
       kind,asOf:date,source:"Vanguard EU official GPX holdings; "+date,
     });
   }
-  // Small offsetting FX/contract positions can safely reduce the
-  // non-equity cash bucket; material short exposure needs a different
-  // signed-notional model, so never silently normalize it into equities.
-  if(negativeOther>MAX_NEGATIVE_OTHER_PCT || netOther< -0.02) {
+  // CT.SPOT legs can be gross large, while cancelling to zero for the
+  // SAME instrument ID (VALL observed 2.67% long vs 2.67% short).
+  // Treat only residual unpaired short as risk, not the offsetting gross.
+  // Unpaired shorts elsewhere continue to count toward the 2% threshold.
+  const unpairedSpotNegative=[...spotPairs.values()].reduce(
+    (total,pair)=>total+Math.max(0,pair.negative-pair.positive),0);
+  const unmatchedNegative=negativeOther+unpairedSpotNegative;
+  if(unmatchedNegative>MAX_NEGATIVE_OTHER_PCT || netOther< -0.02) {
     throw new RangeError("Vanguard má významné záporné neakciové expozice: "+
-      negativeOther.toFixed(3)+" %.");
+      unmatchedNegative.toFixed(3)+" % (po odečtení přesně spárovaných spotových kontraktů).");
   }
   const weightSum=stockWeight+Math.max(0,netOther);
   if (dates.size!==1 ||weightSum<MIN_TOTAL_WEIGHT_PCT||weightSum>MAX_TOTAL_WEIGHT_PCT) {
