@@ -1,6 +1,6 @@
 "use client";
 
-import type { XRayIdentityCoverage, XRayFundCoverage } from "@/lib/xray/engine";
+import type { XRayIdentityCoverage, XRayFundCoverage, XRayBridgeAudit } from "@/lib/xray/engine";
 
 const money=(value:number)=>value.toLocaleString("cs-CZ",{maximumFractionDigits:0})+" Kč";
 const percent=(value:number)=>value.toLocaleString("cs-CZ",{maximumFractionDigits:2})+" %";
@@ -15,10 +15,11 @@ const buckets=[
 ] as const;
 
 export function XRayIdentityQuality({
-  coverage,funds,
+  coverage,funds,bridgeAudit,
 }:{
   coverage:XRayIdentityCoverage;
   funds:XRayFundCoverage[];
+  bridgeAudit:XRayBridgeAudit;
 }){
   const denominator=coverage.totalCzk;
   const knownByInstrument=coverage.isinCzk+coverage.bridgedCzk;
@@ -60,6 +61,55 @@ export function XRayIdentityQuality({
         <p className="mt-1 text-sm font-semibold tabular-nums">{money(coverage[b.key])}</p>
         <p className="mt-1 text-[11px] leading-4 text-[var(--muted)]">{b.hint}</p>
       </div>)}
+    </div>
+    <div className="mt-4 rounded-xl border border-[var(--border)] p-3" aria-label="Skutečně spárované identifikátory ETF">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-sm font-semibold">Skutečné využití SEDOL → ISIN</h3>
+        <span className="text-[11px] text-[var(--muted)]">Jen řádky ETF opravdu držených v portfoliu</span>
+      </div>
+      <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+        <div>
+          <p className="text-lg font-semibold tabular-nums">{bridgeAudit.bridgedLines.toLocaleString("cs-CZ")}</p>
+          <p className="text-[11px] text-[var(--muted)]">Úspěšně spárované řádky</p>
+        </div>
+        <div>
+          <p className="text-lg font-semibold tabular-nums">{money(bridgeAudit.bridgedCzk)}</p>
+          <p className="text-[11px] text-[var(--muted)]">Hodnota takto identifikovaných akcií</p>
+        </div>
+        <div>
+          <p className="text-lg font-semibold tabular-nums">{bridgeAudit.distinctBridgedIsins.toLocaleString("cs-CZ")}</p>
+          <p className="text-[11px] text-[var(--muted)]">Unikátních doložených ISIN</p>
+        </div>
+        <div>
+          <p className="text-lg font-semibold tabular-nums">{bridgeAudit.matchedDirectIsins.toLocaleString("cs-CZ")}</p>
+          <p className="text-[11px] text-[var(--muted)]">Shod s přímo drženými ISIN</p>
+        </div>
+      </div>
+      {bridgeAudit.funds.length>0?<details className="mt-3 text-xs text-[var(--muted)]">
+        <summary className="w-fit cursor-pointer font-semibold text-[var(--accent)]">
+          Rozpis skutečně spárovaných akcií podle ETF ({bridgeAudit.funds.length})
+        </summary>
+        <div className="mt-2 space-y-2">
+          {bridgeAudit.funds.map(f=><div key={f.fundIsin??f.fundSymbol}
+            className="flex flex-wrap justify-between gap-2 rounded-lg border border-[var(--border)] px-3 py-2">
+            <div>
+              <strong className="text-[var(--foreground)]">{f.fundSymbol}</strong>
+              <p>{f.bridgedLines.toLocaleString("cs-CZ")} spárovaných řádků ·
+                {" "}{f.unresolvedSedolLines.toLocaleString("cs-CZ")} řádků pouze se SEDOL</p>
+            </div>
+            <div className="text-right tabular-nums">
+              <strong className="text-[var(--foreground)]">{money(f.bridgedCzk)}</strong>
+              <p>{money(f.unresolvedSedolCzk)} bez vazby na ISIN</p>
+            </div>
+          </div>)}
+        </div>
+      </details>:null}
+      <p className="mt-2 text-[11px] leading-4 text-[var(--muted)]">
+        Jde o skutečný průnik identifikátorů v držených ETF, nikoli počet položek
+        v externím SPYI slovníku. Jedna akcie může být v několika ETF, proto jsou
+        počty řádků a unikátních ISIN rozdílné. Žádné referenční SPYI bez vlastnictví
+        se nezapočítává do hodnoty ani těchto počtů.
+      </p>
     </div>
     {missing.length>0?<details className="mt-4 text-xs text-[var(--muted)]">
       <summary className="cursor-pointer font-semibold text-[var(--accent)]">
