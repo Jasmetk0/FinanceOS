@@ -40,7 +40,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - name: Probe all eleven real ETF issuer endpoints
+      - name: Probe eleven issuer feeds and two Invesco archives
         run: node scripts/check-live-issuer-feeds.mjs --strict
       - name: Diagnose public vendor schemas after a failed probe
         if: failure()
