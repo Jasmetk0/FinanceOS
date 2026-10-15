@@ -96,6 +96,14 @@ export function reconcileIssuerRows(
   const retainedIsins: string[] = [];
   const regressedIsins: string[] = [];
   for (const [key, fund] of statuses) {
+    // A fund that changes from unowned identity-only reference to a real
+    // owned SPYI fund (or vice versa) must not inherit an old cache group
+    // under the opposite semantic role during an outage/issuer rollback.
+    const saved=backup.get(key);
+    if(saved?.length) {
+      const referenceCache=saved.every(r=>r.source.endsWith("; identity-only reference"));
+      if(referenceCache!==Boolean(fund.identityOnly))backup.delete(key);
+    }
     if (fund.status === "ok") {
       const rows = next.get(key);
       if (!rows?.length) throw new RangeError("Zdroj ohlásil úspěch, ale nevrátil žádné podklady.");
