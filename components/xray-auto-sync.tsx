@@ -221,7 +221,9 @@ export function XRayAutoSync({
               {f.error?<p className="mt-1 text-[var(--warning)]">{f.error}</p>:null}
               {f.sourceUrl?<a href={f.sourceUrl} rel="noreferrer" target="_blank"
                 className="mt-1 inline-block text-[var(--accent)] underline">
-                {f.sourceKind==="third-party-archive"||f.sourceUrl.startsWith("https://rebalix.com/")?
+                {f.sourceKind==="proxy-model"?
+                  "Odhad LYMS podle iShares CNDX · NE oficiální podklady LYMS ↗":
+                  f.sourceKind==="third-party-archive"||f.sourceUrl.startsWith("https://rebalix.com/")?
                   "Veřejný archiv · NE přímý zdroj emitenta ↗":"Oficiální zdroj ↗"}
               </a>:null}
             </div>;
