@@ -154,8 +154,9 @@ export function XRayAutoSync({
         <div>
           <h2 className="text-base font-semibold">Automatický rozklad ETF</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted)]">
-            ETF jsou přiřazena podle ISIN z propojených účtů. FinanceOS načítá kompletní dostupné podklady
-            od emitentů automaticky; CSV není povinné. Datum složení se může lišit od dnešního data i od ocenění.
+            ETF jsou přiřazena podle ISIN z propojených účtů. FinanceOS automaticky načítá kompletní dostupné
+            podklady přímo od emitentů; u EQQQ/EQAC i z označeného veřejného měsíčního archivu.
+            CSV není povinné. Datum složení se může lišit od dnešního data i od ocenění.
           </p>
         </div>
         <button type="button" disabled={loading} onClick={()=>void refresh(true)}
@@ -219,7 +220,10 @@ export function XRayAutoSync({
               </p>
               {f.error?<p className="mt-1 text-[var(--warning)]">{f.error}</p>:null}
               {f.sourceUrl?<a href={f.sourceUrl} rel="noreferrer" target="_blank"
-                className="mt-1 inline-block text-[var(--accent)] underline">Oficiální zdroj ↗</a>:null}
+                className="mt-1 inline-block text-[var(--accent)] underline">
+                {f.sourceKind==="third-party-archive"||f.sourceUrl.startsWith("https://rebalix.com/")?
+                  "Veřejný archiv · NE přímý zdroj emitenta ↗":"Oficiální zdroj ↗"}
+              </a>:null}
             </div>;
           })}
         </div>
@@ -236,7 +240,8 @@ export function XRayAutoSync({
       </details>:null}
       <XRayIssuerDiagnostics />
       <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
-        Podporované zdroje: Vanguard VWCE / VWRA / VWRP, State Street SPYI / IMIE / IMID a vybrané fondy iShares.
+        Podporované zdroje: Vanguard VWCE / VWRA / VWRP, State Street SPYI / IMIE / IMID,
+        vybrané fondy iShares a archiv Invesco EQQQ / EQAC (Rebalix, nikoliv přímý feed emitenta).
         Aktuálnost se posuzuje podle data skutečného složení, ne podle času, kdy jsme soubor stáhli.
         Zálohované automatické podklady jsou v tomto prohlížeči uchovávány maximálně 60 dní.
         Neúplné či chybné zdroje se nepovažují za živé.
