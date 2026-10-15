@@ -82,6 +82,12 @@ test("bad manual calendar date cannot override a valid issuer holdings day",()=>
   const official=basket(EQQQ,100,99.9,2,"complete-source");
   assert.deepEqual(combineConstituentSources(local,official),official);
 });
+test("future-dated manual snapshot cannot displace correctly dated automatic fund",()=>{
+  const local=basket(EQQQ,100,99.9,0,"wrongly future-dated manual");
+  for(const row of local)row.asOf="2099-01-01";
+  const official=basket(EQQQ,100,99.9,2,"verified archive");
+  assert.deepEqual(combineConstituentSources(local,official),official);
+});
 test("two independent valid funds are arbitrated without cross-fund mixing",()=>{
   const auto=[...basket(EQQQ,100,99.9,1,"Invesco archive"),
     ...basket(VALL,100,98.7,1,"Vanguard GPX")];
