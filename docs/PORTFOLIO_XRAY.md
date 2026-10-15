@@ -100,3 +100,23 @@ Tento přepínač znamená **deklaraci původu od dodavatele souboru, nikoli kry
 Rozpis akcií v X-Ray u indexově mapované syntetické expozice obsahuje viditelné označení `Referenční index`. Výpočet dál zachovává aktuální hodnotu fondu právě jednou a odlišuje nepřímo ekonomicky exponované akcie od přímo držených kusů. Originální import emitenta pro LYMS nedovolí bez rozlišení nahrát substitute basket jako fyzický rozklad.
 
 **Co není hotové:** není vytvořen nový automatický Invesco ani Amundi/Nasdaq serverový adapter. Oficiální Nasdaq zveřejňuje plný měsíční seznam vah na stránkách indexových politik, ale poslední ověřený PDF snapshot byl k 3. 8. 2026, což není dnešní live složení. Tento commit tyto historické váhy nenahrává jako aktuální a neodvozuje ekonomické expozice z pouhých top 10.
+
+
+## LYMS – automatický model ekonomické expozice z CNDX (15. 10. 2026)
+
+**LYMS / LU1829221024** je synteticky replikované ETF se swapovým náhradním košem. Prozatím není bezpečně dostupný aktuální bezklíčový export všech přesných vah referenčního indexu **Nasdaq-100 Notional NTR / XNDXNNR**. Nasdaq sice zveřejňuje všechna jména a historický vážený PDF soubor, veřejná verze úplných vah byla při vývoji k **3. 8. 2026**, tedy pro dnešní výpočet příliš stará.
+
+**Automatický užitečný odhad**, který se nedá zaměnit za přesný index:
+
+1. FinanceOS používá skutečný aktuální iShares **CNDX** (IE00B53SZB19, BlackRock product 253741), fyzicky replikující **Nasdaq-100 Index**, ze svého již existujícího oficiálního holdings CSV:
+   https://www.ishares.com/uk/individual/en/products/253741/ishares-nasdaq-100-ucits-etf/latest-holdings.csv
+2. Kompletní CSV od BlackRock musí obsahovat minimálně **90 akcií** a nejméně **98 % akciových vah** po vyloučení hotovosti/derivátů. Neznámá část LYMS se nepřepočítává na akcie.
+3. Data nesmějí být starší **14 dní** ani z budoucnosti. Tento limit se znovu vyhodnocuje **i z cache** ve výpočetním enginu, takže staré proxy pozice se nevydávají za platné. Chybějící nebo poškozený iShares feed nedopočítává žádné domnělé váhy.
+4. Podklady se přiřadí ekonomickému LYMS jako `reference-index-proxy`; nikdy se nezamění za `reference-index`, `fund-holdings` ani `substitute-basket`. Každý řádek má explicitní provenienci včetně ISIN CNDX.
+5. X-Ray u LYMS a v detailu každé akcie viditelně označuje **ODHAD**, nikoli přesné váhy Nasdaq/Amundi a nikoli přímé vlastnictví akcií. Hodnota LYMS se započte právě jednou. Pokud CSV neobsahuje ověřené ISIN akcií, nelze akcii na základě samotného tickeru bezpečně spojit s přímou pozicí; rozdíl je v přehledu identity.
+
+Dále je možné držet fyzické CNDX ve svém účtu: dostane samostatnou skutečnou expozici, zatímco syntetické LYMS užívá jeho váhy pouze jako **model**. CNDX má vlastní fyzický sklad a malé odchylky indexového trackingu či hotovosti; váhy CNDX nemusí přesně kopírovat XNDXNNR. Tento rozklad není živou expozicí indexu.
+
+Zdroj pro cílový index: [Amundi LYMS](https://www.amundietf.com/amundi/bel/en/instit/LU1829221024).
+Zdroj pro proxy: [iShares CNDX](https://www.ishares.com/uk/individual/en/products/253741/ishares-nasdaq-100-ucits-etf).
+Vhodný další krok: přidat přímo ověřený plný a současný Nasdaq XNDXNNR endpoint s vyšší prioritou než odhad.

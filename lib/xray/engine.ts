@@ -22,7 +22,7 @@ export interface XRayHolding {
 
 export type ExposureKind = "stock" | "crypto" | "other";
 /** Source semantics matter: a synthetic ETF's substitute basket is not index exposure. */
-export type XRayExposureBasis = "fund-holdings" | "reference-index" | "substitute-basket";
+export type XRayExposureBasis = "fund-holdings" | "reference-index" | "reference-index-proxy" | "substitute-basket";
 export interface XRayConstituent {
   fundSymbol: string;
   fundIsin: string | null;
@@ -42,7 +42,7 @@ export interface XRayFundContribution {
   fundSymbol: string;
   fundIsin: string | null;
   valueCzk: number;
-  exposureBasis?: "reference-index"; // only when backed by a complete labelled index snapshot
+  exposureBasis?: "reference-index" | "reference-index-proxy"; // explicit distinction: index vs proxy
 }
 
 export interface XRayDirectContribution {
@@ -77,7 +77,7 @@ export interface XRayFundCoverage {
   source: string | null;
   asOf: string | null;
   note: string | null;
-  exposureBasis?: "reference-index";
+  exposureBasis?: "reference-index" | "reference-index-proxy";
 }
 /**
  * These buckets describe the available identity evidence, not provenance
@@ -98,6 +98,8 @@ export interface XRayResult {
   directCzk: number;
   fundsCzk: number;
   mappedCzk: number;
+  /** Portion of mapped indirect exposure that is MODELLED, not a verified fund/index weight. */
+  estimatedProxyCzk: number;
   unallocatedCzk: number;
   mappedPct: number;
   exposures: XRayExposure[];
@@ -151,7 +153,7 @@ export function validateXRayConstituents(rows: XRayConstituent[]) {
     if (!r || typeof r.fundSymbol !== "string" || typeof r.securitySymbol !== "string" ||
         typeof r.securityName !== "string" || typeof r.kind !== "string" ||
         !["stock", "crypto", "other"].includes(r.kind) ||
-        (r.exposureBasis !== undefined && !["fund-holdings", "reference-index", "substitute-basket"].includes(r.exposureBasis)) ||
+        (r.exposureBasis !== undefined && !["fund-holdings", "reference-index", "reference-index-proxy", "substitute-basket"].includes(r.exposureBasis)) ||
         !Number.isFinite(r.weightPct) || r.weightPct < 0 || r.weightPct > 100 ||
         (r.fundIsin && !strongIsin(r.fundIsin)) ||
         (r.securityIsin && !strongIsin(r.securityIsin)) ||
@@ -204,7 +206,8 @@ function aggregateFundCoverage(rows:XRayFundCoverage[]): XRayFundCoverage[] {
       source:sources.length===1?sources[0]:null,
       asOf:dates.length===1?dates[0]:null,
       note:notes.join(" ")||null,
-      ...(group.every(r=>r.exposureBasis==="reference-index") ? {exposureBasis:"reference-index" as const} : {}),
+      ...(group.every(r=>r.exposureBasis==="reference-index") ? {exposureBasis:"reference-index" as const} :
+        group.every(r=>r.exposureBasis==="reference-index-proxy") ? {exposureBasis:"reference-index-proxy" as const} : {}),
     });
   }
   return result.sort((a,b)=>b.unmappedCzk-a.unmappedCzk || b.valueCzk-a.valueCzk);
@@ -252,7 +255,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     return "fund:" + JSON.stringify([fundKey, norm(row.securitySymbol)]);
   };
 
-  type FundSource = { symbols: Set<string>; isin: string | null; valueCzk: number; exposureBasis?: "reference-index" };
+  type FundSource = { symbols: Set<string>; isin: string | null; valueCzk: number; exposureBasis?: "reference-index" | "reference-index-proxy" };
   type Mutable = Omit<XRayExposure, "weightPct" | "totalCzk" |
     "fundSymbols" | "accounts" | "fundContributions" | "directContributions"> & {
       fundSymbols: Set<string>;
@@ -263,7 +266,7 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
   const exposed = new Map<string, Mutable>();
   const add = (key: string, kind: "stock" | "crypto", ticker: string, name: string, directValue: number,
     viaFund: number, quantity: number, account?: string, fund?: string, fundIsin?: string | null,
-    exposureBasis?: "reference-index") => {
+    exposureBasis?: "reference-index" | "reference-index-proxy") => {
     const id = kind + "|" + key;
     let item = exposed.get(id);
     if (!item) {
@@ -382,25 +385,38 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     const isSynthetic = fundInsightForIsin(h.isin)?.structure === "synthetic-equity";
     const bases = new Set(holdingsList.map(c=>c.exposureBasis ?? "fund-holdings"));
     const declaredIndex = bases.size===1 && bases.has("reference-index");
+    const declaredProxy = bases.size===1 && bases.has("reference-index-proxy");
     const indexedWeight = holdingsList.reduce((sum,c)=>sum+c.weightPct,0);
     const indexComplete = holdingsList.length>=90 && indexedWeight>=98 &&
       indexedWeight<=100+TOTAL_TOLERANCE && holdingsList.every(c=>c.kind==="stock") &&
       dates.length===1 && Boolean(dates[0]);
-    if ((isSynthetic && (!declaredIndex || !indexComplete)) ||
-        (!isSynthetic && bases.has("reference-index"))) {
+    // A proxy is an explicitly LESS accurate economic model, never a
+    // Nasdaq / Amundi-reported benchmark portfolio. Reject old cached proxy
+    // snapshots entirely, rather than silently passing them off as current.
+    const proxyDate=dates[0] ? Date.parse(dates[0]+"T00:00:00Z") : NaN;
+    const proxyAgeDays=(Date.now()-proxyDate)/86_400_000;
+    const proxyFresh=Number.isFinite(proxyAgeDays) && proxyAgeDays>=-1 && proxyAgeDays<=14;
+    if ((isSynthetic && (!(declaredIndex || declaredProxy) || !indexComplete ||
+          (declaredProxy && !proxyFresh))) ||
+        (!isSynthetic && (bases.has("reference-index") || bases.has("reference-index-proxy")))) {
       const reason=isSynthetic
         ? "Syntetické ETF: náhradní swapový koš nelze vydávat za referenční index. " +
-          "Indexová expozice vyžaduje výslovně označený úplný snapshot " +
-          "(alespoň 90 akciových řádků, váhy nejméně 98 % a datum)."
-        : "Fyzické ETF nemůže používat podklady označené jako referenční index.";
+          "Indexová expozice nebo modelová proxy vyžaduje výslovně označený úplný snapshot " +
+          "(alespoň 90 akciových řádků, váhy nejméně 98 % a datum). " +
+          "Modelový proxy rozklad musí být maximálně 14 dní starý."
+        : "Fyzické ETF nemůže používat podklady označené jako referenční index nebo proxy.";
       warnings.add(h.symbol+": "+reason);
       coverage.push({symbol:h.symbol,isin:h.isin,valueCzk:h.valueCzk,mappedPct:0,
         mappedCzk:0,unmappedCzk:h.valueCzk,source:holdingsList[0].source||null,
         asOf:dates[0]??null,note:reason});
       continue;
     }
-    const basis: "reference-index" | undefined = isSynthetic ? "reference-index" : undefined;
-    if (basis) warnings.add(h.symbol+": Ekonomická expozice dle indexu; akcie nejsou fyzicky drženy fondem.");
+    const basis: "reference-index" | "reference-index-proxy" | undefined = isSynthetic ?
+      declaredProxy ? "reference-index-proxy" : "reference-index" : undefined;
+    if (basis==="reference-index-proxy") {
+      warnings.add(h.symbol+": ODHAD ekonomické expozice podle fyzicky replikujícího ETF CNDX. " +
+        "Jde o proxy, nikoliv skutečné váhy indexu XNDXNNR, ani skutečné akcie LYMS.");
+    } else if (basis) warnings.add(h.symbol+": Ekonomická expozice dle indexu; akcie nejsou fyzicky drženy fondem.");
     let mapped = 0;
     for (const c of holdingsList) {
       if (c.kind === "other" || c.weightPct === 0 || c.exposureBasis==="substitute-basket") continue;
@@ -417,6 +433,8 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
       mapped += part;
     }
     coverage.push({ symbol: h.symbol, isin: h.isin, valueCzk: h.valueCzk, mappedPct: mapped / h.valueCzk * 100, mappedCzk: mapped, unmappedCzk: Math.max(0, h.valueCzk - mapped), source: holdingsList[0].source || null, asOf: dates[0] ?? null, note: mapped === 0 ? (fundInsightForIsin(h.isin)?.explanation ?? "Rozklad neobsahuje akcie nebo kryptoměny") :
+      basis==="reference-index-proxy" ?
+        "ODHAD podle akciových vah CNDX; NENÍ to oficiální skladba indexu XNDXNNR ani swapový koš LYMS." :
       basis ? "Ekonomická expozice podle referenčního indexu, nikoliv skutečné akcie ve swapovém koši." : null,
       ...(basis ? {exposureBasis:basis} : {}) });
   }
@@ -468,9 +486,13 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     throw new RangeError("Rozklad překročil hodnotu původního portfolia. Zkontroluj strukturu fondů.");
   }
   const fundCoverage = aggregateFundCoverage(coverage);
+  const estimatedProxyCzk = fundCoverage.filter(f=>f.exposureBasis==="reference-index-proxy")
+    .reduce((sum,f)=>sum+f.mappedCzk,0);
+  if(estimatedProxyCzk>mappedCzk+MONEY_EPSILON)
+    throw new RangeError("Modelový rozklad je vyšší než celkové X-Ray expozice.");
   return {
     identityCoverage,
-    denominatorCzk, directCzk, fundsCzk, mappedCzk, unallocatedCzk,
+    denominatorCzk, directCzk, fundsCzk, mappedCzk, estimatedProxyCzk, unallocatedCzk,
     mappedPct: denominatorCzk ? mappedCzk / denominatorCzk * 100 : 0,
     exposures, funds: fundCoverage, warnings: [...warnings],
   };
