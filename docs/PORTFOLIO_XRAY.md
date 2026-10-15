@@ -80,3 +80,23 @@ Při chybějícím automatickém seznamu podkladů se pro **výslovně ověřen�
 **Důležité:** Tyto klasifikace samy o sobě nejsou podkladové CSV a **nezvyšují procento pokrytí akcií/kryptoměn**. Neověřené a pákové expozice zůstávají v nerozloženém zbytku, aby seděl jmenovatel portfolia. Pro LYMS je třeba případnou budoucí indexovou expozici označit zvlášť od držeb swapového koše. Tím se snižuje riziko falešné přesnosti.
 
 Oficiální odkazy jsou zapsané v `lib/xray/fund-insights.ts`; vybírají se pouze podle ISIN. Tabulka tak poskytuje informaci, proč fond ještě není rozložený, ale nedomýšlí si podklady.
+
+
+## Syntetické ETF a referenční index – bezpečnost rozkladu (15. 10. 2026)
+
+Fond **LYMS (LU1829221024)** používá swap. Amundi zveřejňuje odděleně:
+- **Substitute basket / fund holdings:** fyzický náhradní koš akcií fondu (podklad swapové konstrukce).
+- **Index constituents / reference index:** ekonomickou expozici Nasdaq-100 Notional NTR. Ta vysvětluje, na jakých akciích ekonomicky závisí výkon fondu, ale tyto akcie fond nemusel fyzicky nakoupit.
+
+**Nikdy se nesmí automaticky zaměnit jeden seznam za druhý.** Nová ochrana se uplatňuje i na historické a ruční X-Ray/IndexedDB snapshoty. Staré podklady LYMS bez výslovného označení typu zůstanou nerozložené, i kdyby obsahovaly 100 % akcií. Zůstatek portfolia tím není ztracen.
+
+Standardní X-Ray CSV nyní podporuje volitelný sloupec `exposure_basis`:
+- `fund-holdings`: běžné fyzické fondové pozice (výchozí význam starších dat).
+- `substitute-basket`: fyzický náhradní swapový koš; **není** ekonomická indexová expozice.
+- `reference-index`: výslovně deklarovaný referenční index. U LYMS se započte *pouze* úplný, jednotně datovaný indexový seznam nejméně 90 akciových řádků s celkovou vahou alespoň 98 % a nejvýše 100 % (drobná numerická tolerance). Top 10 ani smíšený substitute/index soubor nesmějí projít.
+
+Tento přepínač znamená **deklaraci původu od dodavatele souboru, nikoli kryptografický důkaz vydavatele**. Pro automatické načítání musí server samostatně ověřit původ, přesný benchmark, datum a úplnost. Pro fyzická ETF včetně EQQQ/EQAC se soubory označené `reference-index` **nepoužijí jako skutečné holdings fondu**.
+
+Rozpis akcií v X-Ray u indexově mapované syntetické expozice obsahuje viditelné označení `Referenční index`. Výpočet dál zachovává aktuální hodnotu fondu právě jednou a odlišuje nepřímo ekonomicky exponované akcie od přímo držených kusů. Originální import emitenta pro LYMS nedovolí bez rozlišení nahrát substitute basket jako fyzický rozklad.
+
+**Co není hotové:** není vytvořen nový automatický Invesco ani Amundi/Nasdaq serverový adapter. Oficiální Nasdaq zveřejňuje plný měsíční seznam vah na stránkách indexových politik, ale poslední ověřený PDF snapshot byl k 3. 8. 2026, což není dnešní live složení. Tento commit tyto historické váhy nenahrává jako aktuální a neodvozuje ekonomické expozice z pouhých top 10.
