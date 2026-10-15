@@ -54,3 +54,20 @@ for(const isin of ids){
   }
  }catch(e){console.log("ISHARES_UK_PAGE_ERROR "+JSON.stringify({isin,error:String(e)}));}
 }
+
+import {fetchSpyiHoldings} from "../lib/xray/auto-spyi.ts";
+import {buildSedolIsinCrosswalk} from "../lib/xray/security-identity.ts";
+try {
+ const result=await fetchSpyiHoldings("SPYI",true);
+ const rows=result.rows.filter(x=>x.kind==="stock");
+ const crosswalk=buildSedolIsinCrosswalk(result.rows);
+ console.log("SPYI_LIVE_IDENTITY_REFERENCE "+JSON.stringify({
+  url:result.sourceUrl,asOf:result.rows[0]?.asOf,stocks:rows.length,
+  validSedolIsinPairs:rows.filter(r=>r.securitySedol&&r.securityIsin).length,
+  uniqueBridgeCount:crosswalk.linkedCount,
+  conflicts:crosswalk.conflicted.size,
+  stockPercent:rows.reduce((sum,r)=>sum+r.weightPct,0),
+ }));
+}catch(error){
+ console.log("SPYI_LIVE_IDENTITY_FAILED "+String(error));
+}
