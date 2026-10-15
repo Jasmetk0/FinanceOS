@@ -107,3 +107,10 @@ Reálný úplný GPX E161 soubor k 30. 9. 2026 obsahoval 7 383 řádků, včetn�
 Nový parser kompenzuje opačné spotové váhy **pouze pokud mají identický kontraktní identifikátor v `securityLongDescription`**. Nemůže kompenzovat jiný spot, FX forward, měnovou hotovost nebo zápornou akcii. Všechny nepárované záporné neakciové váhy se dále kontrolují proti konzervativnímu limitu 2 %. Celková záporná net cash expozice pod −0,02 % nebo záporná akcie stále znamená odmítnutí celého souboru. `CT.SPOT`, forwardy, futures a hotovost se **nepřičítají k akciím**.
 
 VALL má i veřejně reportované futures `DE.IND`; jejich kladná netto aktiva zůstávají v `other/unallocated`, protože samostatný futures-notional look-through není bezpečně implementovaný. Výsledné procento akcií proto může být < 100 %, aniž by byla chyba v účetnictví.
+
+
+### Produkční potvrzení kompletního VALL GPX feedu
+
+Druhý nezávislý běh GitHub Actions 15. 10. 2026 s produkčními parsery prokázal, že stránkování `E161` vrací **7 383 originálních GPX položek** v pěti stránkách (4 × 1 500 + 1 × 1 383). Po sloučení identických akciových identit a vynechání nulových vah bylo vytvořeno **6 972 výsledných řádků**, z toho **96,35365 % akciová expozice**, **3,64597 % ostatní netto aktiva** a **0,00038 % reziduum** způsobené publikovaným zaokrouhlením. Jednotné datum je **30. 9. 2026**. Tyto hodnoty vycházejí z opravdového emitentského souboru, nikoli z ukázkových testovacích vah.
+
+Pro audit živých zdrojů je k dispozici pravidelný `scripts/check-live-issuer-feeds.mjs`, který používá identický produkční fetcher. Není garantovaná budoucí dostupnost veřejného GPX rozhraní.
