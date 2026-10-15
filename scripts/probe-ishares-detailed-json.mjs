@@ -13,6 +13,26 @@ for(const isin of ids){
   for(const pattern of [/\d{11,15}\.ajax/gi,/\.ajax\?tab=all[^"'<>\s]*/gi,/aaData/gi,/fileType=json/gi]){
     sample.push({pattern:String(pattern),matches:[...html.matchAll(pattern)].slice(0,5).map(m=>({value:m[0],at:m.index,around:html.slice(Math.max(0,m.index-135),m.index+155).replace(/\s+/g," ")}))});
   }
+  const patterns=[
+    "US5949181045","US67066G1040","MSFT","MICROSOFT",
+    "holdingsData","fundHoldings","portfolioHoldings","issuerTicker",
+    "instrumentIsin","securityIsin","securityIdentifier","__NEXT_DATA__",
+    "application/json","application/ld+json","window.__","dataLayer",
+    "holdings",""ISIN"","isin","securityId","detailedHoldings"
+  ];
+  const sample2=patterns.map(term=>{
+    const lower=html.toLowerCase(),needle=term.toLowerCase();
+    const at=lower.indexOf(needle);
+    return {term,count:lower.split(needle).length-1,index:at,
+      around:at<0?null:html.slice(Math.max(0,at-170),at+420).replace(/\\s+/g," ").slice(0,620)};
+  });
+  const allEquityIsins=[...html.matchAll(/\\b(?:US|GB|CH|NL|IE|DE)[0-9A-Z]{10}\\b/g)];
+  console.log("ISHARES_UK_HTML_ISIN_SCAN "+JSON.stringify({isin,status:page.status,size:html.length,
+    countAll:allEquityIsins.length,
+    unique:new Set(allEquityIsins.map(x=>x[0])).size,
+    firstIsins:[...new Set(allEquityIsins.slice(0,30).map(x=>x[0]))],
+    sample:sample2
+  }));
   console.log("ISHARES_UK_PAGE_PROBE "+JSON.stringify({isin,status:page.status,bytes:html.length,sample}));
   const hashes=[...new Set([...html.matchAll(/\d{11,15}\.ajax/g)].map(m=>m[0]))];
   // Historical well-known UK iShares AJAX widget id; also try any IDs
