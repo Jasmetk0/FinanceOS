@@ -12,8 +12,11 @@ Po kliknutí na **Spustit skutečný test zdrojů** klient zavolá lokální POS
 - iShares Core MSCI World — ISIN IE00B4L5Y983
 - iShares MSCI ACWI — ISIN IE00B6R52259
 - iShares Core MSCI EM IMI — ISIN IE00BKM4GZ66
+- iShares MSCI World Small Cap — ISIN IE00BF4RFH31
+- iShares S&P SmallCap 600 — ISIN IE00B2QWCY14
+- iShares MSCI India — ISIN IE00BZCQB185
 
-To je celkem šest ověřovaných konkrétních zdrojů. Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
+To je celkem devět ověřovaných konkrétních zdrojů. Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
 
 **Výsledek není jen odpověď HTTP 200.** Po úspěšném načtení parserem musí:
 
@@ -32,7 +35,7 @@ Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akc
 - **Neúplné váhy**: validní parsovaný podkladový seznam vykazuje méně než 98 % hodnoty; přiznaný zbytek se nedopočítává na akcie.
 - **Chyba stahování / parseru**: selhání dostupnosti, změna formátu, neplatná váha, chybný identifikátor či jiné neúspěšné ověření.
 
-Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 6 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
+Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 9 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
 
 ## Bezpečnost a hranice
 
