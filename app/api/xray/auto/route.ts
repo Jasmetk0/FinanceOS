@@ -4,6 +4,7 @@ import { getXRayHoldings } from "@/lib/server/xray";
 import { issuerFeedForIsin, fetchIsharesHoldings } from "@/lib/xray/auto-ishares";
 import { SPYI_ISIN, fetchSpyiHoldings } from "@/lib/xray/auto-spyi";
 import { VWCE_ISIN, fetchVwceHoldings } from "@/lib/xray/auto-vanguard";
+import { invescoArchiveForIsin, fetchInvescoArchiveHoldings } from "@/lib/xray/auto-invesco";
 import type { XRayConstituent } from "@/lib/xray/engine";
 import { fundInsightForIsin } from "@/lib/xray/fund-insights";
 
@@ -13,7 +14,7 @@ export const maxDuration = 120;
 
 /**
  * Issuer refresh is read-only; it uses stored broker-backed holdings and public
- * allowlisted official iShares URLs. NEVER forward user API credentials.
+ * allowlisted issuer URLs and explicitly labelled third-party archives. NEVER forward user API credentials.
  * Each fund's failure is reported independently without inventing exposure.
  */
 export async function GET(request: Request) {
@@ -28,9 +29,10 @@ export async function GET(request: Request) {
       if (h.assetClass !== "etf") continue;
       const isin = h.isin?.trim().toUpperCase() || null;
       const feed = issuerFeedForIsin(isin);
+      const archive=invescoArchiveForIsin(isin);
       const supportsSpyi = isin === SPYI_ISIN;
       const supportsVwce = isin === VWCE_ISIN;
-      if ((feed || supportsSpyi || supportsVwce) && isin) {
+      if ((feed || supportsSpyi || supportsVwce || archive) && isin) {
         if (!funds.has(isin)) funds.set(isin,{isin,symbol:h.symbol});
       } else {
         const id = isin ?? "symbol:"+h.symbol.toUpperCase();
@@ -48,14 +50,17 @@ export async function GET(request: Request) {
     // issuer must not invalidate all other, successfully fetched funds.
     const results = await Promise.all([...funds.values()].map(async f => {
       const feed = issuerFeedForIsin(f.isin);
-      if (!feed && f.isin!==SPYI_ISIN && f.isin!==VWCE_ISIN) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
+      const archive=invescoArchiveForIsin(f.isin);
+      if (!feed && f.isin!==SPYI_ISIN && f.isin!==VWCE_ISIN && !archive) return {isin:f.isin,symbol:f.symbol,status:"unsupported" as const,rows:[] as XRayConstituent[]};
       try {
         const fetched = feed ? await fetchIsharesHoldings(feed,f.symbol,force) :
           f.isin===SPYI_ISIN ? await fetchSpyiHoldings(f.symbol,force) :
-          await fetchVwceHoldings(f.symbol,force);
+          f.isin===VWCE_ISIN ? await fetchVwceHoldings(f.symbol,force) :
+          await fetchInvescoArchiveHoldings(archive!,f.symbol,force);
         return {isin:f.isin,symbol:f.symbol,status:"ok" as const,
           rows:fetched.rows,sourceUrl:fetched.sourceUrl,fetchedAt:fetched.fetchedAt,
-          asOf:fetched.rows[0]?.asOf ?? "",cached:fetched.cached};
+          asOf:fetched.rows[0]?.asOf ?? "",cached:fetched.cached,
+          sourceKind:archive?"third-party-archive" as const:"official" as const};
       } catch(error) {
         return {isin:f.isin,symbol:f.symbol,status:"error" as const,rows:[] as XRayConstituent[],
           error:error instanceof Error?error.message:String(error)};
