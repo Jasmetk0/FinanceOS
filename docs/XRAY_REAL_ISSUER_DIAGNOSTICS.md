@@ -53,3 +53,6 @@ Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akc
 - Pro reálné potvrzení funkčnosti Vanguard GPX a State Street XLSX je potřeba spustit diagnostiku na uživatelově zařízení s fungujícím přístupem k jejich doménám. CI testuje deterministické syntetické odpovědi; síťové externí testy se v CI nespouštějí.
 
 **Co při selhání:** nejprve se podívej na důvod u konkrétního ETF a jeho originální URL. FinanceOS zároveň zachovává poslední dříve validovaný podkladový snapshot v lokální záloze a označí jeho datum — nikdy si obsah automaticky nevymyslí.
+
+
+**VALL:** Ověřuje se samostatným `portId=E161`. Úspěch HTTP 200 nestačí: všechny stránky fondu musejí patřit FTSE Global All-Cap, obsahovat validní SEDOL (je-li použit k identifikaci), váhy a jednotné datum. Ověřený snapshot 30. 9. 2026 může být 15. 10. v diagnostice veden jako `stale`, i když je rozklad platný a síť funguje. Nezaměňujte datum stažení s `effectiveDate` od vydavatele.
