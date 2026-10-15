@@ -48,8 +48,12 @@ export function XRayIssuerDiagnostics(){
       if(!json || typeof json!=="object")throw new Error("Neplatná odpověď diagnostiky.");
       const result=json as DiagnosticReport;
       if(!response.ok)throw new Error(result.error||"Diagnostika nebyla dostupná.");
-      if(!Array.isArray(result.sources)||result.sources.length!==6)
-        throw new RangeError("Neúplný seznam zdrojů emitentů.");
+      if(!Array.isArray(result.sources)||!result.sources.length||
+        !result.sources.every(item=>item&&typeof item.isin==="string"&&typeof item.symbol==="string")||
+        new Set(result.sources.map(item=>item.isin)).size!==result.sources.length||
+        ![result.healthy,result.limited,result.failed].every(Number.isSafeInteger)||
+        result.healthy+result.limited+result.failed!==result.sources.length)
+        throw new RangeError("Neplatný nebo neúplný seznam zdrojů emitentů.");
       setReport(result);
     }catch(e){
       setError(e instanceof Error?e.message:String(e));
@@ -61,14 +65,14 @@ export function XRayIssuerDiagnostics(){
     </summary>
     <p className="mt-2 leading-5">
       Tento test provede skutečná síťová volání z tvého spuštěného FinanceOS,
-      nikoli simulaci. Ověří všech šest podporovaných ETF zdrojů přes stejné
-      produkční parsery a zobrazí výsledek i chyby. Nespouští synchronizaci brokerů,
+      nikoli simulaci. Ověří všechny aktuálně podporované zdroje přes stejné
+      produkční parsery, včetně odděleně označeného archivu Rebalix, a zobrazí chyby. Nespouští synchronizaci brokerů,
       nepoužívá jejich API klíče a nemění hodnoty portfolia.
     </p>
     <div className="mt-2 flex flex-wrap items-center gap-3">
       <button type="button" disabled={loading} onClick={()=>void run()}
         className="finance-action finance-action-primary">
-        {loading?"Kontroluji všech 6 zdrojů…":"Spustit skutečný test zdrojů"}
+        {loading?"Kontroluji zdroje…":"Spustit skutečný test zdrojů"}
       </button>
       <span>Příliš časté opakování je omezeno na jeden test za 5 minut.</span>
     </div>
@@ -98,7 +102,7 @@ export function XRayIssuerDiagnostics(){
           </p>}
           <p className="mt-1">Doba požadavků: {(item.elapsedMs/1000).toLocaleString("cs-CZ",{maximumFractionDigits:1})} s</p>
           <a href={item.sourceUrl} target="_blank" rel="noreferrer"
-            className="mt-2 inline-block text-[var(--accent)] underline">Originální zdroj ↗</a>
+            className="mt-2 inline-block text-[var(--accent)] underline">Zdroj podkladů ↗</a>
         </div>)}
       </div>
       <p className="text-[11px] leading-5">

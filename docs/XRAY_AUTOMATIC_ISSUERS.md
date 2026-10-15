@@ -66,4 +66,23 @@ BlackRock CNDX je samostatný desátý iShares feed a jeho fyzické držby se v 
 
 Na GitHub Actions 15. 10. 2026 (Windows, Node 24) se spustil **stejný produkční iShares parser** s přímým HTTPS stažením skutečného souboru product 253741. Výsledek: **106 položek, z toho 101 kladných akciových podkladů**, datum `2026-10-14`, po vyloučení neakciových pozic ekonomický podíl akcií **99,9539055 %**. Model prošel validačními limity bez klíče či uživatelských dat. To ověřuje dostupnost v době testu, nikoli nepřetržitou budoucí dostupnost. Další hlídání zdroje dělá existující veřejný iShares canary, který automaticky iteruje všechny položky whitelistu.
 
-**Pozor na diagnostiku:** PR #79 opravuje klientskou chybu pevně očekávaných šesti zdrojů. Mergni nejdříve #79, až potom toto PR. Bez #79 je současná klientská diagnostika již před touto změnou chybná.
+**Diagnostika:** původní pevný limit 6 zdrojů je odstraněn. Po spojení obou změn se kontroluje všech 14 zdrojů dynamicky, včetně CNDX jako zvláštního proxy vstupu a obou nezávislých archivů Invesco.
+
+
+## Úplné archivované Invesco podklady EQQQ / EQAC (15. 10. 2026)
+
+Doplněné veřejné, **bezklíčové** zdroje:
+
+| ISIN | Fond | Složení | Transport |
+|---|---|---|---|
+| IE0032077012 | EQQQ Dist | Měsíční snapshot fyzických podkladů | [Rebalix archiv](https://rebalix.com/en/etf/IE0032077012) |
+| IE00BFZXGZ54 | EQAC Acc | Měsíční snapshot fyzických podkladů | [Rebalix archiv](https://rebalix.com/en/etf/IE00BFZXGZ54) |
+
+**Důležité:** Rebalix není Invesco. Jde o nezávislý veřejný archiv údajů deklarovaných emitentem, nikoliv o přímé živé napojení na emitenta, a nelze nezávisle prokázat úplnost emitentem. Stav je vždy označen jako archiv a datem `asOf` uvedeným přímo v popisu zveřejněného souboru, nikoliv datem stažení. Při ověření 15. 10. 2026 uváděly oba dokumenty složení k **1. 10. 2026** (102 řádků).
+
+Server využívá fixní allowlist dvojic ISIN a veřejný XLSX odkaz; čte kompletní zveřejněnou tabulku na listu 1, kontroluje datum příslušné stránky, 90+ akcií, přesné ISIN, nominální procentní váhy, součet 98–100 %, a explicitně odděluje řádek `Cash and/or Derivatives`. Žádné top 10 vydávané za celé portfolio, žádné zaměňování EQQQ a EQAC a žádné normalizování neúplného zdroje na 100 %. Selhání archivu neovlivní přímé emitentské zdroje. Stav diagnostiky uvádí zastarání; 12h server cache neopravňuje označit data za dnešní.
+
+Stránky: https://rebalix.com/en/etf/IE0032077012, https://rebalix.com/en/etf/IE00BFZXGZ54
+Souborová URL: https://rebalix.com/api/etf/composizione?isin=IE0032077012&lang=en a analogicky pro `IE00BFZXGZ54`.
+
+Zůstává otevřené: přímé denní API Invesca pro originální držby, které se nepodařilo bezpečně ověřit. Pokud takový zdroj bude k dispozici, má být upřednostněn před archivem se starším datem.

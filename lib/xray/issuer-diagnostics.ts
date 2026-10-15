@@ -8,7 +8,7 @@ import { classifyIssuerDate } from "./issuer-reliability.ts";
 
 export type IssuerHealthState = "healthy" | "aging" | "stale" | "partial" | "failed";
 export interface IssuerHealthRecord {
-  provider: "iShares" | "Vanguard" | "State Street";
+  provider: "iShares" | "Vanguard" | "State Street" | "Rebalix archive";
   name: string;
   isin: string;
   symbol: string;

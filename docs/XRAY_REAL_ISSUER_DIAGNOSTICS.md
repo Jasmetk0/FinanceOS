@@ -17,8 +17,11 @@ Po kliknutí na **Spustit skutečný test zdrojů** klient zavolá lokální POS
 - iShares MSCI India — ISIN IE00BZCQB185
 - iShares MSCI Global Semiconductors — ISIN IE000I8KRLL9
 - iShares Global Clean Energy Transition — ISIN IE00B1XNHC34
+- iShares Nasdaq-100 CNDX — ISIN IE00B53SZB19 (referenční **zdroj proxy modelu LYMS**, nikoli fyzické podklady Amundi)
+- Rebalix **archiv Invesco**, EQQQ Dist — ISIN IE0032077012
+- Rebalix **archiv Invesco**, EQAC Acc — ISIN IE00BFZXGZ54
 
-To je celkem jedenáct ověřovaných konkrétních zdrojů. Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
+To je celkem čtrnáct ověřovaných konkrétních zdrojů (včetně dvou nezávislých archivů Rebalix, nikoliv přímých zdrojů emitenta). Žádné URL, ISIN ani credentiály nejsou dodávány uživatelem.
 
 **Výsledek není jen odpověď HTTP 200.** Po úspěšném načtení parserem musí:
 
@@ -26,7 +29,7 @@ To je celkem jedenáct ověřovaných konkrétních zdrojů. Žádné URL, ISIN 
 - být přítomné alespoň 10 podkladů,
 - být platný a jednotný den posledního složení od emitenta,
 - nebýt v budoucnosti,
-- odpovídat whitelistovaná oficiální URL zdroje,
+- odpovídat whitelistovaná povolená veřejná URL příslušného emitenta nebo výslovně označeného nezávislého archivu,
 - projít původní validací vah, typů a duplicit.
 
 Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akcií, ostatních instrumentů a chybějících vah, latenci a případné konkrétní chybové hlášení. Kategorie:
@@ -37,7 +40,7 @@ Diagnostika uvádí datum skutečného složení, počet podkladů, procenta akc
 - **Neúplné váhy**: validní parsovaný podkladový seznam vykazuje méně než 98 % hodnoty; přiznaný zbytek se nedopočítává na akcie.
 - **Chyba stahování / parseru**: selhání dostupnosti, změna formátu, neplatná váha, chybný identifikátor či jiné neúspěšné ověření.
 
-Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 11 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
+Časy a stav se znovu zjišťují jen po **explicitním kliknutí**. Test je kvůli 14 vzdáleným zdrojům potenciálně pomalejší. Server znovu používá výsledek z posledních 5 minut a sdílí souběžné požadavky mezi otevřenými okny. Bez toho by časté klikání mohlo zbytečně zatěžovat vydavatele fondů.
 
 ## Bezpečnost a hranice
 

@@ -9,6 +9,7 @@ export interface IssuerFundStatus {
   cached?: boolean;
   holdings?: number;
   sourceUrl?: string;
+  sourceKind?: "official" | "third-party-archive" | "proxy-model";
   error?: string;
 }
 
