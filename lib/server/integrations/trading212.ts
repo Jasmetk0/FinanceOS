@@ -1,5 +1,10 @@
 import type { ProviderId, TransactionKind } from "@/lib/domain";
 import { canonicalSecurityIdentity } from "@/lib/shared/finance-normalization.mjs";
+import {
+  assertTrading212PositionSnapshot,
+  trading212PositionValuation,
+  trading212PositionUnrealizedPnl,
+} from "@/lib/shared/trading212-position-guard.mjs";
 import { withProviderSyncLock } from "@/lib/server/provider-sync-lock";
 import { maybeToCzk, toCzk } from "@/lib/server/fx";
 import {
@@ -382,6 +387,11 @@ export async function syncTrading212() {
     ["currentValue"],
     0,
   );
+  // Verify the ENTIRE Trading 212 snapshot before any account or holding
+  // writes: a partial API response must never clear previously valid shares.
+  const checkedPositions = assertTrading212PositionSnapshot(positionsRaw,{
+    investmentsCurrentValue:providerInvestmentsCurrentValue,pieCash,
+  });
   const investedValue = providerInvestmentsCurrentValue;
   const totalValue = numberValue(summary, ["totalValue"], 0);
   const realizedPnl = numberValue(investments, ["realizedProfitLoss"], 0);
@@ -424,11 +434,12 @@ export async function syncTrading212() {
   });
 
   const holdings = [];
-  for (const rawPosition of Array.isArray(positionsRaw) ? positionsRaw : []) {
+  for (const rawPosition of checkedPositions) {
     const position = asObject(rawPosition);
     const instrument = asObject(position.instrument);
     const ticker = stringValue(instrument, ["ticker"], stringValue(position, ["ticker"]));
-    if (!ticker) continue;
+    // Missing identifiers are rejected by the preflight above, never skipped.
+    if (!ticker) throw new RangeError("Trading 212: pozice bez tickeru.");
 
     const metadata = metadataByTicker.get(ticker) ?? instrument;
     const instrumentCurrency = stringValue(
@@ -436,31 +447,15 @@ export async function syncTrading212() {
       ["currencyCode", "currency"],
       stringValue(instrument, ["currency", "currencyCode"], currency),
     ).toUpperCase();
-    const walletImpact = asObject(position.walletImpact);
-    const walletCurrency = stringValue(
-      walletImpact,
-      ["currency"],
-      currency,
-    ).toUpperCase();
-
     const quantity = numberValue(position, ["quantity"]);
     const averagePrice = numberValue(position, ["averagePricePaid"], 0);
     const currentPrice = numberValue(position, ["currentPrice"], 0);
-    const fallbackMarketValue = quantity * currentPrice;
-    const fallbackCost = quantity * averagePrice;
-    const marketValue = numberValue(
-      walletImpact,
-      ["currentValue"],
-      fallbackMarketValue,
-    );
-    const pnl = numberValue(
-      walletImpact,
-      ["unrealizedProfitLoss"],
-      marketValue - fallbackCost,
-    );
+    const valuation = trading212PositionValuation(position,instrumentCurrency);
+    const marketValue = valuation.marketValue;
+    const pnl = trading212PositionUnrealizedPnl(position,valuation);
     const [marketValueCzk, pnlCzk] = await Promise.all([
-      toCzk(marketValue, Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency),
-      toCzk(pnl, Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency),
+      toCzk(marketValue,valuation.currency),
+      pnl === null ? Promise.resolve(null) : toCzk(pnl,valuation.currency),
     ]);
 
     const identity = canonicalSecurityIdentity(
@@ -490,7 +485,7 @@ export async function syncTrading212() {
       quantity,
       averagePrice,
       currentPrice,
-      currency: Object.keys(walletImpact).length ? walletCurrency : instrumentCurrency,
+      currency: valuation.currency,
       marketValue,
       marketValueCzk,
       unrealizedPnl: pnl,
