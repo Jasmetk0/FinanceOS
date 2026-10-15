@@ -98,6 +98,8 @@ export interface XRayResult {
   directCzk: number;
   fundsCzk: number;
   mappedCzk: number;
+  /** Portion of mapped indirect exposure that is MODELLED, not a verified fund/index weight. */
+  estimatedProxyCzk: number;
   unallocatedCzk: number;
   mappedPct: number;
   exposures: XRayExposure[];
@@ -484,9 +486,13 @@ export function calculateXRay(holdings: XRayHolding[], compositions: XRayConstit
     throw new RangeError("Rozklad překročil hodnotu původního portfolia. Zkontroluj strukturu fondů.");
   }
   const fundCoverage = aggregateFundCoverage(coverage);
+  const estimatedProxyCzk = fundCoverage.filter(f=>f.exposureBasis==="reference-index-proxy")
+    .reduce((sum,f)=>sum+f.mappedCzk,0);
+  if(estimatedProxyCzk>mappedCzk+MONEY_EPSILON)
+    throw new RangeError("Modelový rozklad je vyšší než celkové X-Ray expozice.");
   return {
     identityCoverage,
-    denominatorCzk, directCzk, fundsCzk, mappedCzk, unallocatedCzk,
+    denominatorCzk, directCzk, fundsCzk, mappedCzk, estimatedProxyCzk, unallocatedCzk,
     mappedPct: denominatorCzk ? mappedCzk / denominatorCzk * 100 : 0,
     exposures, funds: fundCoverage, warnings: [...warnings],
   };
