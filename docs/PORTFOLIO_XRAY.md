@@ -223,3 +223,10 @@ Původní sektorový X-Ray uměl sektor akcie načíst jen přímo z emitentské
 Převod nepoužívá ticker, podobnost názvu, firmu jako celek ani zeměpis. Zdroj sektoru musí být **skutečně vlastněné ETF**, již použité v `calculateXRay`, s jasným oficiálním `source` a stejným `asOf` jako použitá skladba. Pouze referenční SPYI stažené kvůli identitě, které uživatel nevlastní, nesmí navíc sloužit jako sektorový důkaz. Neprověřené ruční CSV ani proxy LYMS/CNDX klasifikaci neposkytují. Při dvou různých emitentských sektorech pro stejný ISIN se převod vypne a případný přímý podíl akcie zůstane neklasifikovaný.
 
 Vypočtené Kč jsou **již existující jednotlivé příspěvky vlastněného ETF** ve `XRayExposure.fundContributions`; žádné finanční aktivum se nepřidává ani neoceňuje znovu. Sektorový audit hlídá konzistenci klasifikovaného NAV s `mappedCzk` a zbytek ETF včetně neidentifikovaných pozic ponechává jako neklasifikovaný. V dashboardu zůstává zásadní, že pokud žádné fyzicky vlastněné ETF nesdílí ověřený ISIN a sektor, Vanguard **není** sektorově klasifikován. Průnik sektorů je vždy jen aktuálně doložený výřez portfolia.
+
+
+## Audit původu sektorové klasifikace (16. 10. 2026)
+
+Panel sektorů rozlišuje **tři neslučované části**: přímé investice s ověřeným ISIN, ETF příspěvky klasifikované podle vlastního oficiálního sektorového sloupce a ETF příspěvky se sektorem přeneseným přes identický prokázaný ISIN ze skutečně drženého jiného fyzického fondu. V rozbalovacím detailu lze ověřit původ v jednotlivých sektorech i fondech. Označení „přes ISIN“ není důkazem nové investice ani novou skladbou emitenta.
+
+Pro každý sektor platí `přes ETF = sektor přímo z emitenta + sektor převzatý přes ISIN`. Součty obou kategorií musejí sedět po sektorech, fondech i v celém reportu; výsledná klasifikace a neznámý zbytek musí dát celé NAV portfolia. Fond s nulovou skutečně rozloženou hodnotou **nesmí poskytovat klasifikační důkaz** přes pouhou existenci stejně datovaného zdrojového řádku. Zcela neověřené pozice a modelový LYMS zůstávají neklasifikované. Žádná část nezapisuje transakce, ceny nebo externí vklady.

@@ -54,6 +54,8 @@ test("sector table preserves full portfolio NAV without filling unclassified Van
  const result=calculateXRaySectorExposure(report,rows);
  close(report.denominatorCzk,4550);
  close(result.classifiedCzk,1740);
+ close(result.issuerClassifiedCzk,1300);
+ close(result.verifiedIsinClassifiedCzk,140);
  close(result.directUnclassifiedCzk,50);
  close(result.fundUnclassifiedCzk,2760);
  close(result.unclassifiedCzk,2810);
@@ -64,6 +66,8 @@ test("sector table preserves full portfolio NAV without filling unclassified Van
  const it=result.sectors.find(x=>x.sector==="Information Technology");
  assert.ok(it);
  close(it.viaEtfCzk,940);
+ close(it.viaIssuerCzk,800);
+ close(it.viaVerifiedIsinCzk,140);
  close(it.directCzk,300);
  close(it.totalCzk,1240);
  close(it.portfolioPct,100*1240/4550);
@@ -74,7 +78,10 @@ test("sector table preserves full portfolio NAV without filling unclassified Van
  const vwce=result.funds.find(f=>f.isin===VWCE);
  const lyms=result.funds.find(f=>f.isin===LYMS);
  assert.equal(vwce.classifiedCzk,140);
+ assert.equal(vwce.issuerClassifiedCzk,0);
+ assert.equal(vwce.verifiedIsinClassifiedCzk,140);
  assert.equal(lyms.classifiedCzk,0);
+ close(result.funds.reduce((v,f)=>v+f.issuerClassifiedCzk+f.verifiedIsinClassifiedCzk,0),result.issuerClassifiedCzk+result.verifiedIsinClassifiedCzk);
  close(report.mappedCzk+report.unallocatedCzk,result.denominatorCzk);
 });
 test("direct holding with unverified ticker or no issuer ISIN remains unclassified",()=>{
@@ -175,4 +182,8 @@ test("sector UI reads verified source data and discloses proxy & unclassified de
  assert.ok(ui.includes("result.modelProxyUnclassifiedCzk"));
  assert.ok(ui.includes("result.denominatorCzk"));
  assert.ok(ui.includes("Neznámé / neklasifikované"));
+ assert.ok(ui.includes("result.issuerClassifiedCzk"));
+ assert.ok(ui.includes("result.verifiedIsinClassifiedCzk"));
+ assert.ok(ui.includes("aria-expanded={showOrigin}"));
+ assert.ok(ui.includes("Ověřený ISIN"));
 });

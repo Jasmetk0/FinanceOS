@@ -33,10 +33,13 @@ test("Vanguard exact SEDOL↔ISIN matches official SPYI classified stock without
  near(it.viaEtfCzk,600); // SPYI 200 + Vanguard 400
  near(it.directCzk,100);
  near(sectors.classifiedCzk,700);
+ near(sectors.issuerClassifiedCzk,200);
+ near(sectors.verifiedIsinClassifiedCzk,400);
  near(sectors.unclassifiedCzk,2400);
  near(sectors.denominatorCzk,3100);
  near(sectors.classifiedCzk+sectors.unclassifiedCzk,sectors.denominatorCzk);
  near(sectors.funds.find(f=>f.isin===VWCE).classifiedCzk,400);
+ near(sectors.funds.find(f=>f.isin===VWCE).verifiedIsinClassifiedCzk,400);
  assert.equal(sectors.directMatchedIsins,1);
 });
 test("ticker-only Vanguard row never borrows sector from same-named SPYI stock",()=>{
@@ -79,4 +82,20 @@ test("a selected manual sector label cannot attest issuer classification",()=>{
  {...x,source:"manual-import.csv"}:x);
  const out=calculateXRaySectorExposure(calculateXRay(owned(),rows),rows);
  near(out.funds.find(f=>f.isin===VWCE).classifiedCzk,0);
+});
+
+test("unmapped official issuer rows cannot classify direct holdings or other funds",()=>{
+ const rows=base();
+ const original=calculateXRay(owned(),rows);
+ const report={...original,
+   mappedCzk:original.mappedCzk-200,
+   unallocatedCzk:original.unallocatedCzk+200,
+   funds:original.funds.map(f=>f.isin===SPYI?{
+     ...f,mappedCzk:0,unmappedCzk:f.valueCzk,
+   }:f),
+ };
+ const result=calculateXRaySectorExposure(report,rows);
+ near(result.issuerClassifiedCzk,0);
+ near(result.verifiedIsinClassifiedCzk,0);
+ near(result.directUnclassifiedCzk,100);
 });
