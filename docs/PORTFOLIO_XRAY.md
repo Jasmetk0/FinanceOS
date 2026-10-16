@@ -161,3 +161,20 @@ Zobrazuje pro oba kandidáty, jsou-li dostupní: datum `asOf`, původ `source`, 
 Automatický zdroj může být i starší cache; datum složení se zobrazí bez garance denního live stavu. Externí archiv Invesco zůstává archivem třetí strany, nikoli oficiálním přímým feedem. Model `reference-index-proxy` je výslovně označen **ODHAD**. Nezávislá reference `SPYI (identita)`, pokud ji nevlastníš, se do seznamu držených ETF ani do jejich Kč **nezapočítává**.
 
 Tento audit nemění broker transakce, přímé držby, kurzové ocenění ani výběr fondu; zavádí přezkoumatelné vysvětlení téhož výběru. Při chybě porovnání je zobrazeno varování a stávající bezpečná ruční záloha, nikoli falešné tvrzení o úspěšném výběru zdroje.
+
+
+## Koncentrace portfolia – bez odhadů a včetně ekonomické proxy (16. 10. 2026)
+
+Pod souhrnem X-Ray se zobrazuje samostatný **přehled koncentrace akcií a kryptoměn napříč ETF**, vypočítaný pouze z existujícího `calculateXRay` výsledku. Sloučená expozice akcie může obsahovat přímou pozici plus více fondů, ale ani jedna tržní hodnota ETF se znovu nepřidává k jmenovateli. Přímá kryptoměna zůstává oddělená od akcie se stejným tickerem, nerozpoznané akcie stejného tickeru se nikdy nespojují bez ověřeného identifikátoru.
+
+- **Bez odhadů** (výchozí): od každé podkladové expozice odečte pouze explicitní podíl `reference-index-proxy` z LYMS/CNDX. Ostatní již identifikované podklady zůstávají včetně případného explicitního referenčního indexu; tento režim **neznamená plně doložená ISIN ani čerstvá data**.
+- **Včetně proxy:** do jednotlivých akciových expozic přidá *již vykázané*, jasně označené modelované podíly LYMS. Nevytváří nové pozice ani nepřičítá odhad k fyzicky drženému ETF nad jeho tržní hodnotu.
+- **Nerozloženo:** fondy bez úplné skladby, hotovost uvnitř ETF a jiné neidentifikované podklady zůstávají ve zvláštní části. Jsou stále v celkovém jmenovateli a **nepředstírají diverzifikaci**.
+- **TOP 1/5/10** uvádí podíly největších individuálně identifikovaných expozic v Kč a % *z celého analyzovaného portfolia* (akcie + ETF + crypto). Nesčítá procenta přepočtená pouze k částečně rozloženému výřezu.
+- Rozpis 10 největších podkladů uvádí přímo, nepřímo, tržní hodnotu a váhu; při zapnutí modelu upozorňuje na jeho částku v jednotlivých akciích. Podklady bez ověřené identity jsou označené jako neslučované podle tickeru.
+
+Nový čistě odvozený modul `lib/xray/concentration.ts` kontroluje součtové invariance:
+`identifikované bez proxy + modelová proxy + nerozložená část = denominatorCzk`.
+Ověřuje také `součet podkladových expozic = mappedCzk` a `součet označených proxy příspěvků = estimatedProxyCzk`. Při nesouladu zobrazí X-Ray samostatné upozornění a zavádějící přehled koncentrace **nevyrenderuje**. Nemění broker API ani obchodní historii.
+
+**Interpretace:** Koncentrace je *dolní přehled pozorovaných expozic* u částečně známého portfolia, nikoli úplný risk model, HHI, volatilita, VaR ani exaktní dolní mez skutečné koncentrace. Nerozložená část ETF může obsahovat stejné velké akcie a skutečná koncentrace tak může být vyšší. Odhadovaný model může měnit pořadí; žádné predikce výnosu ani pravděpodobnosti ztrát se z něj nedělají.
