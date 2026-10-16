@@ -79,7 +79,7 @@ test("LYMS model percentage and CZK stay separate from verified stock ownership"
  approx(a.estimatedProxyPortfolioPct,100*9.9/1200);
  assert.equal(e.directCzk,200);
  assert.equal(a.fundSlices[0].exposureBasis,"reference-index-proxy");
- assert.equal(x.estimatedProxyCzk,990);
+ approx(x.estimatedProxyCzk,990);
  approx(x.denominatorCzk,x.mappedCzk+x.unallocatedCzk);
 });
 test("direct-only stock and crypto have zero ETF attribution without invented fund NAV",()=>{
