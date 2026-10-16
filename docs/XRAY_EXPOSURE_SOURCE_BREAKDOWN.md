@@ -45,3 +45,18 @@ Rozpis nepřidává fiktivní počet akcií z ETF ani nové živé ceny. Zůstá
 ## Regresní ověření
 
 Nové testy ověřují stejné ISIN napříč účty, dvě ETF se stejnou akcií, burzovní varianty jednoho fondu s jedním ISIN, zachování výpočtu při zlomkových vahách, samostatnou krypto pozici, neidentifikované ticker-only akcie a tabulkovou integraci.
+
+
+## Podíl konkrétní akcie na NAV každého ETF a na celém portfoliu (16. 10. 2026)
+
+Ve stejném rozbaleném detailu se nyní rozlišují **tři různé jmenovatele procent**. Pro příspěvek Microsoftu ve fondu VWCE například:
+
+- **% hodnoty ETF** = `příspěvek Microsoftu přes VWCE (Kč) / celková tržní hodnota vlastněného VWCE včetně VWRA (Kč) × 100`. Jde o podíl akcie *v tomto drženém fondu*, nikoli o poměr ke všem penězům v Microsoftu.
+- **% expozice této akcie** = `příspěvek Microsoftu přes VWCE / (přímý Microsoft + všechny jiné ETF příspěvky Microsoftu) × 100`.
+- **% analyzovaného portfolia** = `příspěvek Microsoftu přes VWCE / (přímo držené akcie + krypto + tržní hodnota ETF) × 100`. Hotovost, P2P a jiná aktiva mimo X-Ray se do tohoto jmenovatele **nezapočítávají**.
+
+Nový čistě odvozený modul `lib/xray/exposure-attribution.ts` používá právě tržní hodnoty fondu z `XRayFundCoverage`, již spočtené příspěvky `XRayExposure.fundContributions` a **stejný `denominatorCzk`** z výpočetního enginu. Nepočítá znovu ceny ETF ani FX kurz, nemění výsledné akciové váhy a při chybějícím fondu, překročení NAV nebo rozdílu příspěvkových součtů odmítne falešná procenta. Současně přenáší původ a datum použitého fondu, takže jde u každého řádku dohledat, z jakého snapshotu pochází.
+
+Pro syntetický **LYMS** se v rozpisu odděleně počítá **částka pouze odhadovaná přes CNDX proxy** – jde o podmnožinu existující nepřímé expozice, nikoliv novou investici nad rámec NAV. Uznané skutečné podklady a explicitní referenční index nejsou vydávány za proxy.
+
+V hlavní tabulce je navíc filtr **Způsob držení** s režimy „Všechny expozice“, „Přímo i přes ETF“, „Pouze přímo“ a „Pouze přes ETF“. Při změně filtru se obnoví stránkování, vyhledávání funguje dál a pro určení skupiny se používají výhradně již validované hodnoty `directCzk` a `viaFundsCzk`; nespárované ticker-only akcie se nespojují ani filtrem.
