@@ -130,7 +130,7 @@ test("sector-specific classification never invents new positions or changes unma
  const {holdings,rows}=fixture();
  const original=calculateXRay(holdings,rows);
  const classified=calculateXRaySectorExposure(original,rows);
- assert.equal(original.exposures.length,104);
+ assert.equal(original.exposures.length,105);
  assert.equal(original.denominatorCzk,classified.denominatorCzk);
  assert.ok(original.unallocatedCzk>0);
  assert.ok(classified.unclassifiedCzk>=original.unallocatedCzk);
