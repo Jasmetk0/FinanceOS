@@ -98,6 +98,11 @@ export function XRayExposureBreakdown({
                 <span className="min-w-0">
                   <span className="font-medium">{item.fundSymbol}</span>
                   {item.fundIsin?<span className="block break-all text-[10px] text-[var(--muted)]">{item.fundIsin}</span>:null}
+                  {item.asOf?<span className="block text-[10px] text-[var(--muted)]">
+                    Složení fondu k {item.asOf}
+                  </span>:null}
+                  {item.source?<span className="block max-w-[220px] break-words text-[10px] text-[var(--muted)]"
+                    title={item.source}>Zdroj: {item.source}</span>:null}
                   {item.exposureBasis==="reference-index"?<span className="block text-[10px] text-[var(--warning)]">Ekonomická expozice přes referenční index · nikoliv akcie fyzicky držené ETF</span>:null}
                   {item.exposureBasis==="reference-index-proxy"?<span className="block text-[10px] font-semibold text-[var(--warning)]">⚠ ODHAD podle iShares CNDX, ne přesné váhy Nasdaq XNDXNNR ani fyzické držby LYMS</span>:null}
                 </span>
