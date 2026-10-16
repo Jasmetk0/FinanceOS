@@ -8,6 +8,8 @@ import { XRayAutoSync } from "@/components/xray-auto-sync";
 import { XRayIdentityQuality } from "@/components/xray-identity-quality";
 import { XRaySourceSelectionAudit } from "@/components/xray-source-selection-audit";
 import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
+import { XRayConcentration } from "@/components/xray-concentration";
+import { calculateXRayConcentration } from "@/lib/xray/concentration";
 import { matchesXRayOwnership, type XRayOwnershipFilter } from "@/lib/xray/exposure-attribution";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
@@ -103,6 +105,14 @@ export function PortfolioXRay({
     try { return { data: calculateXRay(liveHoldings, effectiveRows), error: "" }; }
     catch (error) { return { data: null, error: error instanceof Error ? error.message : String(error) }; }
   }, [liveHoldings, effectiveRows]);
+
+  const concentration=useMemo(() => {
+    if(!report.data)return {summary:null,error:""};
+    try { return {summary:calculateXRayConcentration(report.data),error:""}; }
+    catch(error) {
+      return {summary:null,error:error instanceof Error?error.message:String(error)};
+    }
+  },[report.data]);
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
@@ -261,6 +271,10 @@ export function PortfolioXRay({
               </div>
             ))}
           </section>
+          {concentration.summary?<XRayConcentration summary={concentration.summary}/>:
+            concentration.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
+              Audit koncentrace se nepodařilo ověřit: {concentration.error}
+            </p>:null}
           <XRaySourceSelectionAudit funds={data.funds}
             decisions={selectedSources.decisions} error={selectedSources.error}/>
           <XRayIdentityQuality coverage={data.identityCoverage} funds={data.funds} bridgeAudit={data.bridgeAudit} />
