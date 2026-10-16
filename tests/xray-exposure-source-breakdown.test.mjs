@@ -132,12 +132,12 @@ test("interactive X-Ray row displays full-width source breakdown with per-accoun
   const read=path=>readFileSync(new URL("../"+path,import.meta.url),"utf8");
   const parent=read("components/portfolio-xray.tsx");
   const detail=read("components/xray-exposure-breakdown.tsx");
-  assert.ok(parent.includes("<XRayExposureBreakdown exposure={item}/>"));
+  assert.ok(parent.includes("<XRayExposureBreakdown exposure={item} funds={data.funds}"));
   assert.ok(parent.includes('<td colSpan={6}'));
   assert.ok(parent.includes("<Fragment key={item.key}>"));
   assert.ok(parent.includes("setSelected(selected===item.key?null:item.key)"));
   assert.ok(detail.includes("exposure.directContributions.map"));
-  assert.ok(detail.includes("exposure.fundContributions.map"));
+  assert.ok(detail.includes("attribution.fundSlices.map"));
   assert.ok(detail.includes("Nepřímá ekonomická expozice"));
   assert.ok(detail.includes("Podíl z analyzovaného portfolia"));
 });

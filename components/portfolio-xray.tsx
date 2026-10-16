@@ -8,6 +8,7 @@ import { XRayAutoSync } from "@/components/xray-auto-sync";
 import { XRayIdentityQuality } from "@/components/xray-identity-quality";
 import { XRaySourceSelectionAudit } from "@/components/xray-source-selection-audit";
 import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
+import { matchesXRayOwnership, type XRayOwnershipFilter } from "@/lib/xray/exposure-attribution";
 import { XRayLivePositions } from "@/components/xray-live-positions";
 import type { XRayFreshness } from "@/lib/xray/freshness";
 import { explainConstituentSources } from "@/lib/xray/auto-merge";
@@ -81,6 +82,7 @@ export function PortfolioXRay({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
+  const [ownershipFilter,setOwnershipFilter]=useState<XRayOwnershipFilter>("all");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [showFunds, setShowFunds] = useState(false);
@@ -104,9 +106,10 @@ export function PortfolioXRay({
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
+    if(!matchesXRayOwnership(item,ownershipFilter))return false;
     const needle = query.trim().toLocaleLowerCase("cs");
     return !needle || [item.ticker, item.name, item.key, ...item.fundSymbols, ...item.accounts].some((v) => v.toLocaleLowerCase("cs").includes(needle));
-  }), [report.data, filter, query]);
+  }), [report.data, filter, ownershipFilter, query]);
 
   async function importFiles(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []);
@@ -293,9 +296,29 @@ export function PortfolioXRay({
                   <option value="all">Akcie i krypto</option><option value="stock">Akcie</option><option value="crypto">Kryptoměny</option>
                 </select>
               </label>
-              <button type="button" className="finance-action" onClick={()=>{setFilter("all");setQuery("");setVisible(50);}}>Vymazat filtry</button>
+              <label className="text-[11px] text-[var(--muted)]">Způsob držení
+                <select className="finance-field mt-1 block min-w-[165px] text-xs"
+                  value={ownershipFilter}
+                  onChange={(event)=>{
+                    setOwnershipFilter(event.target.value as XRayOwnershipFilter);
+                    setSelected(null);setVisible(50);
+                  }}>
+                  <option value="all">Všechny expozice</option>
+                  <option value="both">Přímo i přes ETF</option>
+                  <option value="direct-only">Pouze přímo</option>
+                  <option value="funds-only">Pouze přes ETF</option>
+                </select>
+              </label>
+              <button type="button" className="finance-action"
+                onClick={()=>{setFilter("all");setOwnershipFilter("all");setQuery("");setSelected(null);setVisible(50);}}>
+                Vymazat filtry
+              </button>
             </div>
-            <p aria-live="polite" className="mt-3 text-[11px] text-[var(--muted)]">Zobrazeno {Math.min(visible, filtered.length)} z {filtered.length} sloučených titulů. Klikni na akcii pro přesný rozpis podle ETF a investičního účtu.</p>
+            <p aria-live="polite" className="mt-3 text-[11px] text-[var(--muted)]">
+              Zobrazeno {Math.min(visible, filtered.length)} z {filtered.length} titulů.
+              Klikni na akcii pro přímé a nepřímé příspěvky v Kč a jejich podíl
+              na hodnotě jednotlivých ETF i celého analyzovaného portfolia.
+            </p>
             <div className="finance-scrollbar mt-2 overflow-x-auto rounded-xl border border-[var(--border)]">
               <table className="finance-data-table min-w-[710px] text-left">
                 <thead><tr>
@@ -329,7 +352,8 @@ export function PortfolioXRay({
                     </tr>
                     {selected===item.key ? <tr className="bg-white/[.015]">
                       <td colSpan={6} className="p-3">
-                        <XRayExposureBreakdown exposure={item}/>
+                        <XRayExposureBreakdown exposure={item} funds={data.funds}
+                          portfolioValueCzk={data.denominatorCzk}/>
                       </td>
                     </tr> : null}
                     </Fragment>

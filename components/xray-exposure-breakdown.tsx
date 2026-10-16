@@ -1,12 +1,20 @@
 "use client";
 
-import type { XRayExposure } from "@/lib/xray/engine";
+import type { XRayExposure, XRayFundCoverage } from "@/lib/xray/engine";
+import { explainExposureAttribution } from "@/lib/xray/exposure-attribution";
 
 const money=(value:number)=>value.toLocaleString("cs-CZ",{maximumFractionDigits:2})+" Kč";
 const pct=(value:number)=>value.toLocaleString("cs-CZ",{maximumFractionDigits:2})+" %";
 const quantity=(value:number)=>value.toLocaleString("cs-CZ",{maximumFractionDigits:8});
 
-export function XRayExposureBreakdown({exposure}:{exposure:XRayExposure}){
+export function XRayExposureBreakdown({
+  exposure,funds,portfolioValueCzk,
+}:{
+  exposure:XRayExposure;
+  funds:XRayFundCoverage[];
+  portfolioValueCzk:number;
+}){
+  const attribution=explainExposureAttribution(exposure,funds,portfolioValueCzk);
   const total=exposure.totalCzk;
   const directPercent=total>0?100*exposure.directCzk/total:0;
   const viaPercent=total>0?100*exposure.viaFundsCzk/total:0;
@@ -27,6 +35,23 @@ export function XRayExposureBreakdown({exposure}:{exposure:XRayExposure}){
       <div className="flex h-full w-full">
         <div className="h-full bg-emerald-500" style={{width:directPercent+"%"}}/>
         <div className="h-full bg-sky-500" style={{width:viaPercent+"%"}}/>
+      </div>
+    </div>
+    <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
+      <div className="rounded-lg border border-[var(--border)] p-2">
+        <p className="text-[var(--muted)]">Přímo z celého portfolia</p>
+        <strong className="tabular-nums">{pct(attribution.directPortfolioPct)}</strong>
+      </div>
+      <div className="rounded-lg border border-[var(--border)] p-2">
+        <p className="text-[var(--muted)]">Přes ETF z celého portfolia</p>
+        <strong className="tabular-nums">{pct(attribution.fundsPortfolioPct)}</strong>
+      </div>
+      <div className="col-span-2 rounded-lg border border-[var(--border)] p-2 sm:col-span-1">
+        <p className="text-[var(--muted)]">Z toho pouze model / proxy</p>
+        <strong className="tabular-nums">{money(attribution.estimatedProxyCzk)}</strong>
+        <span className="ml-1 text-[var(--muted)]">
+          ({pct(attribution.estimatedProxyPortfolioPct)} portfolia)
+        </span>
       </div>
     </div>
     <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -65,21 +90,32 @@ export function XRayExposureBreakdown({exposure}:{exposure:XRayExposure}){
         <p className="mt-1 text-[11px] text-[var(--muted)]">
           Nepřímá ekonomická expozice, nikoliv přímo vlastněné akcie
         </p>
-        {exposure.fundContributions.length?
-          <ul className="mt-2 space-y-1.5">
-            {exposure.fundContributions.map((item,i)=>
+        {attribution.fundSlices.length?
+          <ul className="mt-2 space-y-2">
+            {attribution.fundSlices.map((item,i)=>
               <li key={(item.fundIsin??item.fundSymbol)+"|"+i}
-                className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 rounded-lg border border-[var(--border)]/50 p-2">
                 <span className="min-w-0">
                   <span className="font-medium">{item.fundSymbol}</span>
                   {item.fundIsin?<span className="block break-all text-[10px] text-[var(--muted)]">{item.fundIsin}</span>:null}
+                  {item.asOf?<span className="block text-[10px] text-[var(--muted)]">
+                    Složení fondu k {item.asOf}
+                  </span>:null}
+                  {item.source?<span className="block max-w-[220px] break-words text-[10px] text-[var(--muted)]"
+                    title={item.source}>Zdroj: {item.source}</span>:null}
                   {item.exposureBasis==="reference-index"?<span className="block text-[10px] text-[var(--warning)]">Ekonomická expozice přes referenční index · nikoliv akcie fyzicky držené ETF</span>:null}
                   {item.exposureBasis==="reference-index-proxy"?<span className="block text-[10px] font-semibold text-[var(--warning)]">⚠ ODHAD podle iShares CNDX, ne přesné váhy Nasdaq XNDXNNR ani fyzické držby LYMS</span>:null}
                 </span>
                 <span className="shrink-0 text-right font-semibold tabular-nums">
                   {money(item.valueCzk)}
                   <span className="block text-[10px] font-normal text-[var(--muted)]">
-                    {pct(total>0?100*item.valueCzk/total:0)} z této expozice
+                    {pct(item.withinExposurePct)} z expozice této akcie
+                  </span>
+                  <span className="block text-[10px] font-normal text-[var(--muted)]">
+                    {pct(item.withinFundPct)} hodnoty ETF ({money(item.fundMarketValueCzk)})
+                  </span>
+                  <span className="block text-[10px] font-normal text-[var(--muted)]">
+                    {pct(item.portfolioPct)} analyzovaného portfolia
                   </span>
                 </span>
               </li>)}
@@ -99,6 +135,10 @@ export function XRayExposureBreakdown({exposure}:{exposure:XRayExposure}){
     </p>:null}
     <p className="mt-2 text-[11px] leading-5 text-[var(--muted)]">
       Každá částka je vypočtena z hodnot aktuálně uložených pozic a dostupných vah ETF.
+      Hodnoty „% hodnoty ETF“ jsou poměrem příspěvku této akcie k celkové tržní hodnotě
+      stejného ETF ve tvých účtech, nikoliv procentem akcií přímo vlastněných mimo fond.
+      Procenta portfolia vycházejí pouze z analyzovaných akcií, ETF a kryptoměn;
+      hotovost ani P2P do jmenovatele nepatří.
       Data složení od emitentů mohou být starší než aktuální ocenění účtů.
     </p>
   </div>;
