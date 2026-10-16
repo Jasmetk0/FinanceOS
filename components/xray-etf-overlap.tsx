@@ -55,7 +55,7 @@ function PairDetail({pair}:{pair:XRayFundPairOverlap}){
     </p>:null}
     <p className="mt-2 text-[11px] text-[var(--muted)]">
       Součet v Kč znamená ekonomickou expozici k týmž akciím ve dvou fondech,
-      **nikoli** duplicitní položku v účetnictví nebo peníze k odečtení.
+      nikoli duplicitní položku v účetnictví nebo peníze k odečtení.
     </p>
   </details>;
 }
@@ -143,7 +143,7 @@ export function XRayEtfOverlap({result}:{result:XRayOverlapResult}){
         </div>
         {pair.sharedIdentities>0?<PairDetail pair={pair}/>:
           <p className="mt-2 text-[11px] text-[var(--muted)]">
-            Není prokázaný společný identifikátor; to **neznamená**, že fondy žádné stejné akcie nemají.
+            Není prokázaný společný identifikátor; to neznamená, že fondy žádné stejné akcie nemají.
           </p>}
       </div>)}
       {!pairs.length?<p className="rounded-lg border border-[var(--border)] p-3 text-xs text-[var(--muted)]">
