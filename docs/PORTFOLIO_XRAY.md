@@ -193,3 +193,24 @@ V novém panelu **Překryvy mezi jednotlivými ETF** si můžeš prohlédnout dv
 - ETF bez ISIN fondu se do dvojic nespojují. U ostatních se fondy hodnotí nezávisle; při nákupu stejného ETF na více účtech a burzách se sčítá NAV a příspěvky jsou přiřazené správnému jedinému ISIN fondu.
 
 Konzervace a integrita: součet přímých a fondových expozic musí odpovídat `mappedCzk`, všechna `mappedCzk + unallocatedCzk` musí odpovídat `denominatorCzk` a součty podkladových příspěvků každého ETF musí odpovídat přijatému rozkladu tohoto ETF. Při nesouladu se párový audit nevykreslí a zobrazí upozornění. Přehled nepředstavuje plný risk model ani statistickou korelaci; jeho omezení je úplnost a stáří emitentských snapshotů.
+
+
+## Sektorový X-Ray – klasifikace přímo z emitentských podkladů (16. 10. 2026)
+
+Panel **Sektory akcií – doložené emitenty** používá pouze skutečně publikované sektorové štítky z úplných vybraných skladbových souborů **iShares (sloupec `Sector`)** a **State Street SPYI (sloupec `Sector Classification`)**. Tyto informace byly ve zdrojových dokumentech už obsažené, ale FinanceOS je dříve nezachovával. Normalizují se výhradně přesným rozpoznáním jedenácti standardních názvů akciových sektorů GICS. Neznámé názvy, obecné `Technology`, alternativní průmyslové klasifikace, hotovost, deriváty a `Unassigned` se **neodhaduji** a zůstávají bez sektoru.
+
+**Podklad v Kč se klasifikuje pouze tehdy, pokud jsou současně splněny všechny podmínky:**
+- Jde o akcii se sektorovým štítkem přímo z jejího emitentského řádku, nikoliv z názvu/tickeru společnosti.
+- Skutečně držené ETF v X-Ray bylo úspěšně rozloženo ze **stejného data `asOf` a stejné provenience `source`**. Starý CSV či nerelevantní současně uložená reference žádné sektory nepřidává.
+- Fond má fyzické `fund-holdings` podklady. Explicitní referenční index, jeho odhadová proxy LYMS/CNDX a náhradní swapový koš se tímto algoritmem neoznačují jako sektorově ověřené pozice.
+- Součet klasifikovaných akcií konkrétního fondu nesmí přesáhnout finanční částku fondu, kterou X-Ray skutečně rozložil.
+
+**Přímo držená akcie** získá sektor pouze při úplné shodě svého již validovaného `stock|isin:` s emitentským security ISIN v některém **skutečně používaném, fyzicky drženém, sektorově klasifikovaném ETF**. Při konfliktu sektorů z různých emitentů zůstává přímá expozice bez klasifikace. iShares bez podkladového ISIN tak může klasifikovat svůj vlastní podíl, ale nesmí doplnit sektor přímo držené akcii jen podle tickeru.
+
+**Jmenovatele a kontrola správnosti:** Procenta sektorů se vždy počítají z plného `denominatorCzk` X-Ray (přímo držené akcie + skutečná hodnota ETF + krypto), ne ze 100 % *již klasifikovaných* akcií. Platí striktní rovnice:
+
+`klasifikované akcie přímo + klasifikované podklady ETF + neklasifikované přímé + neklasifikované ETF = plná analyzovaná hodnota`.
+
+Panel ukazuje zvlášť neklasifikované přímé investice a neklasifikovanou část ETF, včetně úplně chybějících skladbových dat Vanguardu. Samostatně ukazuje **LYMS modelovou proxy jako část neklasifikovaného ETF NAV**, nikdy jako další nové peníze. Krypto nemá automaticky přiřazovaný akciový sektor. Při nesouhlasu jakékoli validační rovnice se panel nevykreslí a zobrazí chybu.
+
+**Co tato verze neslibuje:** Jde o částečné pokrytí pro dva konkrétní emitenty, nikoliv o úplnou sektorovou analýzu všech fondů. Neprovádí se žádné párování více akciových tříd stejné společnosti podle jména, geografické přiřazení, odhad sektoru Vanguardu ani domnělé změny investorových akcií. Žádný nový API klíč, CSV import ani nový kurzový přepočet není potřeba. Všechny součty jsou odvozené ze stejného lokálního X-Ray reportu.
