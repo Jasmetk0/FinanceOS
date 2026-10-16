@@ -16,6 +16,9 @@ export interface XRayFundAttribution extends XRayFundContribution {
   portfolioPct:number;
   /** This ETF's contribution as % of this single security's exposure. */
   withinExposurePct:number;
+  /** Exact as-of and source reported by the accepted ETF X-Ray coverage. */
+  asOf:string|null;
+  source:string|null;
 }
 export interface XRayExposureAttribution {
   directPortfolioPct:number;
@@ -39,15 +42,21 @@ export function explainExposureAttribution(
 ):XRayExposureAttribution{
   if(!Number.isFinite(portfolioValueCzk)||portfolioValueCzk<0)
     throw new RangeError("Neplatná hodnota portfolia pro rozpis zdrojů.");
-  const fundValues=new Map<string,number>();
+  const fundValues=new Map<string,{valueCzk:number;asOf:string|null;source:string|null}>();
   for(const fund of funds){
     if(!Number.isFinite(fund.valueCzk)||fund.valueCzk<0)
       throw new RangeError("Neplatná hodnota fondu při výpočtu rozpisu.");
     const key=fundIdentity({fundSymbol:fund.symbol,fundIsin:fund.isin});
-    fundValues.set(key,(fundValues.get(key)??0)+fund.valueCzk);
+    const previous=fundValues.get(key);
+    fundValues.set(key,{
+      valueCzk:(previous?.valueCzk??0)+fund.valueCzk,
+      asOf:fund.asOf??previous?.asOf??null,
+      source:fund.source??previous?.source??null,
+    });
   }
   const fundSlices=exposure.fundContributions.map(contribution=>{
-    const fundMarketValueCzk=fundValues.get(fundIdentity(contribution));
+    const target=fundValues.get(fundIdentity(contribution));
+    const fundMarketValueCzk=target?.valueCzk;
     if(fundMarketValueCzk===undefined || fundMarketValueCzk<=0 ||
        !Number.isFinite(contribution.valueCzk) || contribution.valueCzk<0 ||
        contribution.valueCzk>fundMarketValueCzk+tolerance(fundMarketValueCzk))
@@ -57,6 +66,7 @@ export function explainExposureAttribution(
       withinFundPct:pct(contribution.valueCzk,fundMarketValueCzk),
       portfolioPct:pct(contribution.valueCzk,portfolioValueCzk),
       withinExposurePct:pct(contribution.valueCzk,exposure.totalCzk),
+      asOf:target?.asOf??null,source:target?.source??null,
     };
   });
   const fundCzk=fundSlices.reduce((sum,item)=>sum+item.valueCzk,0);
