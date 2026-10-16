@@ -8,6 +8,7 @@
 import { parseDelimited } from "./import.ts";
 import { validateXRayConstituents, type XRayConstituent } from "./engine.ts";
 import { normalizedIsin, normalizedSedol } from "./security-identity.ts";
+import { normalizeIssuerSector, type XRayEquitySector } from "./sector-labels.ts";
 
 export interface IssuerFeed {
   isin: string;
@@ -93,8 +94,10 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
   const isinIdx=names.indexOf("isin");
   const sedolIdx=names.indexOf("sedol");
   const currencyIdx=names.indexOf("market currency");
+  const sectorIdx=names.indexOf("sector");
   type Pending = { ticker:string; name:string; kind:"stock"|"other"; value:number;
-    exchange:string; location:string; currency:string; isin:string|null; sedol:string|null; index:number };
+    exchange:string; location:string; currency:string; isin:string|null; sedol:string|null;
+    sector:XRayEquitySector|null;index:number };
   const pending: Pending[] = [];
   for (let i = 2; i < parsed.length; i++) {
     const f = parsed[i];
@@ -115,7 +118,9 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
       throw new RangeError("iShares CSV obsahuje poškozený ISIN/SEDOL u akcie na řádku "+(i+1));
     pending.push({ticker,name,kind,value,exchange:f[exchangeIdx].trim(),
       location:f[locationIdx].trim(),currency:currencyIdx>=0?(f[currencyIdx]??"").trim():"",
-      isin,sedol,index:i});
+      isin,sedol,
+      sector:kind==="stock"&&sectorIdx>=0?normalizeIssuerSector(f[sectorIdx]):null,
+      index:i});
   }
   if (pending.length < 10) throw new RangeError("Příliš málo podkladů pro kompletní iShares ETF.");
   const positive = pending.reduce((sum,r) => sum + Math.max(0,r.value),0);
@@ -164,6 +169,9 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
       if(previous.securityName!==row.name)
         throw new RangeError("Jedna iShares identita označuje rozdílné akcie.");
       previous.weightPct += weightPct;
+      // One ISIN must not silently merge incompatible classifications;
+      // keep a single sector only if both issuer rows explicitly agree.
+      if(previous.sector!==row.sector)previous.sector=null;
       // If two exchange listings share an ISIN but different SEDOL, their
       // share class is the SAME; SEDOL refers to the security listing, so
       // it can no longer be represented as a unique identifier here.
@@ -172,6 +180,7 @@ export function parseIsharesHoldingsCsv(csv: string, feed: IssuerFeed, ownedSymb
       fundSymbol: ownedSymbol, fundIsin: feed.isin, securitySymbol: symbol,
       securityIsin: row.isin, securitySedol:row.sedol,securityName:row.name, weightPct,
       kind:row.kind, asOf, source,
+      ...(row.sector?{sector:row.sector}:{}),
     });
   }
   const rows=[...combined.values()];

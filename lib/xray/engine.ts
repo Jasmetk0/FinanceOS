@@ -5,6 +5,7 @@
  */
 import { buildSedolIsinCrosswalk, normalizedSedol, resolveSecurityIsin } from "./security-identity.ts";
 import { fundInsightForIsin } from "./fund-insights.ts";
+import { isXRaySector, type XRayEquitySector } from "./sector-labels.ts";
 
 export interface XRayHolding {
   id: string;
@@ -30,6 +31,8 @@ export interface XRayConstituent {
   securityIsin: string | null;
   securitySedol?: string | null; // checked separate share-class ID; never inferred from company name
   securityName: string;
+  /** Explicit sector label from the same issuer holdings row; never inferred. */
+  sector?: XRayEquitySector | null;
   weightPct: number; // 0..100 of the fund's MARKET VALUE (not leverage/notional).
   kind: ExposureKind;
   exposureBasis?: XRayExposureBasis; // legacy data implies fund-holdings; NEVER index exposure
@@ -185,6 +188,8 @@ export function validateXRayConstituents(rows: XRayConstituent[]) {
         (r.asOf && !/^\d{4}-\d{2}-\d{2}$/.test(r.asOf)) ||
         !norm(r.fundSymbol) || !norm(r.securitySymbol) ||
         !r.securityName.trim() || r.securityName.length > 150 ||
+        (r.sector !== undefined && r.sector !== null &&
+         (r.kind!=="stock" || !isXRaySector(r.sector))) ||
         typeof r.source !== "string" || r.source.length > 600) {
       throw new RangeError("Neplatný podklad fondu na řádku " + (i + 2) + ".");
     }

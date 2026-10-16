@@ -10,6 +10,8 @@ import { XRaySourceSelectionAudit } from "@/components/xray-source-selection-aud
 import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayConcentration } from "@/components/xray-concentration";
 import { XRayEtfOverlap } from "@/components/xray-etf-overlap";
+import { XRaySectorCoverage } from "@/components/xray-sector-coverage";
+import { calculateXRaySectorExposure } from "@/lib/xray/sector-exposure";
 import { calculateXRayEtfOverlap } from "@/lib/xray/etf-overlap";
 import { calculateXRayConcentration } from "@/lib/xray/concentration";
 import { matchesXRayOwnership, type XRayOwnershipFilter } from "@/lib/xray/exposure-attribution";
@@ -121,6 +123,12 @@ export function PortfolioXRay({
     try { return {result:calculateXRayEtfOverlap(report.data),error:""}; }
     catch(error) { return {result:null,error:error instanceof Error?error.message:String(error)}; }
   },[report.data]);
+
+  const sectorReport=useMemo(()=>{
+    if(!report.data)return {result:null,error:""};
+    try {return {result:calculateXRaySectorExposure(report.data,effectiveRows),error:""};}
+    catch(error){return {result:null,error:error instanceof Error?error.message:String(error)};}
+  },[report.data,effectiveRows]);
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
@@ -286,6 +294,10 @@ export function PortfolioXRay({
           {overlap.result?<XRayEtfOverlap result={overlap.result}/>:
             overlap.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
               Audit překryvů ETF se nepodařilo ověřit: {overlap.error}
+            </p>:null}
+          {sectorReport.result?<XRaySectorCoverage result={sectorReport.result}/>:
+            sectorReport.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
+              Sektorový přehled se nepodařilo ověřit: {sectorReport.error}
             </p>:null}
           <XRaySourceSelectionAudit funds={data.funds}
             decisions={selectedSources.decisions} error={selectedSources.error}/>
