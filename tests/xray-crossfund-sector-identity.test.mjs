@@ -66,7 +66,7 @@ test("conflicting GICS classifications for the same exact ISIN fail closed for o
 });
 test("modelled LYMS proxy cannot borrow physical fund sector even with exact ISIN",()=>{
  const proxy=Array.from({length:100},(_,i)=>r(LYMS,"LYMS",
-   i===0?"MSFT":"MODEL"+i,i===0?MSFT:null,0.99,null,
+   i===0?"MSFT":"MODEL"+i,i===0?MSFT:null,null,0.99,null,
    "CNDX synthetic proxy; "+DATE,"reference-index-proxy"));
  const rows=[...base(),...proxy];
  const holdings=[...owned(),h("ly","LYMS","etf",1000,LYMS)];
