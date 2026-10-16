@@ -9,6 +9,8 @@ import { XRayIdentityQuality } from "@/components/xray-identity-quality";
 import { XRaySourceSelectionAudit } from "@/components/xray-source-selection-audit";
 import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayConcentration } from "@/components/xray-concentration";
+import { XRayEtfOverlap } from "@/components/xray-etf-overlap";
+import { calculateXRayEtfOverlap } from "@/lib/xray/etf-overlap";
 import { calculateXRayConcentration } from "@/lib/xray/concentration";
 import { matchesXRayOwnership, type XRayOwnershipFilter } from "@/lib/xray/exposure-attribution";
 import { XRayLivePositions } from "@/components/xray-live-positions";
@@ -112,6 +114,12 @@ export function PortfolioXRay({
     catch(error) {
       return {summary:null,error:error instanceof Error?error.message:String(error)};
     }
+  },[report.data]);
+
+  const overlap = useMemo(() => {
+    if(!report.data)return {result:null,error:""};
+    try { return {result:calculateXRayEtfOverlap(report.data),error:""}; }
+    catch(error) { return {result:null,error:error instanceof Error?error.message:String(error)}; }
   },[report.data]);
 
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
@@ -274,6 +282,10 @@ export function PortfolioXRay({
           {concentration.summary?<XRayConcentration summary={concentration.summary}/>:
             concentration.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
               Audit koncentrace se nepodařilo ověřit: {concentration.error}
+            </p>:null}
+          {overlap.result?<XRayEtfOverlap result={overlap.result}/>:
+            overlap.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
+              Audit překryvů ETF se nepodařilo ověřit: {overlap.error}
             </p>:null}
           <XRaySourceSelectionAudit funds={data.funds}
             decisions={selectedSources.decisions} error={selectedSources.error}/>

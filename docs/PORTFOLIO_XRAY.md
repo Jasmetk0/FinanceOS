@@ -178,3 +178,18 @@ Nový čistě odvozený modul `lib/xray/concentration.ts` kontroluje součtové 
 Ověřuje také `součet podkladových expozic = mappedCzk` a `součet označených proxy příspěvků = estimatedProxyCzk`. Při nesouladu zobrazí X-Ray samostatné upozornění a zavádějící přehled koncentrace **nevyrenderuje**. Nemění broker API ani obchodní historii.
 
 **Interpretace:** Koncentrace je *dolní přehled pozorovaných expozic* u částečně známého portfolia, nikoli úplný risk model, HHI, volatilita, VaR ani exaktní dolní mez skutečné koncentrace. Nerozložená část ETF může obsahovat stejné velké akcie a skutečná koncentrace tak může být vyšší. Odhadovaný model může měnit pořadí; žádné predikce výnosu ani pravděpodobnosti ztrát se z něj nedělají.
+
+
+## Párové překryvy ETF podle skutečně doložených podkladů (16. 10. 2026)
+
+V novém panelu **Překryvy mezi jednotlivými ETF** si můžeš prohlédnout dvojice skutečně vlastněných fondů s doloženým ISIN a jejich **společné akciové třídy**. Výpočet vychází výhradně ze stejného `calculateXRay` výsledku jako přehled skutečných expozic: nic dalšího nestahuje, neslučuje tickery podle jména, nepočítá druhý portfolio NAV ani nehádá neznámé podklady.
+
+**Metodika a dva různé významy procent:**
+- Akcie se považuje za prokazatelně shodnou pouze při identickém `stock|isin:<ISIN>` nebo identickém kontrolovaném `stock|sedol:<SEDOL>`. ISIN identita má přednost před SEDOL; dva různé ISIN se nikdy nepropojí jen podle tickeru. SEDOL bez ISIN představuje méně univerzální burzovní identifikátor a ve výsledcích je odlišně označený.
+- **Průnik vah dvojice ETF** = `SUMA( MIN(příspěvek společné akcie z ETF A / tržní hodnota ETF A, příspěvek z ETF B / tržní hodnota ETF B) ) × 100`. Například akcie s 10 % v A a 20 % v B tvoří 10 procentních bodů společného podílu jejich fondových složení. **Není to procento celého portfolia ani korelace ETF.** Vždy se používá NAV všech vlastněných burzovních variant jednoho ISIN.
+- **Expozice v obou ETF dohromady (Kč)** = `SUMA(příspěvek akcie z A + příspěvek z B)` pouze přes doložené společné akcie. Nejde o účetní duplicitu ani částku k odečtení od investovaného kapitálu. Jsou to dvě platné nepřímé ekonomické expozice ke stejné akcii.
+- Pro každý fond se ukazuje, jak velkou část jeho NAV vůbec pokrývají **pro srovnání použitelné ISIN/SEDOL identity**. Nerozložené, ticker-only, neznámé pozice, hotovost uvnitř ETF a příspěvky bez průkazné identity se nepoužijí. Pokud vyjde 0 % společných pozic, nelze z toho bez úplných podkladů usuzovat na skutečné nulové překrytí.
+- **Bez odhadu** (výchozí režim) vyřadí z porovnání konkrétních akcií část označenou `reference-index-proxy` pro LYMS; **Včetně LYMS proxy** ji zahrne s výslovným označením aproximace. Tento přepínač nijak nemění pozice, ceny ani NAV.
+- ETF bez ISIN fondu se do dvojic nespojují. U ostatních se fondy hodnotí nezávisle; při nákupu stejného ETF na více účtech a burzách se sčítá NAV a příspěvky jsou přiřazené správnému jedinému ISIN fondu.
+
+Konzervace a integrita: součet přímých a fondových expozic musí odpovídat `mappedCzk`, všechna `mappedCzk + unallocatedCzk` musí odpovídat `denominatorCzk` a součty podkladových příspěvků každého ETF musí odpovídat přijatému rozkladu tohoto ETF. Při nesouladu se párový audit nevykreslí a zobrazí upozornění. Přehled nepředstavuje plný risk model ani statistickou korelaci; jeho omezení je úplnost a stáří emitentských snapshotů.
