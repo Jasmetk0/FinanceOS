@@ -214,3 +214,12 @@ Panel **Sektory akcií – doložené emitenty** používá pouze skutečně pub
 Panel ukazuje zvlášť neklasifikované přímé investice a neklasifikovanou část ETF, včetně úplně chybějících skladbových dat Vanguardu. Samostatně ukazuje **LYMS modelovou proxy jako část neklasifikovaného ETF NAV**, nikdy jako další nové peníze. Krypto nemá automaticky přiřazovaný akciový sektor. Při nesouhlasu jakékoli validační rovnice se panel nevykreslí a zobrazí chybu.
 
 **Co tato verze neslibuje:** Jde o částečné pokrytí pro dva konkrétní emitenty, nikoliv o úplnou sektorovou analýzu všech fondů. Neprovádí se žádné párování více akciových tříd stejné společnosti podle jména, geografické přiřazení, odhad sektoru Vanguardu ani domnělé změny investorových akcií. Žádný nový API klíč, CSV import ani nový kurzový přepočet není potřeba. Všechny součty jsou odvozené ze stejného lokálního X-Ray reportu.
+
+
+## Přenos doloženého sektoru podle přesného ISIN do Vanguardu (16. 10. 2026)
+
+Původní sektorový X-Ray uměl sektor akcie načíst jen přímo z emitentského souboru iShares nebo SPYI. Vanguard GPX zveřejňuje bezpečný SEDOL, ale nemá samotný GICS sektor. Díky existujícímu ověřenému `SEDOL ↔ ISIN` převodu z oficiálního State Street SPYI lze dnes **část skutečně držených Vanguard akciových příspěvků označit sektorem z jiného, aktuálně vlastněného a fyzického emitentského ETF**, pokud mají **zcela stejný podkladový ISIN**.
+
+Převod nepoužívá ticker, podobnost názvu, firmu jako celek ani zeměpis. Zdroj sektoru musí být **skutečně vlastněné ETF**, již použité v `calculateXRay`, s jasným oficiálním `source` a stejným `asOf` jako použitá skladba. Pouze referenční SPYI stažené kvůli identitě, které uživatel nevlastní, nesmí navíc sloužit jako sektorový důkaz. Neprověřené ruční CSV ani proxy LYMS/CNDX klasifikaci neposkytují. Při dvou různých emitentských sektorech pro stejný ISIN se převod vypne a případný přímý podíl akcie zůstane neklasifikovaný.
+
+Vypočtené Kč jsou **již existující jednotlivé příspěvky vlastněného ETF** ve `XRayExposure.fundContributions`; žádné finanční aktivum se nepřidává ani neoceňuje znovu. Sektorový audit hlídá konzistenci klasifikovaného NAV s `mappedCzk` a zbytek ETF včetně neidentifikovaných pozic ponechává jako neklasifikovaný. V dashboardu zůstává zásadní, že pokud žádné fyzicky vlastněné ETF nesdílí ověřený ISIN a sektor, Vanguard **není** sektorově klasifikován. Průnik sektorů je vždy jen aktuálně doložený výřez portfolia.
