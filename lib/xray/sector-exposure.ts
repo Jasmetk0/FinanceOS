@@ -75,6 +75,29 @@ export function calculateXRaySectorExposure(
     list.push(row);
     constituentsByFund.set(id,list);
   }
+  // Sector labels are security-level facts, but only issuer-verified, held,
+  // accepted physical holdings may attest them. Cross-fund propagation is
+  // limited to EXACT same ISIN after X-Ray has already resolved SEDOL bridges.
+  // A conflicted security ISIN is not classified anywhere by this bridge.
+  const sectorEvidence=new Map<string,DirectLookup>();
+  for(const fund of report.funds){
+    const rows=(constituentsByFund.get(keyOf(fund.isin??""))??[]);
+    if(!fund.source||!fund.asOf||!official(fund.source)||
+       fund.exposureBasis==="reference-index"||
+       fund.exposureBasis==="reference-index-proxy")continue;
+    const accepted=rows.filter(r=>r.source===fund.source&&r.asOf===fund.asOf);
+    if(!accepted.length || accepted.some(r=>
+      r.exposureBasis==="reference-index"||
+      r.exposureBasis==="reference-index-proxy"||
+      r.exposureBasis==="substitute-basket"))continue;
+    for(const row of accepted) {
+      if(row.kind!=="stock"||!isXRaySector(row.sector)||!row.securityIsin)continue;
+      const isin=keyOf(row.securityIsin);
+      const previous=sectorEvidence.get(isin);
+      if(previous===undefined)sectorEvidence.set(isin,row.sector);
+      else if(previous!==row.sector)sectorEvidence.set(isin,"conflicting");
+    }
+  }
   const totals=new Map<XRayEquitySector,SectorTotals>();
   const directLookup=new Map<string,DirectLookup>();
   const fundAudits:XRaySectorFundAudit[]=[];
@@ -121,6 +144,32 @@ export function calculateXRaySectorExposure(
       if(classifiedCzk>fund.mappedCzk+eps(fund.valueCzk))
         throw new RangeError("Deklarované sektory převýšily skutečný rozklad ETF.");
     }
+    // A Vanguard / other held ETF may lack its own sector column.
+    // Attribute ONLY already-valued X-Ray fund contributions with an exact
+    // resolved security ISIN, and never reclassify an issuer-covered fund.
+    // We deliberately do not infer from ticker, company, or SEDOL alone.
+    if(!eligible && id && fund.valueCzk>0){
+      for(const exposure of report.exposures){
+        if(exposure.kind!=="stock"||
+           !/^stock\|isin:[A-Z]{2}[A-Z0-9]{10}$/.test(exposure.key))continue;
+        const sector=sectorEvidence.get(exposure.key.slice("stock|isin:".length));
+        if(!sector||sector==="conflicting")continue;
+        for(const contribution of exposure.fundContributions){
+          if(keyOf(contribution.fundIsin??"")!==id ||
+             contribution.exposureBasis==="reference-index" ||
+             contribution.exposureBasis==="reference-index-proxy")continue;
+          const part=contribution.valueCzk;
+          if(!Number.isFinite(part)||part<0)
+            throw new RangeError("Neplatný převzatý sektorový příspěvek ETF.");
+          classifiedCzk+=part;
+          const total=totals.get(sector)??{directCzk:0,viaEtfCzk:0};
+          total.viaEtfCzk+=part;
+          totals.set(sector,total);
+        }
+      }
+      if(classifiedCzk>fund.mappedCzk+eps(fund.valueCzk))
+        throw new RangeError("Přenesená sektorová identita přesáhla rozklad ETF.");
+    }
     viaClassifiedCzk+=classifiedCzk;
     fundAudits.push({
       isin:id,symbol:fund.symbol,valueCzk:fund.valueCzk,
@@ -135,7 +184,7 @@ export function calculateXRaySectorExposure(
     if(item.directCzk<=0||item.kind!=="stock"||
        !/^stock\|isin:[A-Z]{2}[A-Z0-9]{10}$/.test(item.key))continue;
     const security=item.key.slice("stock|isin:".length);
-    const sector=directLookup.get(security);
+    const sector=sectorEvidence.get(security);
     if(!sector||sector==="conflicting")continue;
     directClassifiedCzk+=item.directCzk;
     knownDirectIsins.add(security);
