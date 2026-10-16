@@ -149,7 +149,7 @@ export function XRayAutoSync({
   })??[];
   const savedSet=new Set(retainedIsins);
   return (
-    <section className="finance-surface p-4 sm:p-5" aria-label="Automatické složení ETF a aktuálnost emitentů">
+    <section id="xray-auto-sync" className="finance-surface p-4 sm:p-5" aria-label="Automatické složení ETF a aktuálnost emitentů">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">Automatický rozklad ETF</h2>
