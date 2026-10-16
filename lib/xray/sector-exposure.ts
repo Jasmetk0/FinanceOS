@@ -99,7 +99,6 @@ export function calculateXRaySectorExposure(
     }
   }
   const totals=new Map<XRayEquitySector,SectorTotals>();
-  const directLookup=new Map<string,DirectLookup>();
   const fundAudits:XRaySectorFundAudit[]=[];
   let viaClassifiedCzk=0;
 
@@ -132,14 +131,7 @@ export function calculateXRaySectorExposure(
         total.viaEtfCzk+=part;
         totals.set(row.sector,total);
         classifiedCzk+=part;
-        // Direct investments are assigned ONLY with the same exact issuer
-        // ISIN and only when all usable fund sources agree on its sector.
-        if(row.securityIsin){
-          const security=keyOf(row.securityIsin);
-          const known=directLookup.get(security);
-          if(known===undefined)directLookup.set(security,row.sector);
-          else if(known!==row.sector)directLookup.set(security,"conflicting");
-        }
+
       }
       if(classifiedCzk>fund.mappedCzk+eps(fund.valueCzk))
         throw new RangeError("Deklarované sektory převýšily skutečný rozklad ETF.");
