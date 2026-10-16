@@ -160,7 +160,7 @@ export function calculateXRayEtfOverlap(report:XRayResult):XRayOverlapResult {
     if(!validNumber(f.valueCzk)||!validNumber(f.mappedCzk)||
        !validNumber(f.unmappedCzk)||!eq(f.mappedCzk+f.unmappedCzk,f.valueCzk,f.valueCzk))
       throw new RangeError("ETF nemá vyrovnanou tržní hodnotu rozkladu.");
-    if(!f.isin){
+    if(!f.isin || !/^[A-Z]{2}[A-Z0-9]{10}$/.test(fundKey(f.isin))){
       excludedUnknownIsinFunds++;
       continue;
     }
