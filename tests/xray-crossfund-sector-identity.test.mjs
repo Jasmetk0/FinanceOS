@@ -65,12 +65,14 @@ test("conflicting GICS classifications for the same exact ISIN fail closed for o
  near(out.funds.find(f=>f.isin===VWCE).classifiedCzk,0);
 });
 test("modelled LYMS proxy cannot borrow physical fund sector even with exact ISIN",()=>{
- const rows=[...base(),r(LYMS,"LYMS","MSFT",MSFT,null,20,null,
-  "CNDX synthetic proxy; "+DATE,"reference-index-proxy")];
+ const proxy=Array.from({length:100},(_,i)=>r(LYMS,"LYMS",
+   i===0?"MSFT":"MODEL"+i,i===0?MSFT:null,0.99,null,
+   "CNDX synthetic proxy; "+DATE,"reference-index-proxy"));
+ const rows=[...base(),...proxy];
  const holdings=[...owned(),h("ly","LYMS","etf",1000,LYMS)];
  const out=calculateXRaySectorExposure(calculateXRay(holdings,rows),rows);
  near(out.funds.find(f=>f.isin===LYMS).classifiedCzk,0);
- near(out.modelProxyUnclassifiedCzk,200);
+ near(out.modelProxyUnclassifiedCzk,990);
 });
 test("a selected manual sector label cannot attest issuer classification",()=>{
  const rows=base().map(x=>x.fundIsin===SPYI?
