@@ -1371,6 +1371,7 @@ export function getPerformanceData() {
             OR (
               provider = 'trading212'
               AND flow_scope = 'internal'
+              AND category IN ('internal_transfer', 'internal_transfer:cfd')
               AND amount_czk IS NOT NULL
             )
           )
@@ -1445,7 +1446,11 @@ export function getPerformanceData() {
         explicitTransferValue !== null
           ? explicitTransferValue
           : String(row.provider) === "trading212" &&
-              String(row.flow_scope || "") === "internal"
+              String(row.flow_scope || "") === "internal" &&
+              (
+                String(row.category || "") === "internal_transfer" ||
+                String(row.category || "") === "internal_transfer:cfd"
+              )
             ? num(row.amount_czk)
             : 0;
       const date = new Date(String(row.occurred_at));
@@ -2110,6 +2115,7 @@ export function getAccountDetail(accountIdInput: string) {
                 provider = 'trading212'
                 AND kind = 'transfer'
                 AND flow_scope = 'internal'
+                AND category IN ('internal_transfer', 'internal_transfer:cfd')
               )
             )
           )
@@ -2130,17 +2136,19 @@ export function getAccountDetail(accountIdInput: string) {
         row.transfer_value_czk === null || row.transfer_value_czk === undefined
           ? null
           : num(row.transfer_value_czk);
-      // Trading 212's public API only covers the Invest/ISA side. A transfer
-      // between Invest and CFD can therefore have no linked FinanceOS account,
-      // but it is still a real cash flow for the Invest account chart. Use the
-      // signed provider amount as the account-level transfer delta while
-      // keeping it internal at portfolio level.
+      // Only transfers that cross an account boundary may move attributed
+      // capital. Trading 212 currency conversions stay inside the same Invest
+      // account and therefore must not alter account capital or P/L.
       const transferValue =
         explicitTransferValue !== null
           ? explicitTransferValue
           : provider === "trading212" &&
               kind === "transfer" &&
-              String(row.flow_scope || "") === "internal"
+              String(row.flow_scope || "") === "internal" &&
+              (
+                category === "internal_transfer" ||
+                category === "internal_transfer:cfd"
+              )
             ? amount
             : 0;
       return {
