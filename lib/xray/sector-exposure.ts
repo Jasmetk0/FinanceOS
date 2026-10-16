@@ -18,6 +18,10 @@ export interface XRaySectorExposure {
   sector:XRayEquitySector;
   directCzk:number;
   viaEtfCzk:number;
+  /** Portion explicitly classified in the physical ETF issuer's own holdings rows. */
+  viaIssuerCzk:number;
+  /** Portion safely transferred from another owned physical ETF via exact share-class ISIN. */
+  viaVerifiedIsinCzk:number;
   totalCzk:number;
   portfolioPct:number;
 }
@@ -26,6 +30,8 @@ export interface XRaySectorFundAudit {
   symbol:string;
   valueCzk:number;
   classifiedCzk:number;
+  issuerClassifiedCzk:number;
+  verifiedIsinClassifiedCzk:number;
   unclassifiedCzk:number;
   classifiedPct:number;
   asOf:string|null;
@@ -34,6 +40,8 @@ export interface XRaySectorFundAudit {
 export interface XRaySectorResult {
   denominatorCzk:number;
   classifiedCzk:number;
+  issuerClassifiedCzk:number;
+  verifiedIsinClassifiedCzk:number;
   classifiedPct:number;
   unclassifiedCzk:number;
   directUnclassifiedCzk:number;
@@ -50,7 +58,8 @@ const sum=<T,>(rows:T[],fn:(row:T)=>number)=>rows.reduce((a,b)=>a+fn(b),0);
 const keyOf=(s:string)=>s.trim().toUpperCase();
 const official=(source:string)=>source.startsWith("iShares official holdings (") ||
   source.startsWith("State Street official daily SPYI XLSX; ");
-type SectorTotals={directCzk:number;viaEtfCzk:number};
+type SectorTotals={directCzk:number;viaEtfCzk:number;viaIssuerCzk:number;viaVerifiedIsinCzk:number};
+const emptyTotals=():SectorTotals=>({directCzk:0,viaEtfCzk:0,viaIssuerCzk:0,viaVerifiedIsinCzk:0});
 type DirectLookup=XRayEquitySector|"conflicting";
 
 export function calculateXRaySectorExposure(
@@ -82,7 +91,7 @@ export function calculateXRaySectorExposure(
   const sectorEvidence=new Map<string,DirectLookup>();
   for(const fund of report.funds){
     const rows=(constituentsByFund.get(keyOf(fund.isin??""))??[]);
-    if(!fund.source||!fund.asOf||!official(fund.source)||
+    if(!fund.source||!fund.asOf||!official(fund.source)||fund.mappedCzk<=0||
        fund.exposureBasis==="reference-index"||
        fund.exposureBasis==="reference-index-proxy")continue;
     const accepted=rows.filter(r=>r.source===fund.source&&r.asOf===fund.asOf);
@@ -101,6 +110,7 @@ export function calculateXRaySectorExposure(
   const totals=new Map<XRayEquitySector,SectorTotals>();
   const fundAudits:XRaySectorFundAudit[]=[];
   let viaClassifiedCzk=0;
+  let issuerClassifiedCzk=0,verifiedIsinClassifiedCzk=0;
 
   for(const fund of report.funds) {
     if(!Number.isFinite(fund.valueCzk)||fund.valueCzk<0 ||
@@ -112,7 +122,7 @@ export function calculateXRaySectorExposure(
     const matched=(constituentsByFund.get(id)??[]).filter(row=>
       fund.source!==null&&row.source===fund.source &&
       fund.asOf!==null&&row.asOf===fund.asOf);
-    const eligible=fund.source!==null && official(fund.source) &&
+    const eligible=fund.mappedCzk>0 && fund.source!==null && official(fund.source) &&
       fund.exposureBasis!=="reference-index" &&
       fund.exposureBasis!=="reference-index-proxy" &&
       matched.length>0 &&
@@ -120,17 +130,19 @@ export function calculateXRaySectorExposure(
         r.exposureBasis!=="reference-index"&&
         r.exposureBasis!=="reference-index-proxy"&&
         r.exposureBasis!=="substitute-basket");
-    let classifiedCzk=0;
+    let classifiedCzk=0,issuerFundCzk=0,verifiedIsinFundCzk=0;
     if(eligible){
       for(const row of matched){
         if(row.kind!=="stock"||!isXRaySector(row.sector)||row.weightPct<=0)continue;
         const part=fund.valueCzk*row.weightPct/100;
         if(!Number.isFinite(part)||part<0)
           throw new RangeError("Neplatná částka zdrojem deklarovaného sektoru.");
-        const total=totals.get(row.sector)??{directCzk:0,viaEtfCzk:0};
+        const total=totals.get(row.sector)??emptyTotals();
         total.viaEtfCzk+=part;
+        total.viaIssuerCzk+=part;
         totals.set(row.sector,total);
         classifiedCzk+=part;
+        issuerFundCzk+=part;
 
       }
       if(classifiedCzk>fund.mappedCzk+eps(fund.valueCzk))
@@ -140,7 +152,7 @@ export function calculateXRaySectorExposure(
     // Attribute ONLY already-valued X-Ray fund contributions with an exact
     // resolved security ISIN, and never reclassify an issuer-covered fund.
     // We deliberately do not infer from ticker, company, or SEDOL alone.
-    if(!eligible && id && fund.valueCzk>0){
+    if(!eligible && id && fund.valueCzk>0 && fund.mappedCzk>0){
       for(const exposure of report.exposures){
         if(exposure.kind!=="stock"||
            !/^stock\|isin:[A-Z]{2}[A-Z0-9]{10}$/.test(exposure.key))continue;
@@ -154,18 +166,26 @@ export function calculateXRaySectorExposure(
           if(!Number.isFinite(part)||part<0)
             throw new RangeError("Neplatný převzatý sektorový příspěvek ETF.");
           classifiedCzk+=part;
-          const total=totals.get(sector)??{directCzk:0,viaEtfCzk:0};
+          verifiedIsinFundCzk+=part;
+          const total=totals.get(sector)??emptyTotals();
           total.viaEtfCzk+=part;
+          total.viaVerifiedIsinCzk+=part;
           totals.set(sector,total);
         }
       }
       if(classifiedCzk>fund.mappedCzk+eps(fund.valueCzk))
         throw new RangeError("Přenesená sektorová identita přesáhla rozklad ETF.");
     }
+    if(Math.abs(issuerFundCzk+verifiedIsinFundCzk-classifiedCzk)>eps(fund.valueCzk))
+      throw new RangeError("Nesouhlasí původ sektorové klasifikace ETF.");
     viaClassifiedCzk+=classifiedCzk;
+    issuerClassifiedCzk+=issuerFundCzk;
+    verifiedIsinClassifiedCzk+=verifiedIsinFundCzk;
     fundAudits.push({
       isin:id,symbol:fund.symbol,valueCzk:fund.valueCzk,
-      classifiedCzk,unclassifiedCzk:Math.max(0,fund.valueCzk-classifiedCzk),
+      classifiedCzk,issuerClassifiedCzk:issuerFundCzk,
+      verifiedIsinClassifiedCzk:verifiedIsinFundCzk,
+      unclassifiedCzk:Math.max(0,fund.valueCzk-classifiedCzk),
       classifiedPct:pct(classifiedCzk,fund.valueCzk),
       asOf:fund.asOf,source:fund.source,
     });
@@ -180,7 +200,7 @@ export function calculateXRaySectorExposure(
     if(!sector||sector==="conflicting")continue;
     directClassifiedCzk+=item.directCzk;
     knownDirectIsins.add(security);
-    const total=totals.get(sector)??{directCzk:0,viaEtfCzk:0};
+    const total=totals.get(sector)??emptyTotals();
     total.directCzk+=item.directCzk;
     totals.set(sector,total);
   }
@@ -196,16 +216,24 @@ export function calculateXRaySectorExposure(
     throw new RangeError("Sektory nelze bez ztráty hodnoty přiřadit k X-Ray NAV.");
 
   const sectors=XRAY_EQUITY_SECTORS.map(sector=>{
-    const v=totals.get(sector)??{directCzk:0,viaEtfCzk:0};
+    const v=totals.get(sector)??emptyTotals();
     const totalCzk=v.directCzk+v.viaEtfCzk;
     return {sector,directCzk:v.directCzk,viaEtfCzk:v.viaEtfCzk,
+      viaIssuerCzk:v.viaIssuerCzk,viaVerifiedIsinCzk:v.viaVerifiedIsinCzk,
       totalCzk,portfolioPct:pct(totalCzk,denominatorCzk)};
   }).filter(x=>x.totalCzk>0).sort((a,b)=>
     b.totalCzk-a.totalCzk||a.sector.localeCompare(b.sector));
-  if(Math.abs(sum(sectors,row=>row.totalCzk)-classifiedCzk)>eps(denominatorCzk))
-    throw new RangeError("Součet sektorů se neshoduje s klasifikovaným NAV.");
+  if(Math.abs(sum(sectors,row=>row.totalCzk)-classifiedCzk)>eps(denominatorCzk) ||
+     Math.abs(sum(sectors,row=>row.viaIssuerCzk)-issuerClassifiedCzk)>eps(denominatorCzk) ||
+     Math.abs(sum(sectors,row=>row.viaVerifiedIsinCzk)-verifiedIsinClassifiedCzk)>eps(denominatorCzk) ||
+     Math.abs(issuerClassifiedCzk+verifiedIsinClassifiedCzk-viaClassifiedCzk)>eps(denominatorCzk) ||
+     Math.abs(sum(fundAudits,f=>f.issuerClassifiedCzk)-issuerClassifiedCzk)>eps(denominatorCzk) ||
+     Math.abs(sum(fundAudits,f=>f.verifiedIsinClassifiedCzk)-verifiedIsinClassifiedCzk)>eps(denominatorCzk) ||
+     sectors.some(row=>Math.abs(row.viaIssuerCzk+row.viaVerifiedIsinCzk-row.viaEtfCzk)>eps(row.viaEtfCzk)))
+    throw new RangeError("Součet sektorů či jejich původ nesouhlasí s klasifikovaným NAV.");
   return {
-    denominatorCzk,classifiedCzk,classifiedPct:pct(classifiedCzk,denominatorCzk),
+    denominatorCzk,classifiedCzk,issuerClassifiedCzk,verifiedIsinClassifiedCzk,
+    classifiedPct:pct(classifiedCzk,denominatorCzk),
     unclassifiedCzk:Math.max(0,unclassifiedCzk),
     directUnclassifiedCzk:Math.max(0,directUnclassifiedCzk),
     fundUnclassifiedCzk:Math.max(0,fundUnclassifiedCzk),

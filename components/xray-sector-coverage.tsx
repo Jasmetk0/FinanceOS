@@ -13,6 +13,7 @@ const pct=(n:number)=>n.toLocaleString("cs-CZ",{maximumFractionDigits:2})+" %";
  */
 export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
   const [showFunds,setShowFunds]=useState(false);
+  const [showOrigin,setShowOrigin]=useState(false);
   const known=result.classifiedCzk,unclassified=result.unclassifiedCzk;
   return <section className="finance-surface p-4 sm:p-5"
     aria-label="Sektorová expozice podle doložených podkladů">
@@ -20,9 +21,10 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
       <div className="max-w-3xl">
         <h2 className="text-base font-semibold">Sektory akcií – doložené emitenty</h2>
         <p className="mt-1 text-xs leading-5 text-[var(--muted)]">
-          Zatím pouze sektory výslovně uvedené v úplných podkladech iShares
-          a State Street SPYI. Vanguard bez publikovaného sektoru,
-          ostatní ETF a neověřené přímé akcie zůstávají neklasifikované.
+          Sektory vycházejí z oficiálních podkladů iShares a State Street SPYI.
+          U dalších vlastněných fyzických ETF (například Vanguard) lze sektor
+          bezpečně převzít jen pro stejný ověřený ISIN akcie. Chybějící podklady,
+          neurčité identity a neověřené přímé akcie zůstávají neklasifikované.
         </p>
       </div>
       <span className="text-xs font-medium text-[var(--muted)]">
@@ -47,6 +49,11 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
         <strong className="mt-1 block text-lg tabular-nums">{result.directMatchedIsins.toLocaleString("cs-CZ")}</strong>
       </div>
     </div>
+    <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+      Původ klasifikace přes ETF: <strong className="text-[var(--foreground)]">{money(result.issuerClassifiedCzk)}</strong> přímo ze sektoru emitenta
+      {" · "} <strong className="text-[var(--foreground)]">{money(result.verifiedIsinClassifiedCzk)}</strong> přeneseno přes ověřený ISIN.
+      Tyto dvě hodnoty tvoří pouze část „Přes ETF“, nikoli nové investice.
+    </p>
     <div className="mt-3 flex h-2.5 w-full overflow-hidden rounded-full bg-white/[.08]"
       role="img" aria-label={"Klasifikováno "+pct(result.classifiedPct)+
         ", bez klasifikace "+pct(100-result.classifiedPct)}>
@@ -57,12 +64,20 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
       Váhy sektorů vždy vztažené k {money(result.denominatorCzk)} analyzovaného
       portfolia, nikoliv přepočtené na 100 % známých sektorů.
     </p>
-    <div className="finance-scrollbar mt-4 overflow-x-auto rounded-xl border border-[var(--border)]">
-      <table className="finance-data-table min-w-[520px] text-left">
+    <div className="mt-3">
+      <button type="button" className="finance-action" aria-expanded={showOrigin}
+        onClick={()=>setShowOrigin(v=>!v)}>
+        {showOrigin?"Skrýt":"Zobrazit"} původ sektorů podle ETF
+      </button>
+    </div>
+    <div className="finance-scrollbar mt-2 overflow-x-auto rounded-xl border border-[var(--border)]">
+      <table className={showOrigin?"finance-data-table min-w-[800px] text-left":"finance-data-table min-w-[520px] text-left"}>
         <thead><tr>
           <th>Sektor</th>
           <th className="text-right">Přímo</th>
           <th className="text-right">Přes ETF</th>
+          {showOrigin?<th className="text-right">Z údajů emitenta</th>:null}
+          {showOrigin?<th className="text-right">Ověřený ISIN</th>:null}
           <th className="text-right">Celkem</th>
           <th className="text-right">% portfolia</th>
         </tr></thead>
@@ -71,6 +86,8 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
             <td className="font-medium">{item.sector}</td>
             <td className="text-right tabular-nums">{money(item.directCzk)}</td>
             <td className="text-right tabular-nums">{money(item.viaEtfCzk)}</td>
+            {showOrigin?<td className="text-right tabular-nums">{money(item.viaIssuerCzk)}</td>:null}
+            {showOrigin?<td className="text-right tabular-nums">{money(item.viaVerifiedIsinCzk)}</td>:null}
             <td className="text-right font-semibold tabular-nums">{money(item.totalCzk)}</td>
             <td className="text-right tabular-nums">{pct(item.portfolioPct)}</td>
           </tr>)}
@@ -78,6 +95,8 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
             <td className="font-medium text-[var(--muted)]">Neznámé / neklasifikované</td>
             <td className="text-right tabular-nums">{money(result.directUnclassifiedCzk)}</td>
             <td className="text-right tabular-nums">{money(result.fundUnclassifiedCzk)}</td>
+            {showOrigin?<td className="text-right tabular-nums">—</td>:null}
+            {showOrigin?<td className="text-right tabular-nums">—</td>:null}
             <td className="text-right font-semibold tabular-nums">{money(unclassified)}</td>
             <td className="text-right tabular-nums">
               {pct(result.denominatorCzk?100*unclassified/result.denominatorCzk:0)}
@@ -106,6 +125,9 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
             <p className="mt-0.5 text-[11px] text-[var(--muted)]">
               {money(fund.classifiedCzk)} z {money(fund.valueCzk)}
             </p>
+            {fund.classifiedCzk>0?<p className="mt-0.5 text-[11px] text-[var(--muted)]">
+              Emitent: {money(fund.issuerClassifiedCzk)} · ISIN převod: {money(fund.verifiedIsinClassifiedCzk)}
+            </p>:null}
           </div>
         </div>)}
       </div>:null}
@@ -114,7 +136,8 @@ export function XRaySectorCoverage({result}:{result:XRaySectorResult}){
       Sektor není identita společnosti: více akciových tříd stejné firmy se bez
       důvěryhodného identifikátoru emitenta neslučuje. Přímo držená akcie dostane sektor
       jen při shodném doloženém ISIN a jednoznačném zařazení z fondových dat.
-      Krypto, neznámé sektory, indexové proxy a nerozložené zbytky tvoří část
+      Přenos sektoru do dalšího fondu vyžaduje ověřený identický ISIN akcie;
+      nezakládá nové podkladové držení. Krypto, neznámé sektory, indexové proxy a nerozložené zbytky tvoří část
       „neklasifikované“. Model LYMS je její podmnožinou, nikoli další položkou NAV.
     </p>
   </section>;
