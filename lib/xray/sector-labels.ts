@@ -17,7 +17,7 @@ export const XRAY_EQUITY_SECTORS=[
   "Utilities",
 ] as const;
 export type XRayEquitySector=typeof XRAY_EQUITY_SECTORS[number];
-const exact=new Map<string,XRayEquitySector>(XRAY_EQUITY_SECTORS.map(s=>[s.toLowerCase(),s]));
+const exact=new Map<string,XRayEquitySector>(XRAY_EQUITY_SECTORS.map(s=>[s.toLowerCase(),s] as const));
 // Only spelling variations of the SAME sector, not approximations of broader
 // labels (e.g. "Technology" or "Consumer Services" are deliberately UNKNOWN).
 const aliases=new Map<string,XRayEquitySector>([
