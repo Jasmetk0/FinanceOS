@@ -137,7 +137,7 @@ test("interactive X-Ray row displays full-width source breakdown with per-accoun
   assert.ok(parent.includes("<Fragment key={item.key}>"));
   assert.ok(parent.includes("setSelected(selected===item.key?null:item.key)"));
   assert.ok(detail.includes("exposure.directContributions.map"));
-  assert.ok(detail.includes("exposure.fundContributions.map"));
+  assert.ok(detail.includes("attribution.fundSlices.map"));
   assert.ok(detail.includes("Nepřímá ekonomická expozice"));
   assert.ok(detail.includes("Podíl z analyzovaného portfolia"));
 });
