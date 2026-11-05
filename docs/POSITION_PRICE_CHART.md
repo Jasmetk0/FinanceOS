@@ -4,7 +4,7 @@
 
 Stránka **Investice → detail pozice → Cenový graf a moje obchody** propojuje **denní závěrečné tržní ceny** se **skutečně uloženými vykonanými obchody** (buy/sell). Obchody se identifikují pomocí **ID konkrétního instrumentu**, ne pouhým tickerem. Tím se nesmísí různé tituly se stejným symbolem, jinými burzami nebo různými měnami.
 
-Zelené **+** označuje nákup a červené **−** prodej. Kliknutím se zobrazí datum, množství, účet a realizační cena. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
+Zelené **+** označuje nákup a červené **−** prodej. Kliknutím se zobrazí datum, množství, účet a realizační cena. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Pro případ více než 5 000 historických obchodů je stránka z výkonnostních důvodů omezena na posledních 5 000 a omezení výslovně přizná. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
 
 ## Cenový zdroj a úroveň spolehlivosti
 
