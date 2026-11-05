@@ -729,6 +729,7 @@ export function getDashboardData() {
     .prepare(`
       SELECT
         h.id,
+        h.asset_id,
         a.symbol,
         a.name,
         a.asset_class,
@@ -745,6 +746,7 @@ export function getDashboardData() {
     .all()
     .map((row) => ({
       id: String(row.id),
+      assetId: String(row.asset_id),
       symbol: String(row.symbol),
       name: String(row.name),
       assetClass: String(row.asset_class),
