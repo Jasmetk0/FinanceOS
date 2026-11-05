@@ -1,0 +1,78 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import {
+  eligibleTradeMarker,
+  parseYahooDailyChart,
+  yahooTickerForAsset,
+} from "../lib/shared/position-price-chart.mjs";
+
+function source(path) {
+  return readFileSync(new URL("../" + path, import.meta.url), "utf8");
+}
+
+test("historical quote mapping is exchange-specific and rejects ticker guesses", () => {
+  const base = { provider: "trading212", assetClass: "stock", currency: "USD", symbol: "AMD", listingSymbol: "AMD" };
+  assert.equal(yahooTickerForAsset({ ...base, externalId: "AMD_US_EQ" }), "AMD");
+  assert.equal(yahooTickerForAsset({ ...base, externalId: "AMD_DE_EQ", currency: "EUR" }), "AMD.DE");
+  assert.equal(yahooTickerForAsset({ ...base, externalId: "AMD_XX_EQ" }), null);
+  assert.equal(yahooTickerForAsset({ ...base, externalId: "AMD_US_EQ", listingSymbol: "INTC" }), null);
+  assert.equal(yahooTickerForAsset({ ...base, provider: "manual", externalId: "AMD" }), null);
+  assert.equal(yahooTickerForAsset({ ...base, assetClass: "p2p" }), null);
+});
+
+test("crypto uses only a known USD pair, never a guessed Solana token identity", () => {
+  const base = { provider: "kraken", assetClass: "crypto", symbol: "BTC", currency: "USD" };
+  assert.equal(yahooTickerForAsset(base), "BTC-USD");
+  assert.equal(yahooTickerForAsset({ ...base, symbol: "SOL" }), "SOL-USD");
+  assert.equal(yahooTickerForAsset({ ...base, symbol: "COIN_MINT_123" }), null);
+  assert.equal(yahooTickerForAsset({ ...base, currency: "EUR" }), null);
+});
+
+test("Yahoo parser filters invalid daily closes but preserves daily raw close (not adjusted close)", () => {
+  const values = parseYahooDailyChart({
+    meta: { currency: "USD" },
+    timestamp: [1720051200, 1720137600, 1720224000, 1720310400],
+    indicators: {
+      quote: [{ close: [101, null, 99, 0] }],
+      adjclose: [{ adjclose: [50, 50, 49, 50] }],
+    },
+  }, "USD");
+  assert.deepEqual(values, [
+    { date: "2024-07-04", close: 101 },
+    { date: "2024-07-06", close: 99 },
+  ]);
+  assert.throws(() => parseYahooDailyChart({
+    meta: { currency: "EUR" }, timestamp: [1720051200], indicators: { quote: [{ close: [10] }] },
+  }, "USD"), /měnu/);
+});
+
+test("GBp and GBP never share chart axes because the difference is 100x", () => {
+  const sample = { meta: { currency: "GBp" }, timestamp: [1720051200], indicators: { quote: [{ close: [240] }] } };
+  assert.deepEqual(parseYahooDailyChart(sample, "GBX"), [{ date: "2024-07-04", close: 240 }]);
+  assert.throws(() => parseYahooDailyChart(sample, "GBP"), /měnu/);
+});
+
+test("markers only represent genuine buy/sell orders with a valid timestamp", () => {
+  assert.equal(eligibleTradeMarker({ kind: "buy", occurredAt: "2024-01-09T15:00:00Z" }), true);
+  assert.equal(eligibleTradeMarker({ kind: "sell", occurredAt: "2024-01-09T15:00:00Z" }), true);
+  assert.equal(eligibleTradeMarker({ kind: "transfer", occurredAt: "2024-01-09T15:00:00Z" }), false);
+  assert.equal(eligibleTradeMarker({ kind: "buy", occurredAt: "bad" }), false);
+});
+
+test("position chart is mounted on existing asset page and its quotes cannot silently replace CSV prices", () => {
+  const page = source("app/investments/[symbol]/page.tsx");
+  const backend = source("lib/server/position-price-history.ts");
+  const chart = source("components/position-price-chart.tsx");
+  assert.ok(page.includes('id="price-chart"'));
+  assert.ok(page.includes("getPositionPriceChart("));
+  assert.ok(page.includes("<PositionPriceChart data={priceChart} />"));
+  assert.ok(backend.includes("WHERE asset_prices.source = ?"), "Unofficial prices may update only their own prior rows.");
+  assert.ok(backend.includes("t.kind IN ('buy', 'sell')"), "Only executed trade events should appear.");
+  assert.ok(backend.includes("WHERE t.asset_id = ?"), "Don't mix orders between assets with the same display symbol.");
+  assert.ok(chart.includes("selectedTradeId"));
+  assert.ok(chart.includes("setRange"));
+  assert.ok(chart.includes("showTrades"));
+  assert.ok(chart.includes("model.unplaced"));
+  assert.ok(chart.includes('href="/history#history-import"'));
+});
