@@ -52,6 +52,7 @@ type AssetRow = {
   currency: string;
   name: string;
   held_value: number;
+  held_quote_currency: string | null;
 };
 type PriceDBRow = {
   price_date: string;
@@ -61,9 +62,9 @@ type PriceDBRow = {
   imported_at: string;
 };
 
-async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
+async function refreshHistoricalPrices(asset: AssetRow, ticker: string, quoteCurrency: string) {
   const db = getDb();
-  const stateKey = "yahoo_daily:" + asset.id;
+  const stateKey = "yahoo_daily:" + asset.id + ":" + quoteCurrency;
   const previous = db.prepare(
     "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
   ).get(stateKey);
@@ -97,7 +98,7 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
     if (!result) {
       throw new Error(payload.chart?.error?.description || "Historické ceny nebyly nalezeny.");
     }
-    const prices = parseYahooDailyChart(result, asset.currency, ticker) as PositionPricePoint[];
+    const prices = parseYahooDailyChart(result, quoteCurrency, ticker) as PositionPricePoint[];
     const timezone = String((result as { meta?: { exchangeTimezoneName?: string } }).meta?.exchangeTimezoneName || "UTC");
     if (!prices.length) throw new Error("Zdroj vrátil prázdnou cenovou historii.");
 
@@ -114,7 +115,7 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
     db.exec("BEGIN IMMEDIATE");
     try {
       for (const price of prices) {
-        insert.run(asset.id, price.date, price.close, asset.currency, API_SOURCE, now, API_SOURCE);
+        insert.run(asset.id, price.date, price.close, quoteCurrency, API_SOURCE, now, API_SOURCE);
       }
       db.exec("COMMIT");
     } catch (error) {
@@ -124,7 +125,7 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
     db.prepare(
       "INSERT INTO provider_sync_state(provider, key, value, updated_at) VALUES ('market_prices', ?, ?, ?) " +
       "ON CONFLICT(provider, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-    ).run("exchange_timezone:" + asset.id, timezone, now);
+    ).run("exchange_timezone:" + asset.id + ":" + quoteCurrency, timezone, now);
     db.prepare(
       "UPDATE provider_sync_state SET value = ?, updated_at = ? WHERE provider = 'market_prices' AND key = ?",
     ).run("ok|" + now, now, stateKey);
@@ -147,29 +148,38 @@ export async function getPositionPriceChart(
   const assets = db.prepare(
     "SELECT a.id, a.provider, a.external_id, a.symbol, a.listing_symbol, " +
     "a.asset_class, a.currency, a.name, " +
-    "COALESCE((SELECT SUM(h.market_value_czk) FROM holdings h WHERE h.asset_id = a.id), 0) AS held_value " +
+    "COALESCE((SELECT SUM(h.market_value_czk) FROM holdings h WHERE h.asset_id = a.id), 0) AS held_value, " +
+    "(SELECT h.currency FROM holdings h WHERE h.asset_id = a.id ORDER BY h.market_value_czk DESC LIMIT 1) AS held_quote_currency " +
     "FROM assets a WHERE UPPER(a.symbol) = ? AND a.asset_class IN ('stock', 'etf', 'crypto', 'other') " +
     "ORDER BY held_value DESC, a.provider ASC, a.id ASC",
   ).all(symbol) as AssetRow[];
   if (!assets.length) return null;
 
   const asset = assets.find((row) => row.id === preferredAssetId) || assets[0];
+  const preferredQuote = asset.asset_class === "crypto"
+    ? (asset.held_quote_currency || asset.currency)
+    : asset.currency;
   const ticker = yahooTickerForAsset({
     symbol: asset.symbol,
     provider: asset.provider,
     externalId: asset.external_id,
     listingSymbol: asset.listing_symbol,
     assetClass: asset.asset_class,
-    currency: asset.currency,
+    currency: preferredQuote,
   }) as string | null;
+  // A digital asset has its own denomination (e.g. BTC). Price is a
+  // separate quote pair (BTC-USD or BTC-EUR), never in 'BTC per BTC'.
+  const quoteCurrency = asset.asset_class === "crypto" && ticker
+    ? ticker.slice(ticker.lastIndexOf("-") + 1)
+    : asset.currency;
 
-  const warning = ticker ? await refreshHistoricalPrices(asset, ticker) : null;
+  const warning = ticker ? await refreshHistoricalPrices(asset, ticker, quoteCurrency) : null;
   const pricesFromDb = db.prepare(
     "SELECT price_date, close, currency, source, imported_at " +
     "FROM asset_prices WHERE asset_id = ? ORDER BY price_date ASC",
   ).all(asset.id) as PriceDBRow[];
   const compatible = pricesFromDb.filter((row) =>
-    String(row.currency).toUpperCase() === String(asset.currency).toUpperCase() &&
+    String(row.currency).toUpperCase() === quoteCurrency.toUpperCase() &&
     Number.isFinite(row.close) && row.close > 0,
   );
   const prices = compatible.map((row) => ({
@@ -177,7 +187,7 @@ export async function getPositionPriceChart(
   }));
   const storedTimezone = db.prepare(
     "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
-  ).get("exchange_timezone:" + asset.id);
+  ).get("exchange_timezone:" + asset.id + ":" + quoteCurrency);
   const exchangeTimezone = String(storedTimezone?.value || "UTC");
     const tradesFromDb = db.prepare(
     "SELECT t.id, t.kind, t.occurred_at, t.quantity, t.price, t.currency, " +
@@ -200,7 +210,7 @@ export async function getPositionPriceChart(
       provider: String(row.provider),
       // T212 execution price is in the instrument currency even when the
       // wallet cash flow uses a different settlement currency.
-      priceCurrency: String(row.provider) === "trading212" ? asset.currency : String(row.currency),
+      priceCurrency: String(row.provider) === "trading212" ? quoteCurrency : String(row.currency),
     }))
     .filter(eligibleTradeMarker)
     .reverse();
@@ -209,7 +219,7 @@ export async function getPositionPriceChart(
     asOfDate: new Date().toISOString().slice(0, 10),
     symbol: asset.symbol,
     provider: asset.provider,
-    currency: asset.currency,
+    currency: quoteCurrency,
     ticker,
     prices,
     trades,
