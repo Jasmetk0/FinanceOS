@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   eligibleTradeMarker,
+  chartExecutionTimestamp,
+  describeTradeCzk,
   exchangeDate,
+  isExactClockTime,
   overlayTradePrice,
   parseYahooDailyChart,
   previousClose,
@@ -117,6 +120,50 @@ test("markers only represent genuine buy/sell orders with a valid timestamp", ()
   assert.equal(eligibleTradeMarker({ kind: "sell", occurredAt: "2024-01-09T15:00:00Z" }), true);
   assert.equal(eligibleTradeMarker({ kind: "transfer", occurredAt: "2024-01-09T15:00:00Z" }), false);
   assert.equal(eligibleTradeMarker({ kind: "buy", occurredAt: "bad" }), false);
+});
+
+
+test("native CZK cash is recorded; non-CZK CZK totals are only historical ČNB conversions", () => {
+  assert.deepEqual(describeTradeCzk({amount:-4250.25, amountCurrency:"CZK", amountCzk:-4250.25}),
+    {value:4250.25, quality:"recorded"});
+  assert.deepEqual(describeTradeCzk({amount:-100, amountCurrency:"USD", amountCzk:-2119.56}),
+    {value:2119.56, quality:"cnb-converted"});
+  assert.deepEqual(describeTradeCzk({amount:450, amountCurrency:"EUR", amountCzk:null}),
+    {value:null, quality:"unavailable"});
+  assert.deepEqual(describeTradeCzk({amount:null, amountCurrency:"CZK", amountCzk:null}),
+    {value:null, quality:"unavailable"});
+  assert.deepEqual(describeTradeCzk({amount:0, amountCurrency:"CZK", amountCzk:0}),
+    {value:0, quality:"recorded"});
+});
+
+test("execution position follows exchange local clock without decoration or false timezone precision", () => {
+  const at="2026-11-01T23:30:00.000Z";
+  const aussie=chartExecutionTimestamp(at, "Australia/Sydney");
+  assert.equal(new Date(aussie).toISOString(), "2026-11-02T10:30:00.000Z");
+  const american=chartExecutionTimestamp(at, "America/New_York");
+  assert.equal(new Date(american).toISOString(), "2026-11-01T18:30:00.000Z");
+  assert.equal(chartExecutionTimestamp("bad"), null);
+  assert.equal(isExactClockTime(at), true);
+  assert.equal(isExactClockTime("2026-11-02"), false);
+  assert.equal(isExactClockTime("2026-11-02T14:30:00"), false);
+  assert.equal(new Date(chartExecutionTimestamp("2026-11-02", "UTC")).toISOString(), "2026-11-02T12:00:00.000Z");
+});
+
+test("trade cards expose original movements, CZK provenance, and real marker hover events", () => {
+  const sourceServer=source("lib/server/position-price-history.ts");
+  const chart=source("components/position-price-chart.tsx");
+  for (const field of ["t.amount", "t.amount_czk", "t.fee", "t.external_id", "t.source_label"]) {
+    assert.ok(sourceServer.includes(field), "Chart server must read "+field);
+  }
+  assert.ok(sourceServer.includes("exchangeTimezone"));
+  assert.ok(chart.includes("onPointerEnter"), "Hover must show a card, not only require click");
+  assert.ok(chart.includes('role="tooltip"'));
+  assert.ok(chart.includes("TradeInfoCard"));
+  assert.ok(chart.includes("describeTradeCzk"));
+  assert.ok(chart.includes("onFocus"), "Keyboard focus shows the same trade detail");
+  assert.ok(chart.includes("usedTradePrice"), "Only comparable source prices belong on the price axis");
+  assert.ok(chart.includes("chartExecutionTimestamp"), "Never add arbitrary x-offset collision jitter");
+  assert.equal(chart.includes("(collision % 5 - 2) * 5"), false);
 });
 
 test("position chart is mounted on existing asset page and its quotes cannot silently replace CSV prices", () => {
