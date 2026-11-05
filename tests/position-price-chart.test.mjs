@@ -29,7 +29,8 @@ test("crypto uses only a known USD pair, never a guessed Solana token identity",
   assert.equal(yahooTickerForAsset(base), "BTC-USD");
   assert.equal(yahooTickerForAsset({ ...base, symbol: "SOL" }), "SOL-USD");
   assert.equal(yahooTickerForAsset({ ...base, symbol: "COIN_MINT_123" }), null);
-  assert.equal(yahooTickerForAsset({ ...base, currency: "EUR" }), null);
+  assert.equal(yahooTickerForAsset({ ...base, currency: "EUR" }), "BTC-EUR");
+  assert.equal(yahooTickerForAsset({ ...base, currency: "BTC" }), "BTC-USD");
 });
 
 test("Yahoo parser filters invalid daily closes but preserves daily raw close (not adjusted close)", () => {
@@ -128,6 +129,7 @@ test("position chart is mounted on existing asset page and its quotes cannot sil
   assert.ok(backend.includes("WHERE asset_prices.source = ?"), "Unofficial prices may update only their own prior rows.");
   assert.ok(backend.includes("t.kind IN ('buy', 'sell')"), "Only executed trade events should appear.");
   assert.ok(backend.includes("WHERE t.asset_id = ?"), "Don't mix orders between assets with the same display symbol.");
+  assert.ok(backend.includes("held_quote_currency"), "Use the actual crypto holding quote currency.");
   assert.ok(chart.includes("selectedTradeId"));
   assert.ok(chart.includes("setRange"));
   assert.ok(chart.includes("showTrades"));
