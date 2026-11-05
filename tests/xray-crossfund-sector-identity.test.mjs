@@ -4,7 +4,7 @@ import {calculateXRay} from "../lib/xray/engine.ts";
 import {calculateXRaySectorExposure} from "../lib/xray/sector-exposure.ts";
 
 const SPYI="IE00B3YLTY66",VWCE="IE00BK5BQT80",LYMS="LU1829221024";
-const MSFT="US5949181045",NVDA="US67066G1040",SEDOL="B1YW440",DATE="2026-10-15";
+const MSFT="US5949181045",NVDA="US67066G1040",SEDOL="B1YW440",DATE=new Date().toISOString().slice(0,10); // live proxy fixture
 const issuer="State Street official daily SPYI XLSX; "+DATE;
 const vanguard="Vanguard EU official GPX holdings; "+DATE;
 const h=(id,symbol,type,valueCzk,isin)=>({
