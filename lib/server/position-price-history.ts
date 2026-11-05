@@ -2,6 +2,7 @@ import { getDb } from "@/lib/server/db";
 import {
   eligibleTradeMarker,
   exchangeDate,
+  tradeCalendarDate,
   parseYahooDailyChart,
   yahooTickerForAsset,
 } from "@/lib/shared/position-price-chart.mjs";
@@ -221,7 +222,7 @@ export async function getPositionPriceChart(
     .filter((row) => eligibleTradeMarker({kind:row.kind, occurredAt:row.occurred_at}))
     .map((row) => ({
       id: String(row.id),
-      date: exchangeDate(String(row.occurred_at), exchangeTimezone),
+      date: tradeCalendarDate(String(row.occurred_at), exchangeTimezone),
       occurredAt: String(row.occurred_at),
       kind: String(row.kind) as "buy" | "sell",
       quantity: row.quantity === null ? null : Number(row.quantity),
