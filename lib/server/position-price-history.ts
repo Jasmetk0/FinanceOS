@@ -30,6 +30,7 @@ export interface PositionPriceChartData {
   assetId: string;
   asOfDate: string;
   symbol: string;
+  assetClass: string;
   provider: string;
   currency: string;
   ticker: string | null;
@@ -227,6 +228,7 @@ export async function getPositionPriceChart(
     assetId: asset.id,
     asOfDate: new Date().toISOString().slice(0, 10),
     symbol: asset.symbol,
+    assetClass: asset.asset_class,
     provider: asset.provider,
     currency: quoteCurrency,
     ticker,
