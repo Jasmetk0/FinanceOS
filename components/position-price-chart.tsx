@@ -306,7 +306,11 @@ export function PositionPriceChart({
               title={asset.label}
             >{asset.symbol} · {asset.currency} · {asset.provider}</Link>
           ))}
-          <span className="text-[11px] text-[var(--muted)]">Stejné ETF může mít více kotací. Každá burza a měna má vlastní graf i značky obchodů.</span>
+          <span className="text-[11px] text-[var(--muted)]">
+            {data.assetClass === "etf" || data.assetClass === "other"
+              ? "Stejný ISIN může mít více burzovních kotací. Každá měna a instrument mají vlastní ceny a obchody."
+              : "Různé instrumenty se stejným symbolem se automaticky neslučují."}
+          </span>
         </div>
       ) : null}
 
