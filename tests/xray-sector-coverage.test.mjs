@@ -9,7 +9,7 @@ import {normalizeIssuerSector} from "../lib/xray/sector-labels.ts";
 const SXR8="IE00B5BMR087",SPYI="IE00B3YLTY66";
 const VWCE="IE00BK5BQT80",LYMS="LU1829221024";
 const MSFT="US5949181045",NVDA="US67066G1040",AAPL="US0378331005",BAC="US0605051046";
-const date="2026-10-15";
+const date=new Date().toISOString().slice(0,10); // keep the 14-day proxy freshness fixture valid over time
 const holding=(id,symbol,assetClass,valueCzk,isin=null)=>({
  id,symbol,name:symbol,assetClass,valueCzk,isin,canonicalKey:null,quantity:1,
  provider:"trading212",accountName:"Invest",
