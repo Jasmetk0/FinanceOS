@@ -404,7 +404,7 @@ export function PositionPriceChart({
           {activeTrade && showTrades ? (
             <div role="tooltip" id={tooltipId}
               className={(selectedTradeId === activeTrade.id ? "pointer-events-auto" : "pointer-events-none") +
-                " fixed z-50 w-[300px] max-w-[calc(100vw-16px)]"}
+                " fixed z-50 max-h-[calc(100vh-16px)] w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto"}
               style={{left: tipPosition.x, top: tipPosition.y}}>
               <TradeInfoCard trade={activeTrade} unit={unit} timeZone={data.exchangeTimezone} />
               {selectedTradeId === activeTrade.id ? (
@@ -422,8 +422,8 @@ export function PositionPriceChart({
                     {selectedTrade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
                   </strong>{" "}
                   {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")} · {selectedTrade.account}
-                  {selectedTrade.quantity !== null ? " · " + selectedTrade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit : ""}
-                  {selectedTrade.price !== null ? " · provedená cena " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
+                  {selectedTrade.quantity !== null ? " · " + preciseNumber(selectedTrade.quantity, 12) + " " + unit : ""}
+                  {selectedTrade.price !== null ? " · provedená cena " + preciseNumber(selectedTrade.price, 10) + " " + selectedTrade.priceCurrency : ""}
                 </span>
               ) : hoveredPrice ? (
                 <span>{displayDate(hoveredPrice.date)} · <strong className="text-[var(--foreground)]">{formatValue(hoveredPrice.close, data.currency)}</strong></span>
@@ -484,8 +484,8 @@ export function PositionPriceChart({
                 {trade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
               </strong> · {new Date(trade.occurredAt).toLocaleString("cs-CZ")} · {trade.account}</span>
               <span className="shrink-0 text-right tabular-nums">
-                <span className="block">{trade.quantity === null ? "Množství neznámé" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit}</span>
-                <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : formatValue(trade.price, trade.priceCurrency)}</span>
+                <span className="block">{trade.quantity === null ? "Množství neznámé" : preciseNumber(trade.quantity, 12) + " " + unit}</span>
+                <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : preciseNumber(trade.price, 10) + " " + trade.priceCurrency}</span>
               </span>
             </button>
           )) : <p className="p-4 text-xs text-[var(--muted)]">V období nejsou doložené obchody.</p>}
