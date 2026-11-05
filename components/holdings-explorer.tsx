@@ -12,6 +12,13 @@ type Display = "table" | "cards";
 
 const PAGE_SIZE = 30;
 
+function positionHref(holding: Holding) {
+  const base = "/investments/" + encodeURIComponent(holding.symbol);
+  return ["stock", "etf", "crypto"].includes(holding.assetClass)
+    ? base + "?asset=" + encodeURIComponent(holding.assetId) + "#price-chart"
+    : base;
+}
+
 function money(value: number | null) {
   return value === null || !Number.isFinite(value)
     ? "—"
@@ -185,7 +192,7 @@ export function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
               const color = providerColor(holding.provider);
               const share = equityShare(holding.valueCzk, totalKnownValue);
               return (
-                <Link key={holding.id} href={"/investments/" + encodeURIComponent(holding.symbol)} prefetch={false} className="finance-account-card group relative min-w-0 overflow-hidden px-3.5 py-3.5 sm:px-4" title={"Detail " + holding.symbol}>
+                <Link key={holding.id} href={positionHref(holding)} prefetch={false} className="finance-account-card group relative min-w-0 overflow-hidden px-3.5 py-3.5 sm:px-4" title={"Detail " + holding.symbol}>
                   <div aria-hidden="true" className="absolute inset-x-0 top-0 h-[2px]" style={{ background: "linear-gradient(90deg, " + color + ", transparent 75%)" }} />
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -208,6 +215,7 @@ export function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
                     <span style={{ width: share + "%", backgroundColor: color }} />
                   </div>
                   <p className="mt-2 truncate text-[11px] text-[var(--muted)]">{holding.accountName} · {holding.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 })} jednotek</p>
+                  <p className="mt-2 text-[11px] font-semibold text-[var(--accent)]">{["stock", "etf", "crypto"].includes(holding.assetClass) ? "Graf ceny + moje obchody ↗" : "Otevřít detail ↗"}</p>
                 </Link>
               );
             })}
@@ -229,7 +237,7 @@ export function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
                   {shown.map((holding) => (
                     <tr key={holding.id}>
                       <td>
-                        <Link href={"/investments/" + encodeURIComponent(holding.symbol)} prefetch={false} className="text-[13px] font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]">{holding.symbol} ↗</Link>
+                        <Link href={positionHref(holding)} prefetch={false} className="text-[13px] font-semibold text-[var(--foreground)] transition hover:text-[var(--accent)]">{holding.symbol} ↗</Link>
                         <p className="mt-1 max-w-[210px] truncate text-[11px] text-[var(--muted)]" title={holding.name}>{holding.name}</p>
                       </td>
                       <td>
