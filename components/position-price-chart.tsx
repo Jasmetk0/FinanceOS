@@ -41,18 +41,26 @@ function domainStart(range: Range, end: number) {
   return date.getTime();
 }
 
+function closestPriceIndex(prices: PositionPricePoint[], target: number) {
+  if (!prices.length) return -1;
+  let low = 0;
+  let high = prices.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (timestamp(prices[middle].date) < target) low = middle + 1;
+    else high = middle;
+  }
+  if (low === 0) return 0;
+  if (low === prices.length) return prices.length - 1;
+  return Math.abs(timestamp(prices[low].date) - target) <
+    Math.abs(timestamp(prices[low - 1].date) - target) ? low : low - 1;
+}
+
 function nearbyClose(prices: PositionPricePoint[], date: string): number | null {
   const target = timestamp(date);
-  let nearest: number | null = null;
-  let distance = 6 * 86400000;
-  for (const point of prices) {
-    const diff = Math.abs(timestamp(point.date) - target);
-    if (diff < distance) {
-      nearest = point.close;
-      distance = diff;
-    }
-  }
-  return nearest;
+  const index = closestPriceIndex(prices, target);
+  return index >= 0 && Math.abs(timestamp(prices[index].date) - target) <= 5 * 86400000
+    ? prices[index].close : null;
 }
 
 type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number; usedTradePrice: boolean };
@@ -62,7 +70,7 @@ export function PositionPriceChart({
 }: {
   data: PositionPriceChartData;
 }) {
-  const [range, setRange] = useState<Range>("1R");
+  const [range, setRange] = useState<Range>("MAX");
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
   const [showTrades, setShowTrades] = useState(true);
@@ -75,7 +83,7 @@ export function PositionPriceChart({
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
     if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", x: (_: number) => LEFT, y: (_: number) => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
     const minX = range === "MAX" ? timestamp(prices[0].date) : start;
-    const maxX = Math.max(timestamp(prices[prices.length - 1].date), minX + 86400000);
+    const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
       const close = nearbyClose(prices, trade.date);
@@ -127,13 +135,8 @@ export function PositionPriceChart({
     const bounds = event.currentTarget.getBoundingClientRect();
     const mouse = (event.clientX - bounds.left) * W / bounds.width;
     const target = model.minX + (Math.min(W - RIGHT, Math.max(LEFT, mouse)) - LEFT) / PLOT_W * (model.maxX - model.minX);
-    let nearest = model.prices[0];
-    let distance = Math.abs(timestamp(nearest.date) - target);
-    for (const point of model.prices) {
-      const next = Math.abs(timestamp(point.date) - target);
-      if (next < distance) { nearest = point; distance = next; }
-    }
-    setHoverDate(nearest.date);
+    const index = closestPriceIndex(model.prices, target);
+    if (index >= 0) setHoverDate(model.prices[index].date);
   }
 
   return (
@@ -193,7 +196,7 @@ export function PositionPriceChart({
           <svg
             viewBox={"0 0 " + W + " " + H}
             className="block h-auto w-full touch-pan-y"
-            role="img"
+            role="group"
             aria-label={"Cenový vývoj " + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHoverDate(null)}
