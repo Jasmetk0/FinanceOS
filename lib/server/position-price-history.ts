@@ -36,6 +36,7 @@ export interface PositionPriceChartData {
   ticker: string | null;
   prices: PositionPricePoint[];
   trades: PositionTradeMarker[];
+  tradesTruncated: boolean;
   source: string;
   firstDate: string | null;
   lastDate: string | null;
@@ -204,9 +205,10 @@ export async function getPositionPriceChart(
     "a.name AS account_name, t.provider " +
     "FROM transactions t JOIN accounts a ON a.id = t.account_id " +
     "WHERE t.asset_id = ? AND t.kind IN ('buy', 'sell') " +
-    "ORDER BY t.occurred_at DESC, t.id DESC LIMIT 5000",
+    "ORDER BY t.occurred_at DESC, t.id DESC LIMIT 5001",
   ).all(asset.id);
-  const trades: PositionTradeMarker[] = tradesFromDb
+  const tradesTruncated = tradesFromDb.length > 5000;
+  const trades: PositionTradeMarker[] = tradesFromDb.slice(0, 5000)
     .filter((row) => eligibleTradeMarker({kind:row.kind, occurredAt:row.occurred_at}))
     .map((row) => ({
       id: String(row.id),
@@ -234,6 +236,7 @@ export async function getPositionPriceChart(
     ticker,
     prices,
     trades,
+    tradesTruncated,
     source: [...new Set(compatible.map((row) => row.source))].join(" · "),
     firstDate: prices[0]?.date || null,
     lastDate: prices.at(-1)?.date || null,
