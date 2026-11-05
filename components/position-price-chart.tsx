@@ -388,6 +388,7 @@ export function PositionPriceChart({
                   }}
                   className="cursor-pointer outline-none focus-visible:opacity-80"
                 >
+                  <circle cx={trade.x} cy={trade.y} r="19" fill="transparent" />
                   <circle cx={trade.x} cy={trade.y} r={active ? 13 : 10}
                     fill={trade.usedTradePrice ? color : "#111e30"}
                     stroke={active ? "#fff" : color} strokeWidth={trade.usedTradePrice ? 2.5 : 3}
@@ -458,15 +459,20 @@ export function PositionPriceChart({
           {showList ? "Skrýt seznam obchodů" : "Zobrazit seznam obchodů"}
         </button>
       </div>
-      {!model.prices.length && selectedTrade ? <p role="status" className="rounded-lg border border-[var(--border)] p-3 text-xs">
-        Vybraný {selectedTrade.kind === "buy" ? "nákup" : "prodej"} · {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")}
-        {" · "}{selectedTrade.account}
-        {selectedTrade.price !== null ? " · " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
-      </p> : null}
+      {!model.prices.length && selectedTrade ? (
+        <div role="status" className="max-w-sm">
+          <TradeInfoCard trade={{...selectedTrade, usedTradePrice: false}} unit={unit} timeZone={data.exchangeTimezone} />
+        </div>
+      ) : null}
       {showList ? (
         <div className="max-h-72 overflow-auto rounded-xl border border-[var(--border)]">
           {model.trades.length ? model.trades.slice().reverse().map((trade) => (
-            <button key={trade.id} type="button" onClick={() => setSelectedTradeId(trade.id)}
+            <button key={trade.id} type="button" onClick={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect();
+              moveTooltip(event.clientX || bounds.right, event.clientY || bounds.top);
+              setHoveredTradeId(null);
+              setSelectedTradeId(trade.id);
+            }}
               className="flex w-full items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left text-xs last:border-0 hover:bg-white/[.04]">
               <span><strong className={trade.kind === "buy" ? "text-[var(--accent)]" : "text-[var(--danger)]"}>
                 {trade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
