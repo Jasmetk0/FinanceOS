@@ -148,8 +148,30 @@ export function PositionPriceChart({
     const start = domainStart(range, end);
     const prices = data.prices.filter((p) => timestamp(p.date) >= start && timestamp(p.date) <= end);
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
-    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", gapCount: 0, x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
-    const minX = range === "MAX" ? Math.min(timestamp(prices[0].date), ...trades.map(t => timestamp(t.date))) : start;
+    if (prices.length === 0) {
+      // No market quote must not hide real trades. Offer a compact timeline
+      // at the source execution timestamps without inventing any prices.
+      const minX = range === "MAX" && trades.length
+        ? Math.min(...trades.map(t => timestamp(t.date) - 12 * 3600000))
+        : range === "MAX" ? end - 86400000 : start;
+      const maxX = Math.max(end, minX + 86400000);
+      const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
+      const laneY = 78;
+      const plotted: PlotTrade[] = trades.map(trade => ({
+        ...trade, chartPrice: null, usedTradePrice: false,
+        x: Math.max(LEFT, Math.min(W - RIGHT, x(
+          chartExecutionTimestamp(trade.occurredAt, data.exchangeTimezone) ?? timestamp(trade.date),
+        ))),
+        y: laneY,
+      }));
+      return { prices, trades, plotted, ticks: [] as number[], path: "", area: "",
+        gapCount: 0, laneY, x, y: () => laneY, minX, maxX, minY: 0, maxY: 1,
+        unplaced: trades.length };
+    }
+    const minX = range === "MAX"
+      ? Math.min(timestamp(prices[0].date) - 12 * 3600000,
+        ...trades.map(t => timestamp(t.date) - 12 * 3600000))
+      : start;
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
@@ -183,6 +205,7 @@ export function PositionPriceChart({
     const area = gaps === 0 ? path + " L" + x(timestamp(prices[prices.length - 1].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " L" + x(timestamp(prices[0].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " Z" : "";
+    const laneY = TOP + PLOT_H + 15;
     const plotted = executions.map((trade) => {
       const executedAt = chartExecutionTimestamp(trade.occurredAt, data.exchangeTimezone) ??
         timestamp(trade.date);
@@ -191,11 +214,11 @@ export function PositionPriceChart({
         // No +/-5 px collision jitter: horizontal position is sourced from
         // the actual exchange-local clock timestamp, not a decoration.
         x: Math.max(LEFT, Math.min(W - RIGHT, x(executedAt))),
-        y: trade.chartPrice === null ? TOP + PLOT_H + 15 : y(trade.chartPrice),
+        y: trade.chartPrice === null ? laneY : y(trade.chartPrice),
       };
     });
     const ticks = Array.from({ length: 5 }, (_, index) => minY + (maxY - minY) * index / 4);
-    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, x, y, minX, maxX, minY, maxY, unplaced: plotted.filter(t => !t.usedTradePrice).length };
+    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, laneY, x, y, minX, maxX, minY, maxY, unplaced: plotted.filter(t => !t.usedTradePrice).length };
   }, [data.prices, data.trades, data.currency, data.asOfDate, data.exchangeTimezone, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
@@ -220,7 +243,7 @@ export function PositionPriceChart({
     });
   }
 
-    function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     if (!model.prices.length) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const mouse = (event.clientX - bounds.left) * W / bounds.width;
@@ -281,13 +304,18 @@ export function PositionPriceChart({
         </p>
       ) : null}
 
-      {model.prices.length ? (
+      {model.prices.length || model.plotted.length ? (
         <div className="finance-scrollbar overflow-x-auto rounded-2xl border border-[var(--border)] bg-[#0a1421]/40">
+          {!model.prices.length ? (
+            <p className="border-b border-[var(--border)] px-4 py-3 text-xs text-[var(--warning)]">
+              Cenová historie chybí. Zobrazujeme proto pouze časovou osu skutečných nákupů a prodejů, bez vymyšlené ceny.
+            </p>
+          ) : null}
           <svg
-            viewBox={"0 0 " + W + " " + H}
+            viewBox={"0 0 " + W + " " + (model.prices.length ? H : 160)}
             className="block h-auto min-w-[680px] w-full touch-pan-y"
             role="group"
-            aria-label={"Cenový vývoj " + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
+            aria-label={(model.prices.length ? "Cenový vývoj " : "Časová osa skutečných obchodů ") + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHoverDate(null)}
           >
@@ -307,7 +335,7 @@ export function PositionPriceChart({
             ))}
             {[0, 0.25, 0.5, 0.75, 1].map((f) => {
               const value = model.minX + (model.maxX - model.minX) * f;
-              return <text key={f} x={LEFT + PLOT_W * f} y={H - 19} fill="currentColor" opacity="0.65"
+              return <text key={f} x={LEFT + PLOT_W * f} y={model.prices.length ? H - 19 : 140} fill="currentColor" opacity="0.65"
                 fontSize="12" textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}>
                 {new Date(value).toLocaleDateString("cs-CZ", { month: "short", year: "numeric" })}
               </text>;
@@ -324,7 +352,7 @@ export function PositionPriceChart({
               </g>
             ) : null}
             {model.unplaced > 0 ? (
-              <line x1={LEFT} x2={W - RIGHT} y1={TOP + PLOT_H + 15} y2={TOP + PLOT_H + 15}
+              <line x1={LEFT} x2={W - RIGHT} y1={model.laneY} y2={model.laneY}
                 stroke="currentColor" strokeWidth="1" opacity="0.35" strokeDasharray="2 6" />
             ) : null}
             {showTrades ? model.plotted.map((trade) => {
@@ -420,7 +448,7 @@ export function PositionPriceChart({
       </div>
       {data.tradesTruncated ? <p className="text-xs text-[var(--warning)]">Historie instrumentu má více než 5 000 obchodů; kvůli výkonu jsou zde načteny poslední 5 000. Kompletní historii najdeš v exportu transakcí.</p> : null}
       {model.gapCount > 0 ? <p className="text-xs text-[var(--warning)]">V historii je {model.gapCount} delších mezer v denních kurzech. Mezi nimi nespojujeme cenu vymyšlenou úsečkou.</p> : null}
-      {model.unplaced > 0 ? <p className="text-xs text-[var(--warning)]">
+      {model.unplaced > 0 && model.prices.length > 0 ? <p className="text-xs text-[var(--warning)]">
         {model.unplaced} obchodů nemá bezpečně srovnatelnou realizační cenu (měna, split nebo chybějící denní kurz). Dutá kolečka jsou na samostatné časové ose; úplná data jsou v kartě obchodu.
       </p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
