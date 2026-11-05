@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   eligibleTradeMarker,
+  exchangeDate,
+  overlayTradePrice,
   parseYahooDailyChart,
+  previousClose,
   yahooTickerForAsset,
 } from "../lib/shared/position-price-chart.mjs";
 
@@ -51,6 +54,61 @@ test("GBp and GBP never share chart axes because the difference is 100x", () => 
   const sample = { meta: { currency: "GBp" }, timestamp: [1720051200], indicators: { quote: [{ close: [240] }] } };
   assert.deepEqual(parseYahooDailyChart(sample, "GBX"), [{ date: "2024-07-04", close: 240 }]);
   assert.throws(() => parseYahooDailyChart(sample, "GBP"), /měnu/);
+});
+
+
+test("exchange dates follow local market sessions, including the previous UTC day", () => {
+  // Sydney opens on Monday while UTC may still show Sunday night.
+  assert.equal(exchangeDate("2026-11-01T23:30:00.000Z", "Australia/Sydney"), "2026-11-02");
+  assert.equal(exchangeDate("2026-11-01T23:30:00.000Z", "America/New_York"), "2026-11-01");
+  assert.equal(exchangeDate("2026-11-01T23:30:00.000Z"), "2026-11-01");
+  assert.throws(() => exchangeDate("not-a-date", "UTC"), /timestamp/);
+  assert.throws(() => exchangeDate("2026-11-01T12:00:00Z", "Mars/Unknown"));
+});
+
+test("quote series uses the exchange timezone and rejects a redirected instrument", () => {
+  const source = {
+    meta: { currency: "AUD", symbol: "BHP.AX", exchangeTimezoneName: "Australia/Sydney" },
+    timestamp: [1793575800],
+    indicators: { quote: [{ close: [40.25] }] },
+  };
+  assert.deepEqual(parseYahooDailyChart(source, "AUD", "BHP.AX"), [
+    { date: "2026-11-02", close: 40.25 },
+  ]);
+  assert.throws(() => parseYahooDailyChart(source, "AUD", "CBA.AX"), /jiný instrument/);
+});
+
+test("the prior valid close is used for markers: never a future quote or a month-old quote", () => {
+  const prices = [
+    { date: "2026-10-30", close: 100 },
+    { date: "2026-11-02", close: 102 },
+    { date: "2026-11-10", close: 120 },
+  ];
+  assert.equal(previousClose(prices, "2026-11-01"), 100);
+  assert.equal(previousClose(prices, "2026-11-02"), 102);
+  assert.equal(previousClose(prices, "2026-10-29"), null);
+  assert.equal(previousClose(prices, "2026-11-09"), null);
+  assert.equal(previousClose(prices, "2026-12-15"), null);
+});
+
+test("execution quote currency and split plausibility prevent false chart placement", () => {
+  assert.deepEqual(overlayTradePrice({price: 102, priceCurrency: "USD"}, 100, "USD"),
+    {chartPrice: 102, usedTradePrice: true});
+  assert.deepEqual(overlayTradePrice({price: 100, priceCurrency: "EUR"}, 100, "USD"),
+    {chartPrice: 100, usedTradePrice: false});
+  assert.deepEqual(overlayTradePrice({price: 1000, priceCurrency: "USD"}, 100, "USD"),
+    {chartPrice: 100, usedTradePrice: false});
+  assert.deepEqual(overlayTradePrice({price: null, priceCurrency: "USD"}, 100, "USD"),
+    {chartPrice: 100, usedTradePrice: false});
+  assert.deepEqual(overlayTradePrice({price: 0, priceCurrency: "USD"}, 100, "USD"),
+    {chartPrice: 100, usedTradePrice: false});
+});
+
+test("US class share ticker is translated to Yahoo class syntax without affecting exchanges", () => {
+  assert.equal(yahooTickerForAsset({
+    provider: "trading212", assetClass: "stock", currency: "USD",
+    externalId: "BRK.B_US_EQ", listingSymbol: "BRK.B", symbol: "BRK.B",
+  }), "BRK-B");
 });
 
 test("markers only represent genuine buy/sell orders with a valid timestamp", () => {
