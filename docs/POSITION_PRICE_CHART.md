@@ -4,7 +4,7 @@
 
 Stránka **Investice → detail pozice → Cenový graf a moje obchody** propojuje **denní závěrečné tržní ceny** se **skutečně uloženými vykonanými obchody** (buy/sell). Obchody se identifikují pomocí **ID konkrétního instrumentu**, ne pouhým tickerem. Tím se nesmísí různé tituly se stejným symbolem, jinými burzami nebo různými měnami.
 
-Zelené **+** označuje nákup a červené **−** prodej. **Najetí myší, zaměření klávesnicí nebo kliknutí/tapnutí** zobrazí kartu provedeného obchodu: čas, množství, realizační cenu, zapsaný peněžní pohyb, evidované poplatky, účet a identifikátor. Karta přehledně zobrazuje i Kč s označením přesnosti. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Pro případ více než 5 000 historických obchodů je stránka z výkonnostních důvodů omezena na posledních 5 000 a omezení výslovně přizná. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
+Zelené **+** označuje nákup a červené **−** prodej. **Najetí myší, zaměření klávesnicí nebo kliknutí/tapnutí** zobrazí kartu provedeného obchodu: čas, množství, realizační cenu, evidovanou hodnotu obchodu, poplatky podle zdroje, účet a identifikátor. Karta přehledně zobrazuje i Kč s označením přesnosti. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Pro případ více než 5 000 historických obchodů je stránka z výkonnostních důvodů omezena na posledních 5 000 a omezení výslovně přizná. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
 
 ## Cenový zdroj a úroveň spolehlivosti
 
@@ -27,7 +27,7 @@ Zelené **+** označuje nákup a červené **−** prodej. **Najetí myší, zam
 ## Co znamená částka v Kč v informační kartě
 
 - **Nativní CZK obchod:** FinanceOS zobrazí zaznamenanou částku obchodu přímo v Kč. Nemusí ale obsahovat případné nezaznamenané bankovní náklady.
-- **Obchod v USD/EUR/jiné měně:** uložené pole `amount_czk` v současných importech Trading 212 a Kraken vzniká **historickým převodem podle kurzu ČNB**. Karta takovou částku označuje **Přepočet na Kč**, nikoliv skutečnou CZK platbu nebo zaručenou částku odečtenou bankou. Zobrazuje se rovněž originální měna a zapsaný pohyb peněz.
+- **Obchod v USD/EUR/jiné měně:** uložené pole `amount_czk` v současných importech Trading 212 a Kraken vzniká **historickým převodem podle kurzu ČNB**. Karta takovou částku označuje **Přepočet na Kč**, nikoliv skutečnou CZK platbu nebo zaručenou částku odečtenou bankou. Zobrazuje se rovněž originální měna a evidovaná částka obchodu; tato částka nemusí být totožná s konečným pohybem peněz po poplatcích.
 - **Bez důvěryhodného CZK údaje:** zobrazí se **Nedostupná**; žádný kurz ani výsledná hodnota se nevymýšlí.
 - Poplatek se zobrazuje odděleně v původní měně, pokud byl zaznamenán. Zapsaný pohyb peněz může podle zdroje poplatek již obsahovat nebo jej vykazuje zvlášť; proto se automaticky nepřičítá ani neodečítá podruhé.
 - Časová poloha markerů vychází z provedení zaznamenaného poskytovatelem a časového pásma burzy, pokud je k dispozici. Samotná křivka však reprezentuje **pouze denní close**, nikoliv intradenní průběh. U timestampu bez doložené časové zóny to UI přiznává.
