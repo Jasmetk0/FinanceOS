@@ -249,10 +249,12 @@ export async function getPositionPriceChart(
     : asset.currency;
 
   const fetchWarning = ticker ? await refreshHistoricalPrices(asset, ticker, quoteCurrency)
-    : asset.provider !== "trading212" && asset.asset_class !== "crypto"
-      ? "Tento zdroj nemá ověřenou burzovní kotaci pro automatické načtení."
-      : "Trading 212 instrument nemá bezpečně přiřaditelný burzovní ticker. " +
-        "Zkontroluj kód instrumentu, typ a měnu. Graf nebude nahrazen cenou jiného ETF.";
+    : asset.asset_class === "crypto"
+      ? "Pro tento kryptotoken není dostupné ověřené kotování; cenu jiného tokenu nenahrazujeme."
+      : asset.provider !== "trading212"
+        ? "Tento zdroj nemá ověřenou burzovní kotaci pro automatické načtení."
+        : "Trading 212 instrument nemá bezpečně přiřaditelný burzovní ticker. " +
+          "Zkontroluj kód instrumentu, typ a měnu. Graf nebude nahrazen cenou jiného ETF.";
   const pricesFromDb = db.prepare(
     "SELECT price_date, close, currency, source, imported_at " +
     "FROM asset_prices WHERE asset_id = ? ORDER BY price_date ASC",
