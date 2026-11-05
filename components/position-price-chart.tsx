@@ -291,6 +291,7 @@ export function PositionPriceChart({
         </p>
         <p>{data.source || "Zatím bez cenového zdroje"} · {data.ticker || data.symbol} · {data.currency}</p>
       </div>
+      {data.tradesTruncated ? <p className="text-xs text-[var(--warning)]">Historie instrumentu má více než 5 000 obchodů; kvůli výkonu jsou zde načteny poslední 5 000. Kompletní historii najdeš v exportu transakcí.</p> : null}
       {model.gapCount > 0 ? <p className="text-xs text-[var(--warning)]">V historii je {model.gapCount} delších mezer v denních kurzech. Mezi nimi nespojujeme cenu vymyšlenou úsečkou.</p> : null}
       {model.unplaced > 0 ? <p className="text-xs text-[var(--warning)]">
         {model.unplaced} obchodů nelze umístit do grafu (chybí blízká tržní cena). Jsou v seznamu níže.
