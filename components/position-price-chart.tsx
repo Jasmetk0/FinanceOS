@@ -97,12 +97,12 @@ function TradeInfoCard({
           <strong className="mt-0.5 block tabular-nums">{trade.price === null ? "Nedostupná" : preciseNumber(trade.price, 10) + " " + trade.priceCurrency}</strong>
         </div>
         <div className="col-span-2">
-          <p className="text-[10px] text-slate-400">Zapsaný pohyb na účtu</p>
+          <p className="text-[10px] text-slate-400">Evidovaná hodnota obchodu</p>
           <strong className="mt-0.5 block tabular-nums">{trade.amount === null ? "Nedostupný" : (trade.amount > 0 ? "+" : "") + preciseNumber(trade.amount, 10) + " " + trade.amountCurrency}</strong>
         </div>
         {trade.fee !== null && trade.fee > 0 ? (
           <div className="col-span-2">
-            <p className="text-[10px] text-slate-400">Zapsaný poplatek (může být mimo částku obchodu)</p>
+            <p className="text-[10px] text-slate-400">Evidovaný poplatek (účtován samostatně nebo již v částce)</p>
             <strong className="mt-0.5 block tabular-nums">{preciseNumber(trade.fee, 10)} {trade.feeCurrency}</strong>
           </div>
         ) : null}
@@ -117,7 +117,7 @@ function TradeInfoCard({
           {czk.value === null ? "Nedostupná" : czk.value.toLocaleString("cs-CZ", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " Kč"}
         </strong>
         {czk.quality === "cnb-converted" ? (
-          <p className="mt-1 text-[10px] leading-4 text-amber-200">Přepočet podle ČNB ≠ přesná korunová částka stržená brokerem či bankou.</p>
+          <p className="mt-1 text-[10px] leading-4 text-amber-200">Přepočet podle ČNB ≠ přesná korunová úhrada. Případné poplatky nemusejí být v částce zahrnuty.</p>
         ) : null}
       </div>
       <p className="mt-2 text-[10px] leading-4 text-slate-300">
