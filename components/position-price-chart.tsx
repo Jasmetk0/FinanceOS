@@ -84,7 +84,7 @@ function TradeInfoCard({
       </div>
       <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
         <div className="col-span-2">
-          <p className="text-[10px] text-slate-400">Provedeno na burze / místní čas</p>
+          <p className="text-[10px] text-slate-400">Datum a čas provedení · {timeZone}</p>
           <strong className="mt-0.5 block tabular-nums">{tradeTime}</strong>
           {!clock ? <p className="text-[10px] text-amber-300">Původní záznam nedokládá časové pásmo; čas může být orientační.</p> : null}
         </div>
@@ -403,9 +403,15 @@ export function PositionPriceChart({
           </svg>
           {activeTrade && showTrades ? (
             <div role="tooltip" id={tooltipId}
-              className="pointer-events-none fixed z-50 w-[300px] max-w-[calc(100vw-16px)]"
+              className={(selectedTradeId === activeTrade.id ? "pointer-events-auto" : "pointer-events-none") +
+                " fixed z-50 w-[300px] max-w-[calc(100vw-16px)]"}
               style={{left: tipPosition.x, top: tipPosition.y}}>
               <TradeInfoCard trade={activeTrade} unit={unit} timeZone={data.exchangeTimezone} />
+              {selectedTradeId === activeTrade.id ? (
+                <button type="button" aria-label="Zavřít kartu obchodu"
+                  className="absolute right-3 top-9 rounded-md border border-white/15 bg-[#253951] px-2 py-1 text-xs text-white hover:bg-[#344963]"
+                  onClick={() => setSelectedTradeId(null)}>×</button>
+              ) : null}
             </div>
           ) : null}
           <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3 text-xs">
@@ -421,7 +427,7 @@ export function PositionPriceChart({
                 </span>
               ) : hoveredPrice ? (
                 <span>{displayDate(hoveredPrice.date)} · <strong className="text-[var(--foreground)]">{formatValue(hoveredPrice.close, data.currency)}</strong></span>
-              ) : <span>Pohybem nad grafem zobrazíš kurz; najetím na +/− otevřeš kartu obchodu včetně částky v Kč. Kliknutím ji připneš.</span>}
+              ) : <span>Pohybem nad grafem zobrazíš kurz; najetím na +/− otevřeš kartu obchodu včetně částky v Kč. Kliknutím ji připneš, opětovným kliknutím nebo × zavřeš.</span>}
             </div>
             <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[var(--muted)]">
               <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)}
