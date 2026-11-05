@@ -18,11 +18,21 @@ Zelené **+** označuje nákup a červené **−** prodej. **Najetí myší, zam
 ## Pravidla správnosti
 
 1. **Čas** — ceny i provedení se při známém trhu přiřazují podle místního dne burzy, nikoli pouhým UTC řetězcem. Zohledňuje se letní čas.
-2. **Měna** — GBP není totéž co britské pence (GBp/GBX). Měna tržních dat se musí shodovat s vykreslovanou měnou. U kryptoměn je jednotka aktiva (BTC) odlišná od kotace (například BTC-USD / BTC-EUR).
+2. **Měna a londýnská ETF** — GBP není totéž co britské pence (GBp/GBX). Na **konkrétní identické londýnské kotaci** (např. ticker `SGLN.L`) je povolen exaktní jednotkový přepočet 100 GBp = 1 GBP. FinanceOS nejdříve ověří, že Yahoo vrací přesně požadovaný burzovní symbol, a převede jednotlivé ceny z pencí do liber (nebo obráceně). V UI je taková transformace výslovně označená. Jiné burzy a jiné měny se bez doložených FX kurzů **nepřevádějí**. U kryptoměn je jednotka aktiva (BTC) odlišná od kotace (BTC-USD / BTC-EUR).
 3. **Skutečná cena nákupu** — plné +/− leží na zaznamenané realizační ceně jen při souhlasné měně a přiměřené cenové vzdálenosti od trhu. **Duté kolečko s přerušovaným okrajem** neleží na cenové křivce: obchod nemá bezpečně srovnatelnou cenovou hodnotu a je umístěn do **samostatné časové osy pod grafem**. Pokud graf nemá žádné ceny, časová osa reálných obchodů funguje samostatně.
 4. **Žádné cenové informace z budoucnosti** — při chybějícím kurzu není použita cena dalšího obchodního dne. Pokud nelze realizační cenu srovnat, značka se přesune do samostatné časové osy; nikdy se nepřemístí k libovolné tržní ceně. Poloha X vychází z místního času provedení, bez původního dekorativního posunutí více značek o několik pixelů.
 5. **Rozdělení akcií** — starší obchody mohou mít cenu z doby před splitem. Nesmí se bez doložené transformace mechanicky porovnávat s upraveným historickým kurzem.
 6. **Identita** — nejednoznačná burza, špatná měna nebo jiný ticker vrácený cenovým zdrojem zablokuje automatické spojení.
+
+## ETF – proč různé burzy a ceny nejsou stejný graf
+
+- **ISIN** identifikuje fond, zatímco obchodovaný ticker, burza a měna identifikují **konkrétní kotaci**. Jeden ETF může mít více kotací a názvů. FinanceOS umožňuje přepínat mezi položkami se **stejným ověřeným ISIN**, ale nikdy jejich nákupy, realizační ceny ani tržní kurzy mechanicky neslučuje.
+- **Ticker musí odpovídat původnímu identifikátoru Trading 212**, např. `VWCE_DE_EQ` → `VWCE.DE`. Převod nesmí hádat jiný ETF ani jinou burzu. Yahoo `EQQQ` bez burzovní přípony může označovat jiný americký fond než evropský `EQQQ.L`.
+- Londýnské ETF a ETC bývají v **GBP** nebo **GBp**. Např. Yahoo u `SGLN.L` používá GBp, zatímco `VWRL.L` vykazuje GBP. Přepočet britských jednotek je číselně přesný; přepočet GBP/CZK není jeho součástí.
+- **ETC/ETP** mohou v portfoliu zůstat klasifikovány jako `other`; pokud metadata Trading 212 výslovně potvrzují ETP/ETC/ETF, stránka může bezpečně zobrazit burzovní cenový graf, aniž by změnila účetní klasifikaci nebo předstírala, že fyzické zlato je akciový ETF.
+- **Při neznámém tickeru, chybě zdroje nebo nesouladu měny** je uvedeno vysvětlení. Pokud graf zůstane prázdný a v databázi je cenová historie v jiné měně, aplikace explicitně upozorní na nekompatibilní kotace. Starší uložené ceny se nesmí tvářit jako live.
+
+Ověření listingů: [VWCE.DE – Yahoo Finance](https://finance.yahoo.com/quote/VWCE.DE/), [SGLN.L – Yahoo Finance](https://finance.yahoo.com/quote/SGLN.L/), [VWRL.L – Yahoo Finance](https://finance.yahoo.com/quote/VWRL.L/).
 
 ## Co znamená částka v Kč v informační kartě
 

@@ -233,6 +233,10 @@ export function PositionPriceChart({
   const tooltipId = "trade-info-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "");
   const hoveredPrice = model.prices.find((p) => p.date === hoverDate) ?? null;
   const latest = model.prices.at(-1) ?? null;
+  const outdatedByDays = latest ? Math.floor(
+    (Date.parse(data.asOfDate + "T00:00:00Z") -
+      Date.parse(latest.date + "T00:00:00Z")) / 86400000,
+  ) : null;
   const first = model.prices[0] ?? null;
   const pct = latest && first && first.close > 0
     ? (latest.close / first.close - 1) * 100 : null;
@@ -293,16 +297,20 @@ export function PositionPriceChart({
           {data.alternatives.map((asset) => (
             <Link
               key={asset.id}
-              href={"/investments/" + encodeURIComponent(data.symbol) + "?asset=" + encodeURIComponent(asset.id) + "#price-chart"}
+              href={"/investments/" + encodeURIComponent(asset.symbol) + "?asset=" + encodeURIComponent(asset.id) + "#price-chart"}
               prefetch={false}
               aria-current={asset.id === data.assetId ? "page" : undefined}
               className={["rounded-lg border px-2.5 py-1.5 text-xs transition",
                 asset.id === data.assetId ? "border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]" : "border-[var(--border)] text-[var(--muted)] hover:text-white",
               ].join(" ")}
               title={asset.label}
-            >{asset.provider} · {asset.currency}</Link>
+            >{asset.symbol} · {asset.currency} · {asset.provider}</Link>
           ))}
-          <span className="text-[11px] text-[var(--muted)]">Nákupy různých instrumentů se neslučují.</span>
+          <span className="text-[11px] text-[var(--muted)]">
+            {data.assetClass === "etf" || data.assetClass === "other"
+              ? "Stejný ISIN může mít více burzovních kotací. Každá měna a instrument mají vlastní ceny a obchody."
+              : "Různé instrumenty se stejným symbolem se automaticky neslučují."}
+          </span>
         </div>
       ) : null}
 
@@ -312,6 +320,11 @@ export function PositionPriceChart({
           <p className="mt-1 text-2xl font-semibold tabular-nums">
             {latest ? formatValue(latest.close, data.currency) : "Historické ceny zatím nejsou"}
           </p>
+          {outdatedByDays !== null && outdatedByDays > 8 ? (
+            <p role="status" className="mt-1 text-xs font-semibold text-[var(--warning)]">
+              Pozor: poslední dostupná cena je {outdatedByDays} kalendářních dní stará; není to aktuální kurz.
+            </p>
+          ) : null}
           <p className="mt-1 text-xs text-[var(--muted)]">
             {latest ? displayDate(latest.date) + " · změna ve zvoleném období " : "Doplní se při dostupnosti ověřitelného cenového zdroje."}
             {pct === null ? null : <span className={pct >= 0 ? "font-semibold text-[var(--accent)]" : "font-semibold text-[var(--danger)]"}>
@@ -331,6 +344,11 @@ export function PositionPriceChart({
         </div>
       </div>
 
+      {data.quoteUnitNote ? (
+        <p role="status" className="rounded-lg border border-[var(--accent)]/20 bg-[var(--accent)]/[.04] px-3 py-2 text-xs text-[var(--muted)]">
+          Přepočet burzovní jednotky: {data.quoteUnitNote}. Jde o jednotky téže britské kotace, nikoli o kurz GBP/CZK.
+        </p>
+      ) : null}
       {data.warning ? (
         <p role="status" className="rounded-lg border border-[var(--warning)]/20 bg-[var(--warning)]/[.04] px-3 py-2 text-xs text-[var(--warning)]">
           Automatické načtení cen: {data.warning}. {data.prices.length ? "Zobrazují se již uložené ceny." : "Graf čeká na dostupná data."}

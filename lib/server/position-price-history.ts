@@ -5,6 +5,7 @@ import {
   tradeCalendarDate,
   parseYahooDailyChart,
   yahooTickerForAsset,
+  yahooListingQuoteScale,
 } from "@/lib/shared/position-price-chart.mjs";
 
 const API_SOURCE = "Yahoo Finance · daily close (unofficial)";
@@ -51,7 +52,8 @@ export interface PositionPriceChartData {
   lastDate: string | null;
   lastImportAt: string | null;
   warning: string | null;
-  alternatives: Array<{ id: string; provider: string; currency: string; label: string }>;
+  quoteUnitNote: string | null;
+  alternatives: Array<{ id: string; symbol: string; provider: string; currency: string; label: string }>;
 }
 
 type AssetRow = {
@@ -60,6 +62,8 @@ type AssetRow = {
   external_id: string;
   symbol: string;
   listing_symbol: string | null;
+  isin: string | null;
+  raw_json: string | null;
   asset_class: string;
   currency: string;
   name: string;
@@ -76,7 +80,9 @@ type PriceDBRow = {
 
 async function refreshHistoricalPrices(asset: AssetRow, ticker: string, quoteCurrency: string) {
   const db = getDb();
-  const stateKey = "yahoo_daily:" + asset.id + ":" + quoteCurrency;
+  // Versioned after the verified London GBp↔GBP handling; old failed cached
+  // lookups should be retried without requiring a user to wait two hours.
+  const stateKey = "yahoo_daily:v2:" + asset.id + ":" + quoteCurrency + ":" + ticker;
   const previous = db.prepare(
     "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
   ).get(stateKey);
@@ -119,7 +125,11 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string, quoteCur
       throw new Error(payload.chart?.error?.description || "Historické ceny nebyly nalezeny.");
     }
     const prices = parseYahooDailyChart(result, quoteCurrency, ticker) as PositionPricePoint[];
-    const timezone = String((result as { meta?: { exchangeTimezoneName?: string } }).meta?.exchangeTimezoneName || "UTC");
+    const meta = (result as { meta?: {
+      exchangeTimezoneName?: string; currency?: string; symbol?: string;
+    } }).meta;
+    const timezone = String(meta?.exchangeTimezoneName || "UTC");
+    const quoteScale = yahooListingQuoteScale(meta?.currency, quoteCurrency, ticker, meta?.symbol);
     if (!prices.length) throw new Error("Zdroj vrátil prázdnou cenovou historii.");
 
     // CSV remains authoritative over the unofficial API. Prices with CZK
@@ -147,6 +157,18 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string, quoteCur
       "ON CONFLICT(provider, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
     ).run("exchange_timezone:" + asset.id + ":" + quoteCurrency, timezone, now);
     db.prepare(
+      "INSERT INTO provider_sync_state(provider, key, value, updated_at) VALUES ('market_prices', ?, ?, ?) " +
+      "ON CONFLICT(provider, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    ).run(
+      "quote_unit:" + asset.id + ":" + quoteCurrency,
+      quoteScale === 0.01
+        ? "Yahoo GBp → GBP (pence ÷ 100, stejný londýnský ticker)"
+        : quoteScale === 100
+          ? "Yahoo GBP → GBX (libry × 100, stejný londýnský ticker)"
+          : "",
+      now,
+    );
+    db.prepare(
       "UPDATE provider_sync_state SET value = ?, updated_at = ? WHERE provider = 'market_prices' AND key = ?",
     ).run("ok|" + now, now, stateKey);
     return null;
@@ -166,7 +188,7 @@ export async function getPositionPriceChart(
   const db = getDb();
   const symbol = symbolInput.trim().toUpperCase();
   const assets = db.prepare(
-    "SELECT a.id, a.provider, a.external_id, a.symbol, a.listing_symbol, " +
+    "SELECT a.id, a.provider, a.external_id, a.symbol, a.listing_symbol, a.isin, a.raw_json, " +
     "a.asset_class, a.currency, a.name, " +
     "COALESCE((SELECT SUM(h.market_value_czk) FROM holdings h WHERE h.asset_id = a.id), 0) AS held_value, " +
     "(SELECT h.currency FROM holdings h WHERE h.asset_id = a.id ORDER BY h.market_value_czk DESC LIMIT 1) AS held_quote_currency " +
@@ -176,6 +198,39 @@ export async function getPositionPriceChart(
   if (!assets.length) return null;
 
   const asset = assets.find((row) => row.id === preferredAssetId) || assets[0];
+  // Identical ETF ISINs can trade in several share listings with different
+  // symbols / currencies (e.g. Xetra EUR vs London GBP). Offer each listing
+  // separately, never copy an unrelated listing's quote into the current ETF.
+  const validIsin = asset.isin && /^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(asset.isin);
+  const relatedListings = validIsin && asset.provider === "trading212" &&
+    (asset.asset_class === "etf" || asset.asset_class === "other")
+    ? db.prepare(
+      "SELECT a.id, a.provider, a.external_id, a.symbol, a.listing_symbol, a.isin, a.raw_json, " +
+      "a.asset_class, a.currency, a.name, " +
+      "COALESCE((SELECT SUM(h.market_value_czk) FROM holdings h WHERE h.asset_id = a.id), 0) AS held_value, " +
+      "(SELECT h.currency FROM holdings h WHERE h.asset_id = a.id ORDER BY h.market_value_czk DESC LIMIT 1) AS held_quote_currency " +
+      "FROM assets a WHERE a.provider = 'trading212' AND a.isin = ? AND a.id <> ? " +
+      "AND a.asset_class IN ('etf', 'other') ORDER BY held_value DESC LIMIT 16",
+    ).all(asset.isin, asset.id) as AssetRow[]
+    : [];
+  const seen = new Set<string>();
+  const alternatives = [...assets, ...relatedListings].filter(row => {
+    if (seen.has(row.id)) return false;
+    seen.add(row.id);
+    return true;
+  });
+  // Some ETP / ETC metadata is classified as OTHER for portfolio reporting.
+  // A verified Trading 212 listing is still price-chartable without changing
+  // accounting or misclassifying a physical gold ETC as an equity ETF.
+  let listingAssetClass = asset.asset_class;
+  if (listingAssetClass === "other" && asset.provider === "trading212") {
+    try {
+      const metadata = JSON.parse(asset.raw_json || "{}");
+      if (/^(ETF|ETP|ETC|EXCHANGE_TRADED_FUND)$/i.test(String(metadata.type || ""))) {
+        listingAssetClass = "etf";
+      }
+    } catch { /* Unknown metadata stays unsupported. */ }
+  }
   const preferredQuote = asset.asset_class === "crypto"
     ? (asset.held_quote_currency || asset.currency)
     : asset.currency;
@@ -184,7 +239,7 @@ export async function getPositionPriceChart(
     provider: asset.provider,
     externalId: asset.external_id,
     listingSymbol: asset.listing_symbol,
-    assetClass: asset.asset_class,
+    assetClass: listingAssetClass,
     currency: preferredQuote,
   }) as string | null;
   // A digital asset has its own denomination (e.g. BTC). Price is a
@@ -193,7 +248,13 @@ export async function getPositionPriceChart(
     ? ticker.slice(ticker.lastIndexOf("-") + 1)
     : asset.currency;
 
-  const warning = ticker ? await refreshHistoricalPrices(asset, ticker, quoteCurrency) : null;
+  const fetchWarning = ticker ? await refreshHistoricalPrices(asset, ticker, quoteCurrency)
+    : asset.asset_class === "crypto"
+      ? "Pro tento kryptotoken není dostupné ověřené kotování; cenu jiného tokenu nenahrazujeme."
+      : asset.provider !== "trading212"
+        ? "Tento zdroj nemá ověřenou burzovní kotaci pro automatické načtení."
+        : "Trading 212 instrument nemá bezpečně přiřaditelný burzovní ticker. " +
+          "Zkontroluj kód instrumentu, typ a měnu. Graf nebude nahrazen cenou jiného ETF.";
   const pricesFromDb = db.prepare(
     "SELECT price_date, close, currency, source, imported_at " +
     "FROM asset_prices WHERE asset_id = ? ORDER BY price_date ASC",
@@ -205,6 +266,18 @@ export async function getPositionPriceChart(
   const prices = compatible.map((row) => ({
     date: String(row.price_date), close: Number(row.close),
   }));
+  const incompatibleCurrencies = [...new Set(pricesFromDb
+    .filter(row => String(row.currency).toUpperCase() !== quoteCurrency.toUpperCase())
+    .map(row => String(row.currency)))];
+  const diagnostic = !prices.length && incompatibleCurrencies.length
+    ? "Lokálně jsou kurzy pouze v jiné měně (" + incompatibleCurrencies.join(", ") +
+      "); nelze je bez ověřeného přepočtu zaměnit za " + quoteCurrency + "."
+    : null;
+  const warning = [fetchWarning, diagnostic].filter(Boolean).join(" ") || null;
+  const unitRow = db.prepare(
+    "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
+  ).get("quote_unit:" + asset.id + ":" + quoteCurrency);
+  const quoteUnitNote = String(unitRow?.value || "") || null;
   const storedTimezone = db.prepare(
     "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
   ).get("exchange_timezone:" + asset.id + ":" + quoteCurrency);
@@ -262,11 +335,13 @@ export async function getPositionPriceChart(
     lastDate: prices.at(-1)?.date || null,
     lastImportAt: compatible.at(-1)?.imported_at || null,
     warning,
-    alternatives: assets.map((row) => ({
+    quoteUnitNote,
+    alternatives: alternatives.map((row) => ({
       id: row.id,
+      symbol: row.symbol,
       provider: row.provider,
       currency: row.currency,
-      label: row.name + " · " + row.provider + " · " + row.currency,
+      label: row.name + " · " + row.symbol + " · " + row.provider + " · " + row.currency,
     })),
   };
 }

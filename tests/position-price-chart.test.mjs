@@ -12,6 +12,7 @@ import {
   parseYahooDailyChart,
   previousClose,
   yahooTickerForAsset,
+  yahooListingQuoteScale,
 } from "../lib/shared/position-price-chart.mjs";
 
 function source(path) {
@@ -61,6 +62,63 @@ test("GBp and GBP never share chart axes because the difference is 100x", () => 
   assert.throws(() => parseYahooDailyChart(sample, "GBP"), /měnu/);
 });
 
+
+test("verified London GBp ETF quotes are converted to pounds with explicit listing identity", () => {
+  const london = {
+    meta: { currency: "GBp", symbol: "SGLN.L", exchangeTimezoneName: "Europe/London" },
+    timestamp: [1793620800, 1793707200],
+    indicators: { quote: [{ close: [6425, 6470] }] },
+  };
+  assert.equal(yahooListingQuoteScale("GBp", "GBP", "SGLN.L", "SGLN.L"), 0.01);
+  assert.equal(yahooListingQuoteScale("GBP", "GBX", "VWRL.L", "VWRL.L"), 100);
+  assert.equal(yahooListingQuoteScale("GBp", "GBX"), 1);
+  assert.deepEqual(parseYahooDailyChart(london, "GBP", "SGLN.L"), [
+    {date:"2026-11-02", close:64.25},
+    {date:"2026-11-03", close:64.7},
+  ]);
+  assert.deepEqual(parseYahooDailyChart(london, "GBX", "SGLN.L"), [
+    {date:"2026-11-02", close:6425},
+    {date:"2026-11-03", close:6470},
+  ]);
+  assert.throws(() => parseYahooDailyChart(london,"GBP","VWRL.L"),/jiný instrument/);
+  assert.throws(() => parseYahooDailyChart({...london,meta:{currency:"GBp"}},"GBP","SGLN.L"),/měnu/);
+  assert.throws(() => parseYahooDailyChart({...london,meta:{currency:"GBp",symbol:"SGLN.DE"}},"GBP","SGLN.DE"),/měnu/);
+  assert.throws(() => parseYahooDailyChart({...london,meta:{currency:"USD",symbol:"SGLN.L"}},"GBP","SGLN.L"),/měnu/);
+  assert.throws(() => parseYahooDailyChart(london,"GBP"),/měnu/);
+});
+
+test("ETF ticker is the listed Trading212 exchange instrument, not the domicile or the index", () => {
+  assert.equal(yahooTickerForAsset({
+    symbol:"VWCE",provider:"trading212",assetClass:"etf",externalId:"VWCE_DE_EQ",
+    listingSymbol:"VWCE",currency:"EUR",
+  }), "VWCE.DE");
+  assert.equal(yahooTickerForAsset({
+    symbol:"VUAA",provider:"trading212",assetClass:"etf",externalId:"VUAA_GB_EQ",
+    listingSymbol:"VUAA",currency:"GBP",
+  }), "VUAA.L");
+  assert.equal(yahooTickerForAsset({
+    symbol:"EQQQ",provider:"trading212",assetClass:"etf",externalId:"EQQQ_GB_EQ",
+    listingSymbol:"EQQQ",currency:"USD",
+  }), "EQQQ.L");
+  assert.equal(yahooTickerForAsset({
+    symbol:"EQQQ",provider:"trading212",assetClass:"etf",externalId:"EQQQ_GB_EQ",
+    listingSymbol:"SPY",currency:"USD",
+  }), null, "Do not guess a different ETF when the stored listing disagrees");
+});
+
+test("ETF chart displays same-ISIN listings separately, diagnostics, and stale-source warnings", () => {
+  const chart=source("components/position-price-chart.tsx");
+  const backend=source("lib/server/position-price-history.ts");
+  assert.ok(backend.includes("a.isin = ? AND a.id <> ?"), "Find all exact ISIN listings without symbol guessing");
+  assert.ok(backend.includes("WHERE a.provider = 'trading212'"), "Never discover unrelated providers as valid exchange tickers");
+  assert.ok(backend.includes("listingAssetClass"), "Explicit ETF/ETP metadata unlocks price graph without reclassifying portfolio holdings");
+  assert.ok(backend.includes("yahoo_daily:v2:"), "New quote conversion invalidates failed old fetch attempts");
+  assert.ok(backend.includes("quote_unit:"), "Unit conversion provenance must survive cached charts");
+  assert.ok(backend.includes("incompatibleCurrencies"), "Wrong-currency stored quotes must be diagnosed, not silently shown");
+  assert.ok(chart.includes("encodeURIComponent(asset.symbol)"), "Each ETF listing routes to its correct ticker's detail page");
+  assert.ok(chart.includes("data.quoteUnitNote"), "Disclose when pence→pounds conversion took place");
+  assert.ok(chart.includes("outdatedByDays"), "Flag stale last quotes rather than implying they are live");
+});
 
 test("exchange dates follow local market sessions, including the previous UTC day", () => {
   // Sydney opens on Monday while UTC may still show Sunday night.
