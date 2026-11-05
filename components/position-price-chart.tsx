@@ -83,7 +83,7 @@ export function PositionPriceChart({
       // Different trade currencies or unadjusted split data must not distort
       // the chart. Mark at daily close when the execution price is implausible.
       const tradePrice = trade.price;
-      const trusted = tradePrice !== null && tradePrice > 0 &&
+      const trusted = tradePrice !== null && tradePrice > 0 && trade.priceCurrency === data.currency &&
         tradePrice / close >= 0.7 && tradePrice / close <= 1.3;
       return { ...trade, close, chartPrice: trusted ? tradePrice : close, usedTradePrice: trusted };
     }).filter((trade) => trade !== null);
@@ -259,7 +259,7 @@ export function PositionPriceChart({
                   </strong>{" "}
                   {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")} · {selectedTrade.account}
                   {selectedTrade.quantity !== null ? " · " + selectedTrade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " ks" : ""}
-                  {selectedTrade.price !== null ? " · provedená cena " + formatValue(selectedTrade.price, data.currency) : ""}
+                  {selectedTrade.price !== null ? " · provedená cena " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
                 </span>
               ) : hoveredPrice ? (
                 <span>{displayDate(hoveredPrice.date)} · <strong className="text-[var(--foreground)]">{formatValue(hoveredPrice.close, data.currency)}</strong></span>
