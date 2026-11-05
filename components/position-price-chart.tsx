@@ -310,7 +310,10 @@ export function PositionPriceChart({
               <span><strong className={trade.kind === "buy" ? "text-[var(--accent)]" : "text-[var(--danger)]"}>
                 {trade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
               </strong> · {new Date(trade.occurredAt).toLocaleString("cs-CZ")} · {trade.account}</span>
-              <span className="shrink-0 tabular-nums">{trade.quantity === null ? "—" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " ks"}</span>
+              <span className="shrink-0 text-right tabular-nums">
+                <span className="block">{trade.quantity === null ? "Množství neznámé" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " ks"}</span>
+                <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : formatValue(trade.price, trade.priceCurrency)}</span>
+              </span>
             </button>
           )) : <p className="p-4 text-xs text-[var(--muted)]">V období nejsou doložené obchody.</p>}
         </div>
