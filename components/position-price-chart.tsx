@@ -210,7 +210,17 @@ export function PositionPriceChart({
   const unit = data.assetClass === "crypto" ? data.symbol : "ks";
   const chartId = "position-price-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 48);
 
-  function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
+  function moveTooltip(clientX: number, clientY: number) {
+    // A fixed overlay escapes the scrollable chart on narrow screens.
+    const width = 316;
+    const height = 348;
+    setTipPosition({
+      x: Math.max(8, Math.min(window.innerWidth - width - 8, clientX + 15)),
+      y: Math.max(8, Math.min(window.innerHeight - height - 8, clientY + 14)),
+    });
+  }
+
+    function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     if (!model.prices.length) return;
     const bounds = event.currentTarget.getBoundingClientRect();
     const mouse = (event.clientX - bounds.left) * W / bounds.width;
@@ -313,28 +323,62 @@ export function PositionPriceChart({
                 <circle cx={model.x(timestamp(hoveredPrice.date))} cy={model.y(hoveredPrice.close)} r="5" fill="var(--accent)" stroke="#071420" strokeWidth="2" />
               </g>
             ) : null}
-            {showTrades ? model.plotted.map((trade) => (
-              <g
-                key={trade.id}
-                role="button" tabIndex={0}
-                aria-label={(trade.kind === "buy" ? "Nákup " : "Prodej ") + displayDate(trade.date) + ", " + trade.account}
-                onPointerEnter={() => setSelectedTradeId(trade.id)}
-                onClick={() => setSelectedTradeId(trade.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedTradeId(trade.id); }
-                }}
-                className="cursor-pointer outline-none"
-              >
-                <circle cx={trade.x} cy={trade.y} r={selectedTradeId === trade.id ? 12 : 10}
-                  fill={trade.kind === "buy" ? "#16a982" : "#ea647c"}
-                  stroke={selectedTradeId === trade.id ? "#fff" : "#0b1724"} strokeWidth="2.5" strokeDasharray={trade.usedTradePrice ? undefined : "3 2"} />
-                <path d={trade.kind === "buy"
-                  ? "M " + (trade.x - 4) + " " + trade.y + " h 8 M " + trade.x + " " + (trade.y - 4) + " v 8"
-                  : "M " + (trade.x - 4) + " " + trade.y + " h 8"}
-                  stroke="white" strokeWidth="2" strokeLinecap="round" pointerEvents="none" />
-              </g>
-            )) : null}
+            {model.unplaced > 0 ? (
+              <line x1={LEFT} x2={W - RIGHT} y1={TOP + PLOT_H + 15} y2={TOP + PLOT_H + 15}
+                stroke="currentColor" strokeWidth="1" opacity="0.35" strokeDasharray="2 6" />
+            ) : null}
+            {showTrades ? model.plotted.map((trade) => {
+              const active = trade.id === (hoveredTradeId || selectedTradeId);
+              const color = trade.kind === "buy" ? "#16a982" : "#ea647c";
+              return (
+                <g
+                  key={trade.id}
+                  role="button" tabIndex={0}
+                  aria-label={(trade.kind === "buy" ? "Nákup " : "Prodej ") + displayDate(trade.date) + ", " + trade.account + ". Zobrazit informace o obchodu"}
+                  aria-describedby={active ? tooltipId : undefined}
+                  onPointerEnter={(event) => {
+                    setHoveredTradeId(trade.id);
+                    moveTooltip(event.clientX, event.clientY);
+                  }}
+                  onPointerLeave={() => setHoveredTradeId(null)}
+                  onFocus={(event) => {
+                    setHoveredTradeId(trade.id);
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    moveTooltip(bounds.left + bounds.width / 2, bounds.top);
+                  }}
+                  onBlur={() => setHoveredTradeId(null)}
+                  onClick={() => setSelectedTradeId(current => current === trade.id ? null : trade.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedTradeId(current => current === trade.id ? null : trade.id);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setSelectedTradeId(null);
+                      setHoveredTradeId(null);
+                    }
+                  }}
+                  className="cursor-pointer outline-none focus-visible:opacity-80"
+                >
+                  <circle cx={trade.x} cy={trade.y} r={active ? 13 : 10}
+                    fill={trade.usedTradePrice ? color : "#111e30"}
+                    stroke={active ? "#fff" : color} strokeWidth={trade.usedTradePrice ? 2.5 : 3}
+                    strokeDasharray={trade.usedTradePrice ? undefined : "4 3"} />
+                  <path d={trade.kind === "buy"
+                    ? "M " + (trade.x - 4) + " " + trade.y + " h 8 M " + trade.x + " " + (trade.y - 4) + " v 8"
+                    : "M " + (trade.x - 4) + " " + trade.y + " h 8"}
+                    stroke="white" strokeWidth="2" strokeLinecap="round" pointerEvents="none" />
+                </g>
+              );
+            }) : null}
           </svg>
+          {activeTrade && showTrades ? (
+            <div role="tooltip" id={tooltipId}
+              className="pointer-events-none fixed z-50 w-[300px] max-w-[calc(100vw-16px)]"
+              style={{left: tipPosition.x, top: tipPosition.y}}>
+              <TradeInfoCard trade={activeTrade} unit={unit} timeZone={data.exchangeTimezone} />
+            </div>
+          ) : null}
           <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3 text-xs">
             <div role="status" aria-live="polite" className="text-[var(--muted)]">
               {selectedTrade ? (
@@ -348,7 +392,7 @@ export function PositionPriceChart({
                 </span>
               ) : hoveredPrice ? (
                 <span>{displayDate(hoveredPrice.date)} · <strong className="text-[var(--foreground)]">{formatValue(hoveredPrice.close, data.currency)}</strong></span>
-              ) : <span>Pohybem nad grafem zobrazíš závěrečnou cenu; kliknutím na +/− detail obchodu.</span>}
+              ) : <span>Pohybem nad grafem zobrazíš kurz; najetím na +/− otevřeš kartu obchodu včetně částky v Kč. Kliknutím ji připneš.</span>}
             </div>
             <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[var(--muted)]">
               <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)}
@@ -370,14 +414,14 @@ export function PositionPriceChart({
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--muted)]">
         <p><span className="font-semibold text-[#29c99e]">● + Nákup</span> · <span className="font-semibold text-[#ee8292]">● − Prodej</span>
-          {" · "}Plné kolečko = cena obchodu odpovídá měně a přibližně dennímu kurzu. Přerušovaný okraj = orientační poloha podle známého závěru dne.
+          {" · "}Plné kolečko = zaznamenaná realizační cena ve srovnatelné měně; duté kolečko pod grafem = skutečný obchod, jehož cenu nelze bezpečně zasadit do cenové osy. Kolečko je vždy na datu a času záznamu, bez umělého vodorovného posunu.
         </p>
         <p>{data.source || "Zatím bez cenového zdroje"} · {data.ticker || data.symbol} · {data.currency}</p>
       </div>
       {data.tradesTruncated ? <p className="text-xs text-[var(--warning)]">Historie instrumentu má více než 5 000 obchodů; kvůli výkonu jsou zde načteny poslední 5 000. Kompletní historii najdeš v exportu transakcí.</p> : null}
       {model.gapCount > 0 ? <p className="text-xs text-[var(--warning)]">V historii je {model.gapCount} delších mezer v denních kurzech. Mezi nimi nespojujeme cenu vymyšlenou úsečkou.</p> : null}
       {model.unplaced > 0 ? <p className="text-xs text-[var(--warning)]">
-        {model.unplaced} obchodů nelze umístit do grafu (chybí blízká tržní cena). Jsou v seznamu níže.
+        {model.unplaced} obchodů nemá bezpečně srovnatelnou realizační cenu (měna, split nebo chybějící denní kurz). Dutá kolečka jsou na samostatné časové ose; úplná data jsou v kartě obchodu.
       </p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-[var(--muted)]">Obchody ve zvoleném období: {model.trades.length.toLocaleString("cs-CZ")}</p>
