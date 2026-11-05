@@ -230,3 +230,19 @@ Vypočtené Kč jsou **již existující jednotlivé příspěvky vlastněného 
 Panel sektorů rozlišuje **tři neslučované části**: přímé investice s ověřeným ISIN, ETF příspěvky klasifikované podle vlastního oficiálního sektorového sloupce a ETF příspěvky se sektorem přeneseným přes identický prokázaný ISIN ze skutečně drženého jiného fyzického fondu. V rozbalovacím detailu lze ověřit původ v jednotlivých sektorech i fondech. Označení „přes ISIN“ není důkazem nové investice ani novou skladbou emitenta.
 
 Pro každý sektor platí `přes ETF = sektor přímo z emitenta + sektor převzatý přes ISIN`. Součty obou kategorií musejí sedět po sektorech, fondech i v celém reportu; výsledná klasifikace a neznámý zbytek musí dát celé NAV portfolia. Fond s nulovou skutečně rozloženou hodnotou **nesmí poskytovat klasifikační důkaz** přes pouhou existenci stejně datovaného zdrojového řádku. Zcela neověřené pozice a modelový LYMS zůstávají neklasifikované. Žádná část nezapisuje transakce, ceny nebo externí vklady.
+
+
+## Řazení nedostatků podkladů podle hodnoty investic (16. 10. 2026)
+
+Sekce **Priority dokončení rozkladu ETF** nevymýšlí další ETF podklady ani nové kurzy. Přebírá souhrn fondu z aktuálního výpočtu X-Ray a řadí konkrétní nedostatky podle Kč; používá už sloučený fondový ISIN, takže více listingů téhož ETF není nová pozice.
+
+- **Bez rozkladu:** dosud neidentifikovaná celá hodnota ETF. Neznamená to, že každá koruna musí představovat akcii.
+- **Částečný rozklad:** neidentifikovaná zbývající část, která může obsahovat peníze, dluhopisy či deriváty, ne automaticky chybějící akcie.
+- **Model indexu (LYMS):** i když model CNDX zvyšuje podíl mapovaných podkladů, celé NAV modelovaného fondu je označeno pro ověření přesných vah indexu. Model se nikdy nepovažuje za další investici.
+- **Deklarovaný referenční index:** ekonomické podkladové váhy, nikoli fyzicky vlastněné akcie ve swapovém fondu.
+- **Známý neakciový produkt:** ověřený fyzický zlatý ETC nebo pákový krypto ETP se neřadí do akciového backlogu; předpoklad spot BTC či konkrétních akcií je chybný.
+- **Rozloženo:** fond bez významného nerozloženého zbytku, ale stále se může lišit datum tržního ocenění a datum holdings.
+
+Panel nabízí filtr a odkazy na existující automatickou synchronizaci a volitelný ruční import originálních emitentských podkladů. Tím se neslibuje existence automatického zdroje pro každý ISIN; broker API klíč nadále stačí pro skutečné pozice a dostupné zdroje, CSV zůstává dobrovolnou zálohou.
+
+**Finanční invariance:** součet NAV všech ETF odpovídá fondu X-Ray; mapované ETF + přímé akcie/krypto se rovná celkovému mapování; nerozložené ETF se rovná celkovému nerozloženému NAV; modelované podklady musí sedět na označený model X-Ray. Priorita je pracovní částka, která se může překrývat s mapovanými i nerozloženými hodnotami, a nikdy se k portfoliu nesčítá. Při rozporu se žebříček nezobrazí.
