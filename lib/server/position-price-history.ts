@@ -26,6 +26,7 @@ export interface PositionTradeMarker {
 }
 export interface PositionPriceChartData {
   assetId: string;
+  asOfDate: string;
   symbol: string;
   provider: string;
   currency: string;
@@ -194,6 +195,7 @@ export async function getPositionPriceChart(
     .reverse();
   return {
     assetId: asset.id,
+    asOfDate: new Date().toISOString().slice(0, 10),
     symbol: asset.symbol,
     provider: asset.provider,
     currency: asset.currency,
