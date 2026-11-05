@@ -7,6 +7,7 @@ import {
   describeTradeCzk,
   exchangeDate,
   isExactClockTime,
+  tradeCalendarDate,
   overlayTradePrice,
   parseYahooDailyChart,
   previousClose,
@@ -147,6 +148,13 @@ test("execution position follows exchange local clock without decoration or fals
   assert.equal(isExactClockTime("2026-11-02"), false);
   assert.equal(isExactClockTime("2026-11-02T14:30:00"), false);
   assert.equal(new Date(chartExecutionTimestamp("2026-11-02", "UTC")).toISOString(), "2026-11-02T12:00:00.000Z");
+  // A no-timezone source event MUST NOT turn into the previous calendar day
+  // when FinanceOS happens to run in a different timezone.
+  assert.equal(tradeCalendarDate("2026-11-02", "America/Los_Angeles"), "2026-11-02");
+  assert.equal(tradeCalendarDate("2026-11-02T00:30:00", "America/Los_Angeles"), "2026-11-02");
+  assert.equal(new Date(chartExecutionTimestamp("2026-11-02T00:30:00", "America/Los_Angeles")).toISOString(), "2026-11-02T00:30:00.000Z");
+  assert.equal(tradeCalendarDate("2026-11-02T00:30:00Z", "America/Los_Angeles"), "2026-11-01");
+  assert.equal(isExactClockTime("2026-11-02T00:30:00+0100"), true);
 });
 
 test("trade cards expose original movements, CZK provenance, and real marker hover events", () => {
