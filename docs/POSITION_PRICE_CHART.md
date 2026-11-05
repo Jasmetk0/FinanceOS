@@ -4,7 +4,7 @@
 
 Stránka **Investice → detail pozice → Cenový graf a moje obchody** propojuje **denní závěrečné tržní ceny** se **skutečně uloženými vykonanými obchody** (buy/sell). Obchody se identifikují pomocí **ID konkrétního instrumentu**, ne pouhým tickerem. Tím se nesmísí různé tituly se stejným symbolem, jinými burzami nebo různými měnami.
 
-Zelené **+** označuje nákup a červené **−** prodej. Kliknutím se zobrazí datum, množství, účet a realizační cena. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Pro případ více než 5 000 historických obchodů je stránka z výkonnostních důvodů omezena na posledních 5 000 a omezení výslovně přizná. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
+Zelené **+** označuje nákup a červené **−** prodej. **Najetí myší, zaměření klávesnicí nebo kliknutí/tapnutí** zobrazí kartu provedeného obchodu: čas, množství, realizační cenu, zapsaný peněžní pohyb, evidované poplatky, účet a identifikátor. Karta přehledně zobrazuje i Kč s označením přesnosti. Časová období: **1M, 3M, 1R, 5L, MAX**. Samostatný seznam ukazuje všechny načtené obchody daného instrumentu za zvolené období. Pro případ více než 5 000 historických obchodů je stránka z výkonnostních důvodů omezena na posledních 5 000 a omezení výslovně přizná. Delší chybějící úseky historie nejsou spojovány vymyšlenými křivkami.
 
 ## Cenový zdroj a úroveň spolehlivosti
 
@@ -19,10 +19,18 @@ Zelené **+** označuje nákup a červené **−** prodej. Kliknutím se zobraz�
 
 1. **Čas** — ceny i provedení se při známém trhu přiřazují podle místního dne burzy, nikoli pouhým UTC řetězcem. Zohledňuje se letní čas.
 2. **Měna** — GBP není totéž co britské pence (GBp/GBX). Měna tržních dat se musí shodovat s vykreslovanou měnou. U kryptoměn je jednotka aktiva (BTC) odlišná od kotace (například BTC-USD / BTC-EUR).
-3. **Skutečná cena nákupu** — značka leží na realizační ceně jen při souhlasné měně a přiměřené cenové vzdálenosti od trhu. Jinak je vyznačena pouze orientačně u posledního dostupného předchozího závěru (tečkovaný okraj).
-4. **Žádné cenové informace z budoucnosti** — při chybějícím kurzu není použita cena dalšího obchodního dne. Pokud není kurz dostupný v posledních pěti kalendářních dnech, zůstává obchod v seznamu, nikoliv na křivce.
+3. **Skutečná cena nákupu** — plné +/− leží na zaznamenané realizační ceně jen při souhlasné měně a přiměřené cenové vzdálenosti od trhu. **Duté kolečko s přerušovaným okrajem** neleží na cenové křivce: obchod nemá bezpečně srovnatelnou cenovou hodnotu a je umístěn do **samostatné časové osy pod grafem**. Pokud graf nemá žádné ceny, časová osa reálných obchodů funguje samostatně.
+4. **Žádné cenové informace z budoucnosti** — při chybějícím kurzu není použita cena dalšího obchodního dne. Pokud nelze realizační cenu srovnat, značka se přesune do samostatné časové osy; nikdy se nepřemístí k libovolné tržní ceně. Poloha X vychází z místního času provedení, bez původního dekorativního posunutí více značek o několik pixelů.
 5. **Rozdělení akcií** — starší obchody mohou mít cenu z doby před splitem. Nesmí se bez doložené transformace mechanicky porovnávat s upraveným historickým kurzem.
 6. **Identita** — nejednoznačná burza, špatná měna nebo jiný ticker vrácený cenovým zdrojem zablokuje automatické spojení.
+
+## Co znamená částka v Kč v informační kartě
+
+- **Nativní CZK obchod:** FinanceOS zobrazí zaznamenanou částku obchodu přímo v Kč. Nemusí ale obsahovat případné nezaznamenané bankovní náklady.
+- **Obchod v USD/EUR/jiné měně:** uložené pole `amount_czk` v současných importech Trading 212 a Kraken vzniká **historickým převodem podle kurzu ČNB**. Karta takovou částku označuje **Přepočet na Kč**, nikoliv skutečnou CZK platbu nebo zaručenou částku odečtenou bankou. Zobrazuje se rovněž originální měna a zapsaný pohyb peněz.
+- **Bez důvěryhodného CZK údaje:** zobrazí se **Nedostupná**; žádný kurz ani výsledná hodnota se nevymýšlí.
+- Poplatek se zobrazuje odděleně v původní měně, pokud byl zaznamenán. Zapsaný pohyb peněz může podle zdroje poplatek již obsahovat nebo jej vykazuje zvlášť; proto se automaticky nepřičítá ani neodečítá podruhé.
+- Časová poloha markerů vychází z provedení zaznamenaného poskytovatelem a časového pásma burzy, pokud je k dispozici. Samotná křivka však reprezentuje **pouze denní close**, nikoliv intradenní průběh. U timestampu bez doložené časové zóny to UI přiznává.
 
 ## Známá omezení
 
