@@ -70,10 +70,12 @@ function TradeInfoCard({
   const czk = describeTradeCzk(trade);
   const buy = trade.kind === "buy";
   const clock = isExactClockTime(trade.occurredAt);
-  const tradeTime = new Date(trade.occurredAt).toLocaleString("cs-CZ", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", second: "2-digit",
-  });
+  const tradeTime = clock
+    ? new Date(trade.occurredAt).toLocaleString("cs-CZ", {
+        timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      })
+    : trade.occurredAt.replace("T", " ");
   return (
     <div className="rounded-xl border border-[#41516a] bg-[#111e30] px-3.5 py-3 text-left text-xs text-white shadow-[0_12px_36px_rgba(0,0,0,0.50)]">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
