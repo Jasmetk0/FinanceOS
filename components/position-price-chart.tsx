@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type PointerEvent } from "react";
 import Link from "next/link";
-import { previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
+import { chartExecutionTimestamp, describeTradeCzk, isExactClockTime, previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
 import type {
   PositionPriceChartData,
   PositionPricePoint,
@@ -57,7 +57,80 @@ function closestPriceIndex(prices: PositionPricePoint[], target: number) {
     Math.abs(timestamp(prices[low - 1].date) - target) ? low : low - 1;
 }
 
-type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number; usedTradePrice: boolean };
+type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number | null; usedTradePrice: boolean };
+
+
+function preciseNumber(value: number, maxDigits = 10) {
+  return value.toLocaleString("cs-CZ", { maximumFractionDigits: maxDigits });
+}
+
+function TradeInfoCard({
+  trade, unit, timeZone,
+}: { trade: PositionTradeMarker & { usedTradePrice?: boolean }; unit: string; timeZone: string }) {
+  const czk = describeTradeCzk(trade);
+  const buy = trade.kind === "buy";
+  const clock = isExactClockTime(trade.occurredAt);
+  const tradeTime = clock
+    ? new Date(trade.occurredAt).toLocaleString("cs-CZ", {
+        timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+      })
+    : trade.occurredAt.replace("T", " ");
+  return (
+    <div className="rounded-xl border border-[#41516a] bg-[#111e30] px-3.5 py-3 text-left text-xs text-white shadow-[0_12px_36px_rgba(0,0,0,0.50)]">
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+        <strong className={buy ? "text-[#3fe0b1]" : "text-[#ff90a1]"}>
+          {buy ? "＋ Skutečný nákup" : "− Skutečný prodej"}
+        </strong>
+        <span className="text-[10px] text-slate-400">{trade.provider}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <div className="col-span-2">
+          <p className="text-[10px] text-slate-400">Datum a čas provedení · {timeZone}</p>
+          <strong className="mt-0.5 block tabular-nums">{tradeTime}</strong>
+          {!clock ? <p className="text-[10px] text-amber-300">Původní záznam nedokládá časové pásmo; čas může být orientační.</p> : null}
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-400">Množství</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.quantity === null ? "Nedostupné" : preciseNumber(trade.quantity, 12) + " " + unit}</strong>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-400">Cena za jednotku</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.price === null ? "Nedostupná" : preciseNumber(trade.price, 10) + " " + trade.priceCurrency}</strong>
+        </div>
+        <div className="col-span-2">
+          <p className="text-[10px] text-slate-400">Evidovaná hodnota obchodu</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.amount === null ? "Nedostupný" : (trade.amount > 0 ? "+" : "") + preciseNumber(trade.amount, 10) + " " + trade.amountCurrency}</strong>
+        </div>
+        {trade.fee !== null && trade.fee > 0 ? (
+          <div className="col-span-2">
+            <p className="text-[10px] text-slate-400">Evidovaný poplatek (účtován samostatně nebo již v částce)</p>
+            <strong className="mt-0.5 block tabular-nums">{preciseNumber(trade.fee, 10)} {trade.feeCurrency}</strong>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.06] p-2.5">
+        <p className="text-[10px] text-slate-300">
+          {czk.quality === "recorded" ? "Částka v Kč · transakce vedena v CZK"
+            : czk.quality === "cnb-converted" ? "Přepočet na Kč · historický kurz ČNB"
+              : "Částka v Kč · nedoložena"}
+        </p>
+        <strong className="mt-1 block text-base tabular-nums">
+          {czk.value === null ? "Nedostupná" : czk.value.toLocaleString("cs-CZ", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " Kč"}
+        </strong>
+        {czk.quality === "cnb-converted" ? (
+          <p className="mt-1 text-[10px] leading-4 text-amber-200">Přepočet podle ČNB ≠ přesná korunová úhrada. Případné poplatky nemusejí být v částce zahrnuty.</p>
+        ) : null}
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-slate-300">
+        {trade.usedTradePrice === false
+          ? "Značka je pouze na časové ose: srovnatelnost realizační ceny s tržním grafem nebyla ověřena."
+          : "Značka je na zaznamenané realizační ceně; podkladový kurzový graf obsahuje pouze denní závěry."}
+      </p>
+      <p className="mt-1 truncate text-[10px] text-slate-500" title={trade.externalId}>Účet: {trade.account} · ID: {trade.externalId}</p>
+    </div>
+  );
+}
 
 export function PositionPriceChart({
   data,
@@ -66,27 +139,58 @@ export function PositionPriceChart({
 }) {
   const [range, setRange] = useState<Range>("MAX");
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [hoveredTradeId, setHoveredTradeId] = useState<string | null>(null);
+  const [tipPosition, setTipPosition] = useState({ x: 16, y: 16 });
   const [hoverDate, setHoverDate] = useState<string | null>(null);
   const [showTrades, setShowTrades] = useState(true);
   const [showList, setShowList] = useState(false);
 
   const model = useMemo(() => {
-    const end = timestamp(data.asOfDate);
+    const end = timestamp(data.asOfDate) + 12 * 3600000; // include the entire current exchange day
     const start = domainStart(range, end);
     const prices = data.prices.filter((p) => timestamp(p.date) >= start && timestamp(p.date) <= end);
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
-    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", gapCount: 0, x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
-    const minX = range === "MAX" ? timestamp(prices[0].date) : start;
+    if (prices.length === 0) {
+      // No market quote must not hide real trades. Offer a compact timeline
+      // at the source execution timestamps without inventing any prices.
+      const minX = range === "MAX" && trades.length
+        ? Math.min(...trades.map(t => timestamp(t.date) - 12 * 3600000))
+        : range === "MAX" ? end - 86400000 : start;
+      const maxX = Math.max(end, minX + 86400000);
+      const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
+      const laneY = 78;
+      const plotted: PlotTrade[] = trades.map(trade => ({
+        ...trade, chartPrice: null, usedTradePrice: false,
+        x: Math.max(LEFT, Math.min(W - RIGHT, x(
+          chartExecutionTimestamp(trade.occurredAt, data.exchangeTimezone) ?? timestamp(trade.date),
+        ))),
+        y: laneY,
+      }));
+      return { prices, trades, plotted, ticks: [] as number[], path: "", area: "",
+        gapCount: 0, laneY, x, y: () => laneY, minX, maxX, minY: 0, maxY: 1,
+        unplaced: trades.length };
+    }
+    const minX = range === "MAX"
+      ? Math.min(timestamp(prices[0].date) - 12 * 3600000,
+        ...trades.map(t => timestamp(t.date) - 12 * 3600000))
+      : start;
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
       const close = previousClose(data.prices, trade.date);
-      if (close === null) return null;
-      // Do not borrow a future market close to mark a historic execution.
-      const overlay = overlayTradePrice(trade, close, data.currency);
-      return { ...trade, close, ...overlay };
-    }).filter((trade) => trade !== null);
-    const values = [...prices.map((p) => p.close), ...executions.map((t) => t.chartPrice)];
+      // Only a documented, currency-matched execution price is plotted
+      // vertically on the market-price axis. All other REAL executions are
+      // shown on a separate date/time event lane, never at a fabricated price.
+      const overlay = close === null ? null : overlayTradePrice(trade, close, data.currency);
+      const valid = overlay?.usedTradePrice === true;
+      return {
+        ...trade,
+        chartPrice: valid ? Number(trade.price) : null,
+        usedTradePrice: valid,
+      };
+    });
+    const values = [...prices.map((p) => p.close),
+      ...executions.filter(t => t.chartPrice !== null).map(t => t.chartPrice as number)];
     const floor = Math.min(...values);
     const ceiling = Math.max(...values);
     const margin = Math.max((ceiling - floor) * 0.12, ceiling * 0.008, 0.00000001);
@@ -103,22 +207,26 @@ export function PositionPriceChart({
     const area = gaps === 0 ? path + " L" + x(timestamp(prices[prices.length - 1].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " L" + x(timestamp(prices[0].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " Z" : "";
-    const collisions = new Map<string, number>();
+    const laneY = TOP + PLOT_H + 15;
     const plotted = executions.map((trade) => {
-      const key = trade.date + "/" + trade.kind;
-      const collision = collisions.get(key) ?? 0;
-      collisions.set(key, collision + 1);
+      const executedAt = chartExecutionTimestamp(trade.occurredAt, data.exchangeTimezone) ??
+        timestamp(trade.date);
       return {
         ...trade,
-        x: Math.max(LEFT, Math.min(W - RIGHT, x(timestamp(trade.date)) + (collision % 5 - 2) * 5)),
-        y: y(trade.chartPrice),
+        // No +/-5 px collision jitter: horizontal position is sourced from
+        // the actual exchange-local clock timestamp, not a decoration.
+        x: Math.max(LEFT, Math.min(W - RIGHT, x(executedAt))),
+        y: trade.chartPrice === null ? laneY : y(trade.chartPrice),
       };
     });
     const ticks = Array.from({ length: 5 }, (_, index) => minY + (maxY - minY) * index / 4);
-    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, x, y, minX, maxX, minY, maxY, unplaced: trades.length - plotted.length };
-  }, [data.prices, data.trades, data.currency, data.asOfDate, range]);
+    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, laneY, x, y, minX, maxX, minY, maxY, unplaced: plotted.filter(t => !t.usedTradePrice).length };
+  }, [data.prices, data.trades, data.currency, data.asOfDate, data.exchangeTimezone, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
+  const activeTrade = model.plotted.find(t => t.id === hoveredTradeId) ??
+    model.plotted.find(t => t.id === selectedTradeId) ?? null;
+  const tooltipId = "trade-info-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "");
   const hoveredPrice = model.prices.find((p) => p.date === hoverDate) ?? null;
   const latest = model.prices.at(-1) ?? null;
   const first = model.prices[0] ?? null;
@@ -126,6 +234,16 @@ export function PositionPriceChart({
     ? (latest.close / first.close - 1) * 100 : null;
   const unit = data.assetClass === "crypto" ? data.symbol : "ks";
   const chartId = "position-price-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 48);
+
+  function moveTooltip(clientX: number, clientY: number) {
+    // A fixed overlay escapes the scrollable chart on narrow screens.
+    const width = 316;
+    const height = 348;
+    setTipPosition({
+      x: Math.max(8, Math.min(window.innerWidth - width - 8, clientX + 15)),
+      y: Math.max(8, Math.min(window.innerHeight - height - 8, clientY + 14)),
+    });
+  }
 
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
     if (!model.prices.length) return;
@@ -188,13 +306,18 @@ export function PositionPriceChart({
         </p>
       ) : null}
 
-      {model.prices.length ? (
+      {model.prices.length || model.plotted.length ? (
         <div className="finance-scrollbar overflow-x-auto rounded-2xl border border-[var(--border)] bg-[#0a1421]/40">
+          {!model.prices.length ? (
+            <p className="border-b border-[var(--border)] px-4 py-3 text-xs text-[var(--warning)]">
+              Cenová historie chybí. Zobrazujeme proto pouze časovou osu skutečných nákupů a prodejů, bez vymyšlené ceny.
+            </p>
+          ) : null}
           <svg
-            viewBox={"0 0 " + W + " " + H}
+            viewBox={"0 0 " + W + " " + (model.prices.length ? H : 160)}
             className="block h-auto min-w-[680px] w-full touch-pan-y"
             role="group"
-            aria-label={"Cenový vývoj " + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
+            aria-label={(model.prices.length ? "Cenový vývoj " : "Časová osa skutečných obchodů ") + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHoverDate(null)}
           >
@@ -214,7 +337,7 @@ export function PositionPriceChart({
             ))}
             {[0, 0.25, 0.5, 0.75, 1].map((f) => {
               const value = model.minX + (model.maxX - model.minX) * f;
-              return <text key={f} x={LEFT + PLOT_W * f} y={H - 19} fill="currentColor" opacity="0.65"
+              return <text key={f} x={LEFT + PLOT_W * f} y={model.prices.length ? H - 19 : 140} fill="currentColor" opacity="0.65"
                 fontSize="12" textAnchor={f === 0 ? "start" : f === 1 ? "end" : "middle"}>
                 {new Date(value).toLocaleDateString("cs-CZ", { month: "short", year: "numeric" })}
               </text>;
@@ -230,28 +353,69 @@ export function PositionPriceChart({
                 <circle cx={model.x(timestamp(hoveredPrice.date))} cy={model.y(hoveredPrice.close)} r="5" fill="var(--accent)" stroke="#071420" strokeWidth="2" />
               </g>
             ) : null}
-            {showTrades ? model.plotted.map((trade) => (
-              <g
-                key={trade.id}
-                role="button" tabIndex={0}
-                aria-label={(trade.kind === "buy" ? "Nákup " : "Prodej ") + displayDate(trade.date) + ", " + trade.account}
-                onPointerEnter={() => setSelectedTradeId(trade.id)}
-                onClick={() => setSelectedTradeId(trade.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelectedTradeId(trade.id); }
-                }}
-                className="cursor-pointer outline-none"
-              >
-                <circle cx={trade.x} cy={trade.y} r={selectedTradeId === trade.id ? 12 : 10}
-                  fill={trade.kind === "buy" ? "#16a982" : "#ea647c"}
-                  stroke={selectedTradeId === trade.id ? "#fff" : "#0b1724"} strokeWidth="2.5" strokeDasharray={trade.usedTradePrice ? undefined : "3 2"} />
-                <path d={trade.kind === "buy"
-                  ? "M " + (trade.x - 4) + " " + trade.y + " h 8 M " + trade.x + " " + (trade.y - 4) + " v 8"
-                  : "M " + (trade.x - 4) + " " + trade.y + " h 8"}
-                  stroke="white" strokeWidth="2" strokeLinecap="round" pointerEvents="none" />
-              </g>
-            )) : null}
+            {model.unplaced > 0 ? (
+              <line x1={LEFT} x2={W - RIGHT} y1={model.laneY} y2={model.laneY}
+                stroke="currentColor" strokeWidth="1" opacity="0.35" strokeDasharray="2 6" />
+            ) : null}
+            {showTrades ? model.plotted.map((trade) => {
+              const active = trade.id === (hoveredTradeId || selectedTradeId);
+              const color = trade.kind === "buy" ? "#16a982" : "#ea647c";
+              return (
+                <g
+                  key={trade.id}
+                  role="button" tabIndex={0}
+                  aria-label={(trade.kind === "buy" ? "Nákup " : "Prodej ") + displayDate(trade.date) + ", " + trade.account + ". Zobrazit informace o obchodu"}
+                  aria-describedby={active ? tooltipId : undefined}
+                  onPointerEnter={(event) => {
+                    setHoveredTradeId(trade.id);
+                    moveTooltip(event.clientX, event.clientY);
+                  }}
+                  onPointerLeave={() => setHoveredTradeId(null)}
+                  onFocus={(event) => {
+                    setHoveredTradeId(trade.id);
+                    const bounds = event.currentTarget.getBoundingClientRect();
+                    moveTooltip(bounds.left + bounds.width / 2, bounds.top);
+                  }}
+                  onBlur={() => setHoveredTradeId(null)}
+                  onClick={() => setSelectedTradeId(current => current === trade.id ? null : trade.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedTradeId(current => current === trade.id ? null : trade.id);
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setSelectedTradeId(null);
+                      setHoveredTradeId(null);
+                    }
+                  }}
+                  className="cursor-pointer outline-none focus-visible:opacity-80"
+                >
+                  <circle cx={trade.x} cy={trade.y} r="19" fill="transparent" />
+                  <circle cx={trade.x} cy={trade.y} r={active ? 13 : 10}
+                    fill={trade.usedTradePrice ? color : "#111e30"}
+                    stroke={active ? "#fff" : color} strokeWidth={trade.usedTradePrice ? 2.5 : 3}
+                    strokeDasharray={trade.usedTradePrice ? undefined : "4 3"} />
+                  <path d={trade.kind === "buy"
+                    ? "M " + (trade.x - 4) + " " + trade.y + " h 8 M " + trade.x + " " + (trade.y - 4) + " v 8"
+                    : "M " + (trade.x - 4) + " " + trade.y + " h 8"}
+                    stroke="white" strokeWidth="2" strokeLinecap="round" pointerEvents="none" />
+                </g>
+              );
+            }) : null}
           </svg>
+          {activeTrade && showTrades ? (
+            <div role="tooltip" id={tooltipId}
+              className={(selectedTradeId === activeTrade.id ? "pointer-events-auto" : "pointer-events-none") +
+                " fixed z-50 max-h-[calc(100vh-16px)] w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto"}
+              style={{left: tipPosition.x, top: tipPosition.y}}>
+              <TradeInfoCard trade={activeTrade} unit={unit} timeZone={data.exchangeTimezone} />
+              {selectedTradeId === activeTrade.id ? (
+                <button type="button" aria-label="Zavřít kartu obchodu"
+                  className="absolute right-3 top-9 rounded-md border border-white/15 bg-[#253951] px-2 py-1 text-xs text-white hover:bg-[#344963]"
+                  onClick={() => setSelectedTradeId(null)}>×</button>
+              ) : null}
+            </div>
+          ) : null}
           <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3 text-xs">
             <div role="status" aria-live="polite" className="text-[var(--muted)]">
               {selectedTrade ? (
@@ -260,12 +424,12 @@ export function PositionPriceChart({
                     {selectedTrade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
                   </strong>{" "}
                   {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")} · {selectedTrade.account}
-                  {selectedTrade.quantity !== null ? " · " + selectedTrade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit : ""}
-                  {selectedTrade.price !== null ? " · provedená cena " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
+                  {selectedTrade.quantity !== null ? " · " + preciseNumber(selectedTrade.quantity, 12) + " " + unit : ""}
+                  {selectedTrade.price !== null ? " · provedená cena " + preciseNumber(selectedTrade.price, 10) + " " + selectedTrade.priceCurrency : ""}
                 </span>
               ) : hoveredPrice ? (
                 <span>{displayDate(hoveredPrice.date)} · <strong className="text-[var(--foreground)]">{formatValue(hoveredPrice.close, data.currency)}</strong></span>
-              ) : <span>Pohybem nad grafem zobrazíš závěrečnou cenu; kliknutím na +/− detail obchodu.</span>}
+              ) : <span>Pohybem nad grafem zobrazíš kurz; najetím na +/− otevřeš kartu obchodu včetně částky v Kč. Kliknutím ji připneš, opětovným kliknutím nebo × zavřeš.</span>}
             </div>
             <label className="flex shrink-0 cursor-pointer items-center gap-2 text-[var(--muted)]">
               <input type="checkbox" checked={showTrades} onChange={(event) => setShowTrades(event.target.checked)}
@@ -287,14 +451,14 @@ export function PositionPriceChart({
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--muted)]">
         <p><span className="font-semibold text-[#29c99e]">● + Nákup</span> · <span className="font-semibold text-[#ee8292]">● − Prodej</span>
-          {" · "}Plné kolečko = cena obchodu odpovídá měně a přibližně dennímu kurzu. Přerušovaný okraj = orientační poloha podle známého závěru dne.
+          {" · "}Plné kolečko = zaznamenaná realizační cena ve srovnatelné měně; duté kolečko pod grafem = skutečný obchod, jehož cenu nelze bezpečně zasadit do cenové osy. Kolečko je vždy na datu a času záznamu, bez umělého vodorovného posunu.
         </p>
         <p>{data.source || "Zatím bez cenového zdroje"} · {data.ticker || data.symbol} · {data.currency}</p>
       </div>
       {data.tradesTruncated ? <p className="text-xs text-[var(--warning)]">Historie instrumentu má více než 5 000 obchodů; kvůli výkonu jsou zde načteny poslední 5 000. Kompletní historii najdeš v exportu transakcí.</p> : null}
       {model.gapCount > 0 ? <p className="text-xs text-[var(--warning)]">V historii je {model.gapCount} delších mezer v denních kurzech. Mezi nimi nespojujeme cenu vymyšlenou úsečkou.</p> : null}
-      {model.unplaced > 0 ? <p className="text-xs text-[var(--warning)]">
-        {model.unplaced} obchodů nelze umístit do grafu (chybí blízká tržní cena). Jsou v seznamu níže.
+      {model.unplaced > 0 && model.prices.length > 0 ? <p className="text-xs text-[var(--warning)]">
+        {model.unplaced} obchodů nemá bezpečně srovnatelnou realizační cenu (měna, split nebo chybějící denní kurz). Dutá kolečka jsou na samostatné časové ose; úplná data jsou v kartě obchodu.
       </p> : null}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-[var(--muted)]">Obchody ve zvoleném období: {model.trades.length.toLocaleString("cs-CZ")}</p>
@@ -303,22 +467,27 @@ export function PositionPriceChart({
           {showList ? "Skrýt seznam obchodů" : "Zobrazit seznam obchodů"}
         </button>
       </div>
-      {!model.prices.length && selectedTrade ? <p role="status" className="rounded-lg border border-[var(--border)] p-3 text-xs">
-        Vybraný {selectedTrade.kind === "buy" ? "nákup" : "prodej"} · {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")}
-        {" · "}{selectedTrade.account}
-        {selectedTrade.price !== null ? " · " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
-      </p> : null}
+      {!model.prices.length && selectedTrade ? (
+        <div role="status" className="max-w-sm">
+          <TradeInfoCard trade={{...selectedTrade, usedTradePrice: false}} unit={unit} timeZone={data.exchangeTimezone} />
+        </div>
+      ) : null}
       {showList ? (
         <div className="max-h-72 overflow-auto rounded-xl border border-[var(--border)]">
           {model.trades.length ? model.trades.slice().reverse().map((trade) => (
-            <button key={trade.id} type="button" onClick={() => setSelectedTradeId(trade.id)}
+            <button key={trade.id} type="button" onClick={(event) => {
+              const bounds = event.currentTarget.getBoundingClientRect();
+              moveTooltip(event.clientX || bounds.right, event.clientY || bounds.top);
+              setHoveredTradeId(null);
+              setSelectedTradeId(trade.id);
+            }}
               className="flex w-full items-center justify-between gap-3 border-b border-[var(--border)] px-3 py-2.5 text-left text-xs last:border-0 hover:bg-white/[.04]">
               <span><strong className={trade.kind === "buy" ? "text-[var(--accent)]" : "text-[var(--danger)]"}>
                 {trade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
               </strong> · {new Date(trade.occurredAt).toLocaleString("cs-CZ")} · {trade.account}</span>
               <span className="shrink-0 text-right tabular-nums">
-                <span className="block">{trade.quantity === null ? "Množství neznámé" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit}</span>
-                <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : formatValue(trade.price, trade.priceCurrency)}</span>
+                <span className="block">{trade.quantity === null ? "Množství neznámé" : preciseNumber(trade.quantity, 12) + " " + unit}</span>
+                <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : preciseNumber(trade.price, 10) + " " + trade.priceCurrency}</span>
               </span>
             </button>
           )) : <p className="p-4 text-xs text-[var(--muted)]">V období nejsou doložené obchody.</p>}

@@ -2,6 +2,7 @@ import { getDb } from "@/lib/server/db";
 import {
   eligibleTradeMarker,
   exchangeDate,
+  tradeCalendarDate,
   parseYahooDailyChart,
   yahooTickerForAsset,
 } from "@/lib/shared/position-price-chart.mjs";
@@ -23,6 +24,13 @@ export interface PositionTradeMarker {
   quantity: number | null;
   price: number | null;
   priceCurrency: string;
+  amount: number | null;
+  amountCurrency: string;
+  amountCzk: number | null;
+  fee: number | null;
+  feeCurrency: string;
+  sourceLabel: string | null;
+  externalId: string;
   account: string;
   provider: string;
 }
@@ -33,6 +41,7 @@ export interface PositionPriceChartData {
   assetClass: string;
   provider: string;
   currency: string;
+  exchangeTimezone: string;
   ticker: string | null;
   prices: PositionPricePoint[];
   trades: PositionTradeMarker[];
@@ -200,8 +209,9 @@ export async function getPositionPriceChart(
     "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
   ).get("exchange_timezone:" + asset.id + ":" + quoteCurrency);
   const exchangeTimezone = String(storedTimezone?.value || "UTC");
-    const tradesFromDb = db.prepare(
-    "SELECT t.id, t.kind, t.occurred_at, t.quantity, t.price, t.currency, " +
+  const tradesFromDb = db.prepare(
+    "SELECT t.id, t.external_id, t.kind, t.occurred_at, t.quantity, t.price, " +
+    "t.currency, t.amount, t.amount_czk, t.fee, t.source_label, " +
     "a.name AS account_name, t.provider " +
     "FROM transactions t JOIN accounts a ON a.id = t.account_id " +
     "WHERE t.asset_id = ? AND t.kind IN ('buy', 'sell') " +
@@ -212,7 +222,7 @@ export async function getPositionPriceChart(
     .filter((row) => eligibleTradeMarker({kind:row.kind, occurredAt:row.occurred_at}))
     .map((row) => ({
       id: String(row.id),
-      date: exchangeDate(String(row.occurred_at), exchangeTimezone),
+      date: tradeCalendarDate(String(row.occurred_at), exchangeTimezone),
       occurredAt: String(row.occurred_at),
       kind: String(row.kind) as "buy" | "sell",
       quantity: row.quantity === null ? null : Number(row.quantity),
@@ -223,16 +233,26 @@ export async function getPositionPriceChart(
       // T212 execution price is in the instrument currency even when the
       // wallet cash flow uses a different settlement currency.
       priceCurrency: String(row.provider) === "trading212" ? quoteCurrency : String(row.currency),
+      amount: row.amount === null || !Number.isFinite(Number(row.amount)) ? null : Number(row.amount),
+      amountCurrency: String(row.currency),
+      amountCzk: row.amount_czk === null || !Number.isFinite(Number(row.amount_czk))
+        ? null : Number(row.amount_czk),
+      fee: row.fee === null || !Number.isFinite(Number(row.fee)) || Number(row.fee) < 0
+        ? null : Number(row.fee),
+      feeCurrency: String(row.currency),
+      sourceLabel: row.source_label === null ? null : String(row.source_label),
+      externalId: String(row.external_id),
     }))
     .filter(eligibleTradeMarker)
     .reverse();
   return {
     assetId: asset.id,
-    asOfDate: new Date().toISOString().slice(0, 10),
+    asOfDate: exchangeDate(Date.now(), exchangeTimezone),
     symbol: asset.symbol,
     assetClass: asset.asset_class,
     provider: asset.provider,
     currency: quoteCurrency,
+    exchangeTimezone,
     ticker,
     prices,
     trades,
