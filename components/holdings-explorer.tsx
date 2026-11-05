@@ -208,6 +208,7 @@ export function HoldingsExplorer({ holdings }: { holdings: Holding[] }) {
                     <span style={{ width: share + "%", backgroundColor: color }} />
                   </div>
                   <p className="mt-2 truncate text-[11px] text-[var(--muted)]">{holding.accountName} · {holding.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 })} jednotek</p>
+                  <p className="mt-2 text-[11px] font-semibold text-[var(--accent)]">{["stock", "etf", "crypto"].includes(holding.assetClass) ? "Graf ceny + moje obchody ↗" : "Otevřít detail ↗"}</p>
                 </Link>
               );
             })}
