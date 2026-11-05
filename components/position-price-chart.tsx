@@ -77,11 +77,11 @@ export function PositionPriceChart({
   const [showList, setShowList] = useState(false);
 
   const model = useMemo(() => {
-    const end = Date.now();
+    const end = timestamp(data.asOfDate);
     const start = domainStart(range, end);
     const prices = data.prices.filter((p) => timestamp(p.date) >= start && timestamp(p.date) <= end);
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
-    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", x: (_: number) => LEFT, y: (_: number) => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
+    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
     const minX = range === "MAX" ? timestamp(prices[0].date) : start;
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
@@ -120,7 +120,7 @@ export function PositionPriceChart({
     });
     const ticks = Array.from({ length: 5 }, (_, index) => minY + (maxY - minY) * index / 4);
     return { prices, trades, plotted, ticks, path, area, x, y, minX, maxX, minY, maxY, unplaced: trades.length - plotted.length };
-  }, [data.prices, data.trades, range]);
+  }, [data.prices, data.trades, data.currency, data.asOfDate, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
   const hoveredPrice = model.prices.find((p) => p.date === hoverDate) ?? null;
