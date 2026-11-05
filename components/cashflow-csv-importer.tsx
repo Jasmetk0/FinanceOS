@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type CsvData = {
@@ -135,6 +135,7 @@ function parseDate(value: string) {
 
 export function CashFlowCsvImporter() {
   const router = useRouter();
+  const inFlight = useRef(false);
   const [csv, setCsv] = useState<CsvData | null>(null);
   const [filename, setFilename] = useState("");
   const [dateColumn, setDateColumn] = useState("");
@@ -147,8 +148,14 @@ export function CashFlowCsvImporter() {
   const [idColumn, setIdColumn] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+  const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
 
   async function load(file: File) {
+    if (inFlight.current) return;
+    setReading(true);
+    setMessage(null);
+    setMessageKind(null);
     try {
       const parsed = parseCsv(await file.text());
       setCsv(parsed);
@@ -208,12 +215,17 @@ export function CashFlowCsvImporter() {
       setCsv(null);
       setFilename("");
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
+    } finally {
+      setReading(false);
     }
   }
 
   async function submit(form: HTMLFormElement) {
+    if (inFlight.current || reading) return;
     if (!csv || !dateColumn || !amountColumn) {
-      setMessage("Vyber CSV a namapuj minimálně Date a Amount.");
+      setMessage("Vyber CSV a namapuj minimálně datum a částku.");
+      setMessageKind("error");
       return;
     }
 
@@ -243,7 +255,7 @@ export function CashFlowCsvImporter() {
     const kindIndex = index(kindColumn);
     const idIndex = index(idColumn);
 
-    const rows = csv.rows
+    const mappedRows = csv.rows
       .map((row) => ({
         externalId: idIndex >= 0 ? row[idIndex] : undefined,
         occurredAt: parseDate(String(row[dateIndex] || "")),
@@ -263,22 +275,34 @@ export function CashFlowCsvImporter() {
             ? String(row[sourceIndex] || defaultSource)
             : defaultSource,
         kind: kindIndex >= 0 ? String(row[kindIndex] || "") : undefined,
-      }))
-      .filter(
-        (row) =>
-          row.occurredAt &&
-          Number.isFinite(row.amount) &&
-          row.amount !== 0 &&
-          row.currency,
-      );
+      }));
+    const rows = mappedRows.filter(
+      (row) =>
+        row.occurredAt &&
+        Number.isFinite(row.amount) &&
+        row.amount !== 0 &&
+        row.currency,
+    );
+    const omittedRows = mappedRows.length - rows.length;
 
     if (!rows.length) {
       setMessage("Z CSV se nepodařilo vytvořit žádný platný cash-flow řádek.");
+      setMessageKind("error");
+      return;
+    }
+    if (omittedRows > 0 && !window.confirm(
+      "Z " + csv.rows.length + " řádků bude importováno pouze " + rows.length +
+      ". " + omittedRows + " řádků má neplatnou nebo nulovou částku či chybějící povinná data a bude vynecháno. Pokračovat?",
+    )) {
+      setMessage("Import zrušen. Zkontroluj mapování sloupců a problematické řádky.");
+      setMessageKind("error");
       return;
     }
 
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
+    setMessageKind(null);
 
     try {
       const response = await fetch("/api/import/cashflow", {
@@ -301,6 +325,7 @@ export function CashFlowCsvImporter() {
         throw new Error(payload.error || "Cash-flow import selhal.");
       }
 
+      setMessageKind("success");
       setMessage(
         "Importováno " +
           String(payload.result?.imported ?? rows.length) +
@@ -313,7 +338,9 @@ export function CashFlowCsvImporter() {
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
@@ -335,7 +362,7 @@ export function CashFlowCsvImporter() {
     <article>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="font-semibold">Cash-flow CSV import</h2>
+          <h2 className="text-[14px] font-semibold">Import historie peněžních toků</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Importuj bankovní nebo vlastní CSV historii. U kladných i záporných
             částek si zvolíš výchozí typ; interní převody tak nemusíš omylem
@@ -344,11 +371,12 @@ export function CashFlowCsvImporter() {
           </p>
         </div>
         <span className="rounded-full border border-white/10 px-2.5 py-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
-          Signed amount CSV
+          CSV se znaménkem částky
         </span>
       </div>
 
       <form
+        aria-busy={busy || reading}
         className="mt-5 space-y-4"
         onSubmit={(event) => {
           event.preventDefault();
@@ -357,7 +385,7 @@ export function CashFlowCsvImporter() {
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label>
-            <span className="text-xs text-[var(--muted)]">Default currency</span>
+            <span className="text-xs text-[var(--muted)]">Výchozí měna</span>
             <input
               name="defaultCurrency"
               defaultValue="CZK"
@@ -366,7 +394,7 @@ export function CashFlowCsvImporter() {
             />
           </label>
           <label>
-            <span className="text-xs text-[var(--muted)]">Default source</span>
+            <span className="text-xs text-[var(--muted)]">Výchozí zdroj</span>
             <input
               name="defaultSource"
               defaultValue="Bank CSV"
@@ -374,30 +402,30 @@ export function CashFlowCsvImporter() {
             />
           </label>
           <label>
-            <span className="text-xs text-[var(--muted)]">Positive amounts</span>
+            <span className="text-xs text-[var(--muted)]">Kladné částky</span>
             <select
               name="positiveKind"
               defaultValue="income"
               className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
-              <option value="income">Income</option>
-              <option value="gift">Gift</option>
-              <option value="interest">Interest</option>
-              <option value="deposit">Deposit / transfer in</option>
-              <option value="transfer">Internal transfer</option>
-              <option value="adjustment">Adjustment</option>
+              <option value="income">Příjem</option>
+              <option value="gift">Dar</option>
+              <option value="interest">Úrok</option>
+              <option value="deposit">Externí vklad</option>
+              <option value="transfer">Interní převod</option>
+              <option value="adjustment">Úprava</option>
             </select>
           </label>
           <label>
-            <span className="text-xs text-[var(--muted)]">Negative amounts</span>
+            <span className="text-xs text-[var(--muted)]">Záporné částky</span>
             <select
               name="negativeKind"
               defaultValue="expense"
               className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
             >
-              <option value="expense">Expense</option>
-              <option value="fee">Fee</option>
-              <option value="withdrawal">Withdrawal / transfer out</option>
+              <option value="expense">Výdaj</option>
+              <option value="fee">Poplatek</option>
+              <option value="withdrawal">Externí výběr</option>
               <option value="transfer">Internal transfer</option>
               <option value="adjustment">Adjustment</option>
             </select>
@@ -413,6 +441,7 @@ export function CashFlowCsvImporter() {
           </span>
           <input
             type="file"
+            disabled={busy || reading}
             accept=".csv,text/csv,text/plain"
             className="mt-4 block w-full text-xs text-[var(--muted)]"
             onChange={(event) => {
@@ -422,6 +451,16 @@ export function CashFlowCsvImporter() {
           />
         </label>
 
+        <p role="status" aria-live="polite" className="rounded-xl border border-[var(--border)] bg-white/[.018] p-3 text-[11px] leading-5 text-[var(--muted)]">
+          {reading ? "Načítám a rozpoznávám CSV soubor…" : csv
+            ? filename + " · " + csv.rows.length.toLocaleString("cs-CZ") + " načtených řádků · " +
+              ((!dateColumn || !amountColumn) ? "zkontroluj mapování povinných sloupců" : "připraveno ke kontrole")
+            : "Krok 1/2 · Vyber CSV, potom zkontroluj mapování a náhled před importem."}
+        </p>
+        <p className="text-[11px] leading-5 text-[var(--muted)]">
+          Interní přesun mezi vlastními účty označ jako interní převod, nikoli příjem či externí vklad.
+          Pokud soubor obsahuje neplatné nebo nulové částky, FinanceOS tě před vynecháním řádků požádá o potvrzení.
+        </p>
         {csv ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -483,17 +522,21 @@ export function CashFlowCsvImporter() {
         ) : null}
 
         {message ? (
-          <p className="rounded-xl border border-[var(--border)] bg-white/[.025] p-3 text-xs leading-5">
+          <p role={messageKind === "error" ? "alert" : "status"} aria-live="polite"
+            className={["rounded-xl border p-3 text-xs leading-5",
+              messageKind === "error" ? "border-[var(--danger)]/25 bg-[var(--danger)]/[.04] text-[var(--danger)]"
+              : "border-[var(--accent)]/20 bg-[var(--accent)]/[.045] text-[var(--accent)]",
+            ].join(" ")}>
             {message}
           </p>
         ) : null}
 
         <button
           type="submit"
-          disabled={!csv || busy}
-          className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!csv || busy || reading}
+          className="finance-action finance-action-primary !min-h-10 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {busy ? "Importuji…" : "Import cash flow"}
+          {reading ? "Načítám CSV…" : busy ? "Importuji…" : "Importovat peněžní toky"}
         </button>
       </form>
     </article>
