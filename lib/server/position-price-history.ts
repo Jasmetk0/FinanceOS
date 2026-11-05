@@ -9,6 +9,7 @@ import {
 const API_SOURCE = "Yahoo Finance · daily close (unofficial)";
 const SUCCESS_TTL_MS = 18 * 60 * 60 * 1000;
 const FAILURE_TTL_MS = 2 * 60 * 60 * 1000;
+const PENDING_TTL_MS = 90 * 1000;
 
 export interface PositionPricePoint {
   date: string;
@@ -71,8 +72,16 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string, quoteCur
   const last = String(previous?.value || "");
   const [lastStatus, lastAt] = last.split("|");
   const timestamp = Date.parse(lastAt || "");
-  const ttl = lastStatus === "ok" ? SUCCESS_TTL_MS : FAILURE_TTL_MS;
-  if (Number.isFinite(timestamp) && Date.now() - timestamp < ttl) return null;
+  const ttl = lastStatus === "ok" ? SUCCESS_TTL_MS
+    : lastStatus === "pending" ? PENDING_TTL_MS : FAILURE_TTL_MS;
+  if (Number.isFinite(timestamp) && Date.now() - timestamp < ttl) {
+    if (lastStatus === "failed") return "Poslední aktualizace cen neuspěla; další pokus proběhne automaticky později";
+    if (lastStatus === "pending") return "Cenová historie se právě načítá v jiném okně";
+    return null;
+  }
+  if (process.env.FINANCEOS_EXTERNAL_PRICE_FETCH === "off") {
+    return "Externí cenová data jsou v tomto prostředí vypnutá (FINANCEOS_EXTERNAL_PRICE_FETCH=off)";
+  }
 
   // Record attempt first: simultaneous tabs must not stampede the source.
   const attemptAt = new Date().toISOString();
