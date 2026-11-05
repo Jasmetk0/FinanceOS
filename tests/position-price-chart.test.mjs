@@ -133,7 +133,7 @@ test("native CZK cash is recorded; non-CZK CZK totals are only historical ČNB c
   assert.deepEqual(describeTradeCzk({amount:null, amountCurrency:"CZK", amountCzk:null}),
     {value:null, quality:"unavailable"});
   assert.deepEqual(describeTradeCzk({amount:0, amountCurrency:"CZK", amountCzk:0}),
-    {value:0, quality:"recorded"});
+    {value:null, quality:"unavailable"});
 });
 
 test("execution position follows exchange local clock without decoration or false timezone precision", () => {
@@ -163,6 +163,8 @@ test("trade cards expose original movements, CZK provenance, and real marker hov
   assert.ok(chart.includes("onFocus"), "Keyboard focus shows the same trade detail");
   assert.ok(chart.includes("usedTradePrice"), "Only comparable source prices belong on the price axis");
   assert.ok(chart.includes("chartExecutionTimestamp"), "Never add arbitrary x-offset collision jitter");
+  assert.ok(chart.includes("Cenová historie chybí. Zobrazujeme proto pouze časovou osu"), "Trades must remain visible with no market prices.");
+  assert.ok(chart.includes("onPointerLeave"), "Hover tooltip must disappear when leaving the marker");
   assert.equal(chart.includes("(collision % 5 - 2) * 5"), false);
 });
 
