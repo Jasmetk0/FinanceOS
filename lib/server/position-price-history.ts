@@ -1,6 +1,7 @@
 import { getDb } from "@/lib/server/db";
 import {
   eligibleTradeMarker,
+  exchangeDate,
   parseYahooDailyChart,
   yahooTickerForAsset,
 } from "@/lib/shared/position-price-chart.mjs";
@@ -96,7 +97,8 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
     if (!result) {
       throw new Error(payload.chart?.error?.description || "Historické ceny nebyly nalezeny.");
     }
-    const prices = parseYahooDailyChart(result, asset.currency) as PositionPricePoint[];
+    const prices = parseYahooDailyChart(result, asset.currency, ticker) as PositionPricePoint[];
+    const timezone = String((result as { meta?: { exchangeTimezoneName?: string } }).meta?.exchangeTimezoneName || "UTC");
     if (!prices.length) throw new Error("Zdroj vrátil prázdnou cenovou historii.");
 
     // CSV remains authoritative over the unofficial API. Prices with CZK
@@ -119,6 +121,10 @@ async function refreshHistoricalPrices(asset: AssetRow, ticker: string) {
       db.exec("ROLLBACK");
       throw error;
     }
+    db.prepare(
+      "INSERT INTO provider_sync_state(provider, key, value, updated_at) VALUES ('market_prices', ?, ?, ?) " +
+      "ON CONFLICT(provider, key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+    ).run("exchange_timezone:" + asset.id, timezone, now);
     db.prepare(
       "UPDATE provider_sync_state SET value = ?, updated_at = ? WHERE provider = 'market_prices' AND key = ?",
     ).run("ok|" + now, now, stateKey);
@@ -169,7 +175,11 @@ export async function getPositionPriceChart(
   const prices = compatible.map((row) => ({
     date: String(row.price_date), close: Number(row.close),
   }));
-  const tradesFromDb = db.prepare(
+  const storedTimezone = db.prepare(
+    "SELECT value FROM provider_sync_state WHERE provider = 'market_prices' AND key = ?",
+  ).get("exchange_timezone:" + asset.id);
+  const exchangeTimezone = String(storedTimezone?.value || "UTC");
+    const tradesFromDb = db.prepare(
     "SELECT t.id, t.kind, t.occurred_at, t.quantity, t.price, t.currency, " +
     "a.name AS account_name, t.provider " +
     "FROM transactions t JOIN accounts a ON a.id = t.account_id " +
@@ -177,9 +187,10 @@ export async function getPositionPriceChart(
     "ORDER BY t.occurred_at DESC, t.id DESC LIMIT 5000",
   ).all(asset.id);
   const trades: PositionTradeMarker[] = tradesFromDb
+    .filter((row) => eligibleTradeMarker({kind:row.kind, occurredAt:row.occurred_at}))
     .map((row) => ({
       id: String(row.id),
-      date: String(row.occurred_at).slice(0, 10),
+      date: exchangeDate(String(row.occurred_at), exchangeTimezone),
       occurredAt: String(row.occurred_at),
       kind: String(row.kind) as "buy" | "sell",
       quantity: row.quantity === null ? null : Number(row.quantity),
