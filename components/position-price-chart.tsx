@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type PointerEvent } from "react";
 import Link from "next/link";
+import { previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
 import type {
   PositionPriceChartData,
   PositionPricePoint,
@@ -56,13 +57,6 @@ function closestPriceIndex(prices: PositionPricePoint[], target: number) {
     Math.abs(timestamp(prices[low - 1].date) - target) ? low : low - 1;
 }
 
-function nearbyClose(prices: PositionPricePoint[], date: string): number | null {
-  const target = timestamp(date);
-  const index = closestPriceIndex(prices, target);
-  return index >= 0 && Math.abs(timestamp(prices[index].date) - target) <= 5 * 86400000
-    ? prices[index].close : null;
-}
-
 type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number; usedTradePrice: boolean };
 
 export function PositionPriceChart({
@@ -81,19 +75,16 @@ export function PositionPriceChart({
     const start = domainStart(range, end);
     const prices = data.prices.filter((p) => timestamp(p.date) >= start && timestamp(p.date) <= end);
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
-    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
+    if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", gapCount: 0, x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
     const minX = range === "MAX" ? timestamp(prices[0].date) : start;
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
-      const close = nearbyClose(prices, trade.date);
+      const close = previousClose(prices, trade.date);
       if (close === null) return null;
-      // Different trade currencies or unadjusted split data must not distort
-      // the chart. Mark at daily close when the execution price is implausible.
-      const tradePrice = trade.price;
-      const trusted = tradePrice !== null && tradePrice > 0 && trade.priceCurrency === data.currency &&
-        tradePrice / close >= 0.7 && tradePrice / close <= 1.3;
-      return { ...trade, close, chartPrice: trusted ? tradePrice : close, usedTradePrice: trusted };
+      // Do not borrow a future market close to mark a historic execution.
+      const overlay = overlayTradePrice(trade, close, data.currency);
+      return { ...trade, close, ...overlay };
     }).filter((trade) => trade !== null);
     const values = [...prices.map((p) => p.close), ...executions.map((t) => t.chartPrice)];
     const floor = Math.min(...values);
@@ -102,11 +93,16 @@ export function PositionPriceChart({
     const minY = Math.max(0, floor - margin);
     const maxY = ceiling + margin;
     const y = (value: number) => TOP + PLOT_H * (maxY - value) / (maxY - minY);
-    const path = prices.map((p, index) => (index ? "L" : "M") +
-      x(timestamp(p.date)).toFixed(2) + " " + y(p.close).toFixed(2)).join(" ");
-    const area = path + " L" + x(timestamp(prices[prices.length - 1].date)).toFixed(2) +
+    const gaps = prices.filter((p, index) =>
+      index > 0 && timestamp(p.date) - timestamp(prices[index - 1].date) > 7 * 86400000,
+    ).length;
+    const path = prices.map((p, index) =>
+      (index && timestamp(p.date) - timestamp(prices[index - 1].date) <= 7 * 86400000 ? "L" : "M") +
+      x(timestamp(p.date)).toFixed(2) + " " + y(p.close).toFixed(2)
+    ).join(" ");
+    const area = gaps === 0 ? path + " L" + x(timestamp(prices[prices.length - 1].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " L" + x(timestamp(prices[0].date)).toFixed(2) +
-      " " + (TOP + PLOT_H) + " Z";
+      " " + (TOP + PLOT_H) + " Z" : "";
     const collisions = new Map<string, number>();
     const plotted = executions.map((trade) => {
       const key = trade.date + "/" + trade.kind;
@@ -119,7 +115,7 @@ export function PositionPriceChart({
       };
     });
     const ticks = Array.from({ length: 5 }, (_, index) => minY + (maxY - minY) * index / 4);
-    return { prices, trades, plotted, ticks, path, area, x, y, minX, maxX, minY, maxY, unplaced: trades.length - plotted.length };
+    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, x, y, minX, maxX, minY, maxY, unplaced: trades.length - plotted.length };
   }, [data.prices, data.trades, data.currency, data.asOfDate, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
@@ -192,10 +188,10 @@ export function PositionPriceChart({
       ) : null}
 
       {model.prices.length ? (
-        <div className="overflow-hidden rounded-2xl border border-[var(--border)] bg-[#0a1421]/40">
+        <div className="finance-scrollbar overflow-x-auto rounded-2xl border border-[var(--border)] bg-[#0a1421]/40">
           <svg
             viewBox={"0 0 " + W + " " + H}
-            className="block h-auto w-full touch-pan-y"
+            className="block h-auto min-w-[680px] w-full touch-pan-y"
             role="group"
             aria-label={"Cenový vývoj " + data.symbol + " v " + data.currency + " s označenými skutečnými nákupy a prodeji"}
             onPointerMove={handlePointerMove}
@@ -222,8 +218,10 @@ export function PositionPriceChart({
                 {new Date(value).toLocaleDateString("cs-CZ", { month: "short", year: "numeric" })}
               </text>;
             })}
-            {model.prices.length > 1 ? <path d={model.area} fill={"url(#" + chartId + ")"} /> : null}
+            {model.prices.length > 1 && model.gapCount === 0 ? <path d={model.area} fill={"url(#" + chartId + ")"} /> : null}
             <path d={model.path} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+            {model.prices.length === 1 ? <circle cx={model.x(timestamp(model.prices[0].date))}
+              cy={model.y(model.prices[0].close)} r="5" fill="var(--accent)" /> : null}
             {hoveredPrice ? (
               <g pointerEvents="none">
                 <line x1={model.x(timestamp(hoveredPrice.date))} x2={model.x(timestamp(hoveredPrice.date))}
@@ -245,7 +243,7 @@ export function PositionPriceChart({
               >
                 <circle cx={trade.x} cy={trade.y} r={selectedTradeId === trade.id ? 12 : 10}
                   fill={trade.kind === "buy" ? "#16a982" : "#ea647c"}
-                  stroke={selectedTradeId === trade.id ? "#fff" : "#0b1724"} strokeWidth="2.5" />
+                  stroke={selectedTradeId === trade.id ? "#fff" : "#0b1724"} strokeWidth="2.5" strokeDasharray={trade.usedTradePrice ? undefined : "3 2"} />
                 <path d={trade.kind === "buy"
                   ? "M " + (trade.x - 4) + " " + trade.y + " h 8 M " + trade.x + " " + (trade.y - 4) + " v 8"
                   : "M " + (trade.x - 4) + " " + trade.y + " h 8"}
@@ -288,10 +286,11 @@ export function PositionPriceChart({
 
       <div className="flex flex-wrap items-center justify-between gap-3 text-[11px] text-[var(--muted)]">
         <p><span className="font-semibold text-[#29c99e]">● + Nákup</span> · <span className="font-semibold text-[#ee8292]">● − Prodej</span>
-          {" · "}Značky na skutečné ceně obchodu, pokud souhlasí s denním kurzem; jinak u závěru dne.
+          {" · "}Plné kolečko = cena obchodu odpovídá měně a přibližně dennímu kurzu. Přerušovaný okraj = orientační poloha podle známého závěru dne.
         </p>
         <p>{data.source || "Zatím bez cenového zdroje"} · {data.ticker || data.symbol} · {data.currency}</p>
       </div>
+      {model.gapCount > 0 ? <p className="text-xs text-[var(--warning)]">V historii je {model.gapCount} delších mezer v denních kurzech. Mezi nimi nespojujeme cenu vymyšlenou úsečkou.</p> : null}
       {model.unplaced > 0 ? <p className="text-xs text-[var(--warning)]">
         {model.unplaced} obchodů nelze umístit do grafu (chybí blízká tržní cena). Jsou v seznamu níže.
       </p> : null}
@@ -302,6 +301,11 @@ export function PositionPriceChart({
           {showList ? "Skrýt seznam obchodů" : "Zobrazit seznam obchodů"}
         </button>
       </div>
+      {!model.prices.length && selectedTrade ? <p role="status" className="rounded-lg border border-[var(--border)] p-3 text-xs">
+        Vybraný {selectedTrade.kind === "buy" ? "nákup" : "prodej"} · {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")}
+        {" · "}{selectedTrade.account}
+        {selectedTrade.price !== null ? " · " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
+      </p> : null}
       {showList ? (
         <div className="max-h-72 overflow-auto rounded-xl border border-[var(--border)]">
           {model.trades.length ? model.trades.slice().reverse().map((trade) => (
