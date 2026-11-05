@@ -44,11 +44,10 @@ export function MarketIndexExplorer({
   asOfDate: string;
 }) {
   const [range, setRange] = useState<Range>("1R");
-  const [mode, setMode] = useState<"normalized" | "levels">("normalized");
+  const [mode, setMode] = useState<"normalized" | "levels">("levels");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
   const byId = new Map(rows.map((row) => [row.id, row]));
-  const singleWithPoints = rows.filter(row => row.points.length).length === 1;
 
   const comparison = useMemo(() => buildMarketIndexComparison(
     rows, indexPeriodStart(range, asOfDate),
@@ -59,7 +58,7 @@ export function MarketIndexExplorer({
     basis: string; baseline: number; values: number[]; returnPct: number;
   }>;
   const single = lines.length === 1;
-  const rawMode = single && (mode === "levels" || (mode === "normalized" && selectedIds.length === 1 && !singleWithPoints));
+  const rawMode = single && mode === "levels";
   const lastIndex = Math.max(0, dates.length - 1);
   const currentIndex = hoverIndex === null ? lastIndex : Math.min(lastIndex, Math.max(0, hoverIndex));
   const shownValues = lines.map(line => rawMode
@@ -287,7 +286,6 @@ export function MarketIndexExplorer({
                     ) : (
                       <Link prefetch={false} href={toggleLink(index.id)}
                         aria-label={(selected ? "Odebrat " : "Porovnat ") + index.name}
-                        aria-pressed={undefined}
                         className={["rounded-lg border px-2.5 py-2 text-xs font-bold transition",
                           selected ? "border-[var(--accent)]/35 bg-[var(--accent)]/10 text-[var(--accent)]" :
                             "border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)]",
