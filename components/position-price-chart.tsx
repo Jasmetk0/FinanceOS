@@ -80,7 +80,7 @@ export function PositionPriceChart({
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
-      const close = previousClose(prices, trade.date);
+      const close = previousClose(data.prices, trade.date);
       if (close === null) return null;
       // Do not borrow a future market close to mark a historic execution.
       const overlay = overlayTradePrice(trade, close, data.currency);
@@ -124,6 +124,7 @@ export function PositionPriceChart({
   const first = model.prices[0] ?? null;
   const pct = latest && first && first.close > 0
     ? (latest.close / first.close - 1) * 100 : null;
+  const unit = data.assetClass === "crypto" ? data.symbol : "ks";
   const chartId = "position-price-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 48);
 
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
@@ -259,7 +260,7 @@ export function PositionPriceChart({
                     {selectedTrade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
                   </strong>{" "}
                   {new Date(selectedTrade.occurredAt).toLocaleString("cs-CZ")} · {selectedTrade.account}
-                  {selectedTrade.quantity !== null ? " · " + selectedTrade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " ks" : ""}
+                  {selectedTrade.quantity !== null ? " · " + selectedTrade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit : ""}
                   {selectedTrade.price !== null ? " · provedená cena " + formatValue(selectedTrade.price, selectedTrade.priceCurrency) : ""}
                 </span>
               ) : hoveredPrice ? (
@@ -315,7 +316,7 @@ export function PositionPriceChart({
                 {trade.kind === "buy" ? "＋ Nákup" : "− Prodej"}
               </strong> · {new Date(trade.occurredAt).toLocaleString("cs-CZ")} · {trade.account}</span>
               <span className="shrink-0 text-right tabular-nums">
-                <span className="block">{trade.quantity === null ? "Množství neznámé" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " ks"}</span>
+                <span className="block">{trade.quantity === null ? "Množství neznámé" : trade.quantity.toLocaleString("cs-CZ", { maximumFractionDigits: 8 }) + " " + unit}</span>
                 <span className="mt-0.5 block text-[var(--muted)]">{trade.price === null ? "Cena nedostupná" : formatValue(trade.price, trade.priceCurrency)}</span>
               </span>
             </button>
