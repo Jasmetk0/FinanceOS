@@ -155,6 +155,8 @@ test("execution position follows exchange local clock without decoration or fals
   assert.equal(new Date(chartExecutionTimestamp("2026-11-02T00:30:00", "America/Los_Angeles")).toISOString(), "2026-11-02T00:30:00.000Z");
   assert.equal(tradeCalendarDate("2026-11-02T00:30:00Z", "America/Los_Angeles"), "2026-11-01");
   assert.equal(isExactClockTime("2026-11-02T00:30:00+0100"), true);
+  assert.equal(eligibleTradeMarker({ kind:"buy", occurredAt:"2026-02-31" }), false);
+  assert.throws(() => tradeCalendarDate("2026-02-31", "UTC"), /kalendářní datum/);
 });
 
 test("trade cards expose original movements, CZK provenance, and real marker hover events", () => {
