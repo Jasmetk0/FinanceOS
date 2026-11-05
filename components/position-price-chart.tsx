@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type PointerEvent } from "react";
 import Link from "next/link";
-import { previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
+import { chartExecutionTimestamp, describeTradeCzk, isExactClockTime, previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
 import type {
   PositionPriceChartData,
   PositionPricePoint,
@@ -57,7 +57,78 @@ function closestPriceIndex(prices: PositionPricePoint[], target: number) {
     Math.abs(timestamp(prices[low - 1].date) - target) ? low : low - 1;
 }
 
-type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number; usedTradePrice: boolean };
+type PlotTrade = PositionTradeMarker & { x: number; y: number; chartPrice: number | null; usedTradePrice: boolean };
+
+
+function preciseNumber(value: number, maxDigits = 10) {
+  return value.toLocaleString("cs-CZ", { maximumFractionDigits: maxDigits });
+}
+
+function TradeInfoCard({
+  trade, unit, timeZone,
+}: { trade: PositionTradeMarker & { usedTradePrice?: boolean }; unit: string; timeZone: string }) {
+  const czk = describeTradeCzk(trade);
+  const buy = trade.kind === "buy";
+  const clock = isExactClockTime(trade.occurredAt);
+  const tradeTime = new Date(trade.occurredAt).toLocaleString("cs-CZ", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  return (
+    <div className="rounded-xl border border-[#41516a] bg-[#111e30] px-3.5 py-3 text-left text-xs text-white shadow-[0_12px_36px_rgba(0,0,0,0.50)]">
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+        <strong className={buy ? "text-[#3fe0b1]" : "text-[#ff90a1]"}>
+          {buy ? "＋ Skutečný nákup" : "− Skutečný prodej"}
+        </strong>
+        <span className="text-[10px] text-slate-400">{trade.provider}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2.5">
+        <div className="col-span-2">
+          <p className="text-[10px] text-slate-400">Provedeno na burze / místní čas</p>
+          <strong className="mt-0.5 block tabular-nums">{tradeTime}</strong>
+          {!clock ? <p className="text-[10px] text-amber-300">Původní záznam nedokládá časové pásmo; čas může být orientační.</p> : null}
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-400">Množství</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.quantity === null ? "Nedostupné" : preciseNumber(trade.quantity, 12) + " " + unit}</strong>
+        </div>
+        <div>
+          <p className="text-[10px] text-slate-400">Cena za jednotku</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.price === null ? "Nedostupná" : preciseNumber(trade.price, 10) + " " + trade.priceCurrency}</strong>
+        </div>
+        <div className="col-span-2">
+          <p className="text-[10px] text-slate-400">Zapsaný pohyb na účtu</p>
+          <strong className="mt-0.5 block tabular-nums">{trade.amount === null ? "Nedostupný" : (trade.amount > 0 ? "+" : "") + preciseNumber(trade.amount, 10) + " " + trade.amountCurrency}</strong>
+        </div>
+        {trade.fee !== null && trade.fee > 0 ? (
+          <div className="col-span-2">
+            <p className="text-[10px] text-slate-400">Zapsaný poplatek (může být mimo částku obchodu)</p>
+            <strong className="mt-0.5 block tabular-nums">{preciseNumber(trade.fee, 10)} {trade.feeCurrency}</strong>
+          </div>
+        ) : null}
+      </div>
+      <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.06] p-2.5">
+        <p className="text-[10px] text-slate-300">
+          {czk.quality === "recorded" ? "Částka v Kč · transakce vedena v CZK"
+            : czk.quality === "cnb-converted" ? "Přepočet na Kč · historický kurz ČNB"
+              : "Částka v Kč · nedoložena"}
+        </p>
+        <strong className="mt-1 block text-base tabular-nums">
+          {czk.value === null ? "Nedostupná" : czk.value.toLocaleString("cs-CZ", {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " Kč"}
+        </strong>
+        {czk.quality === "cnb-converted" ? (
+          <p className="mt-1 text-[10px] leading-4 text-amber-200">Přepočet podle ČNB ≠ přesná korunová částka stržená brokerem či bankou.</p>
+        ) : null}
+      </div>
+      <p className="mt-2 text-[10px] leading-4 text-slate-300">
+        {trade.usedTradePrice === false
+          ? "Značka je pouze na časové ose: srovnatelnost realizační ceny s tržním grafem nebyla ověřena."
+          : "Značka je na zaznamenané realizační ceně; podkladový kurzový graf obsahuje pouze denní závěry."}
+      </p>
+      <p className="mt-1 truncate text-[10px] text-slate-500" title={trade.externalId}>Účet: {trade.account} · ID: {trade.externalId}</p>
+    </div>
+  );
+}
 
 export function PositionPriceChart({
   data,
@@ -66,6 +137,7 @@ export function PositionPriceChart({
 }) {
   const [range, setRange] = useState<Range>("MAX");
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
+  const [hoveredTradeId, setHoveredTradeId] = useState<string | null>(null);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
   const [showTrades, setShowTrades] = useState(true);
   const [showList, setShowList] = useState(false);
@@ -119,6 +191,9 @@ export function PositionPriceChart({
   }, [data.prices, data.trades, data.currency, data.asOfDate, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
+  const activeTrade = model.plotted.find(t => t.id === hoveredTradeId) ??
+    model.plotted.find(t => t.id === selectedTradeId) ?? null;
+  const tooltipId = "trade-info-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "");
   const hoveredPrice = model.prices.find((p) => p.date === hoverDate) ?? null;
   const latest = model.prices.at(-1) ?? null;
   const first = model.prices[0] ?? null;
