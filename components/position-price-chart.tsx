@@ -279,7 +279,7 @@ export function PositionPriceChart({
               "Pro tento instrument nelze bezpečně určit burzu nebo cenový ticker. Lze nahrát ověřené denní ceny."}
             {" "}Nákupy a prodeje z účtu zůstávají níže viditelné.
           </p>
-          <Link href="/connections" className="finance-action mt-4 inline-flex">Import cen / propojení účtů</Link>
+          <Link href="/history#history-import" className="finance-action mt-4 inline-flex">Import historických cen</Link>
         </div>
       )}
 
