@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState, type PointerEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
+import { placeTradeTooltip } from "@/lib/shared/trade-tooltip-position.mjs";
 import { chartExecutionTimestamp, describeTradeCzk, isExactClockTime, previousClose, overlayTradePrice } from "@/lib/shared/position-price-chart.mjs";
 import type {
   PositionPriceChartData,
@@ -140,7 +142,9 @@ export function PositionPriceChart({
   const [range, setRange] = useState<Range>("MAX");
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [hoveredTradeId, setHoveredTradeId] = useState<string | null>(null);
+  const [tipAnchor, setTipAnchor] = useState({ x: 16, y: 16 });
   const [tipPosition, setTipPosition] = useState({ x: 16, y: 16 });
+  const tooltipRef = useRef<HTMLDivElement | null>(null);
   const [hoverDate, setHoverDate] = useState<string | null>(null);
   const [showTrades, setShowTrades] = useState(true);
   const [showList, setShowList] = useState(false);
@@ -235,14 +239,41 @@ export function PositionPriceChart({
   const unit = data.assetClass === "crypto" ? data.symbol : "ks";
   const chartId = "position-price-" + data.assetId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 48);
 
+  // The card is portaled to document.body, outside SectionCard's
+  // overflow:hidden and the graph's horizontal scrolling container.
+  // Measure the REAL rendered card, not a guessed 348px height.
+  useLayoutEffect(() => {
+    if (!activeTrade || !showTrades) return;
+    const visual = window.visualViewport;
+    const reposition = () => {
+      const rect = tooltipRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const viewport = {
+        left: visual?.offsetLeft ?? 0,
+        top: visual?.offsetTop ?? 0,
+        width: visual?.width ?? document.documentElement.clientWidth,
+        height: visual?.height ?? window.innerHeight,
+      };
+      const next = placeTradeTooltip(
+        tipAnchor, { width: rect.width, height: rect.height }, viewport,
+      );
+      setTipPosition(previous =>
+        previous.x === next.x && previous.y === next.y ? previous : next,
+      );
+    };
+    reposition();
+    window.addEventListener("resize", reposition);
+    visual?.addEventListener("resize", reposition);
+    visual?.addEventListener("scroll", reposition);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      visual?.removeEventListener("resize", reposition);
+      visual?.removeEventListener("scroll", reposition);
+    };
+  }, [activeTrade?.id, selectedTradeId, showTrades, tipAnchor]);
+
   function moveTooltip(clientX: number, clientY: number) {
-    // A fixed overlay escapes the scrollable chart on narrow screens.
-    const width = 316;
-    const height = 348;
-    setTipPosition({
-      x: Math.max(8, Math.min(window.innerWidth - width - 8, clientX + 15)),
-      y: Math.max(8, Math.min(window.innerHeight - height - 8, clientY + 14)),
-    });
+    setTipAnchor({ x: clientX, y: clientY });
   }
 
   function handlePointerMove(event: PointerEvent<SVGSVGElement>) {
@@ -403,10 +434,10 @@ export function PositionPriceChart({
               );
             }) : null}
           </svg>
-          {activeTrade && showTrades ? (
-            <div role="tooltip" id={tooltipId}
+          {activeTrade && showTrades && typeof document !== "undefined" ? createPortal(
+            <div role="tooltip" id={tooltipId} ref={tooltipRef}
               className={(selectedTradeId === activeTrade.id ? "pointer-events-auto" : "pointer-events-none") +
-                " fixed z-50 max-h-[calc(100vh-16px)] w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto"}
+                " fixed z-[200] max-h-[calc(100dvh-16px)] w-[300px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain"}
               style={{left: tipPosition.x, top: tipPosition.y}}>
               <TradeInfoCard trade={activeTrade} unit={unit} timeZone={data.exchangeTimezone} />
               {selectedTradeId === activeTrade.id ? (
@@ -414,7 +445,7 @@ export function PositionPriceChart({
                   className="absolute right-3 top-9 rounded-md border border-white/15 bg-[#253951] px-2 py-1 text-xs text-white hover:bg-[#344963]"
                   onClick={() => setSelectedTradeId(null)}>×</button>
               ) : null}
-            </div>
+            </div>, document.body,
           ) : null}
           <div className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-3 text-xs">
             <div role="status" aria-live="polite" className="text-[var(--muted)]">
