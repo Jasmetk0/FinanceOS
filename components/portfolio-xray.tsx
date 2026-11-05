@@ -11,6 +11,8 @@ import { XRayExposureBreakdown } from "@/components/xray-exposure-breakdown";
 import { XRayConcentration } from "@/components/xray-concentration";
 import { XRayEtfOverlap } from "@/components/xray-etf-overlap";
 import { XRaySectorCoverage } from "@/components/xray-sector-coverage";
+import { XRayCoverageQueue } from "@/components/xray-coverage-queue";
+import { calculateXRayCoveragePriorities } from "@/lib/xray/coverage-priorities";
 import { calculateXRaySectorExposure } from "@/lib/xray/sector-exposure";
 import { calculateXRayEtfOverlap } from "@/lib/xray/etf-overlap";
 import { calculateXRayConcentration } from "@/lib/xray/concentration";
@@ -130,6 +132,12 @@ export function PortfolioXRay({
     catch(error){return {result:null,error:error instanceof Error?error.message:String(error)};}
   },[report.data,effectiveRows]);
 
+  const coveragePriorities=useMemo(()=>{
+    if(!report.data)return {result:null,error:""};
+    try {return {result:calculateXRayCoveragePriorities(report.data),error:""};}
+    catch(error){return {result:null,error:error instanceof Error?error.message:String(error)};}
+  },[report.data]);
+
   const filtered = useMemo(() => (report.data?.exposures ?? []).filter((item) => {
     if (filter !== "all" && item.kind !== filter) return false;
     if(!matchesXRayOwnership(item,ownershipFilter))return false;
@@ -231,7 +239,7 @@ export function PortfolioXRay({
       <XRayLivePositions initial={initialFreshness} onUpdate={setLiveHoldings}
         onIssuerRefresh={refreshIssuer} />
       <XRayAutoSync onUpdate={setAutomaticRows} refreshSignal={issuerRefresh} />
-      <section className="finance-surface p-4 sm:p-5">
+      <section id="xray-manual-import" className="finance-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold">Volitelný ruční import a záloha složení</h2>
@@ -287,6 +295,10 @@ export function PortfolioXRay({
               </div>
             ))}
           </section>
+          {coveragePriorities.result?<XRayCoverageQueue result={coveragePriorities.result}/>:
+            coveragePriorities.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
+              Priority ETF nelze bezpečně spočítat: {coveragePriorities.error}
+            </p>:null}
           {concentration.summary?<XRayConcentration summary={concentration.summary}/>:
             concentration.error?<p role="alert" className="rounded-xl border border-[var(--warning)]/25 p-4 text-sm text-[var(--warning)]">
               Audit koncentrace se nepodařilo ověřit: {concentration.error}
