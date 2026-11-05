@@ -20,6 +20,7 @@ export interface PositionTradeMarker {
   kind: "buy" | "sell";
   quantity: number | null;
   price: number | null;
+  priceCurrency: string;
   account: string;
   provider: string;
 }
@@ -140,7 +141,7 @@ export async function getPositionPriceChart(
     "SELECT a.id, a.provider, a.external_id, a.symbol, a.listing_symbol, " +
     "a.asset_class, a.currency, a.name, " +
     "COALESCE((SELECT SUM(h.market_value_czk) FROM holdings h WHERE h.asset_id = a.id), 0) AS held_value " +
-    "FROM assets a WHERE UPPER(a.symbol) = ? AND a.asset_class IN ('stock', 'etf', 'crypto') " +
+    "FROM assets a WHERE UPPER(a.symbol) = ? AND a.asset_class IN ('stock', 'etf', 'crypto', 'other') " +
     "ORDER BY held_value DESC, a.provider ASC, a.id ASC",
   ).all(symbol) as AssetRow[];
   if (!assets.length) return null;
@@ -168,7 +169,7 @@ export async function getPositionPriceChart(
     date: String(row.price_date), close: Number(row.close),
   }));
   const tradesFromDb = db.prepare(
-    "SELECT t.id, t.kind, t.occurred_at, t.quantity, t.price, " +
+    "SELECT t.id, t.kind, t.occurred_at, t.quantity, t.price, t.currency, " +
     "a.name AS account_name, t.provider " +
     "FROM transactions t JOIN accounts a ON a.id = t.account_id " +
     "WHERE t.asset_id = ? AND t.kind IN ('buy', 'sell') " +
@@ -185,6 +186,9 @@ export async function getPositionPriceChart(
         ? null : Number(row.price),
       account: String(row.account_name),
       provider: String(row.provider),
+      // T212 execution price is in the instrument currency even when the
+      // wallet cash flow uses a different settlement currency.
+      priceCurrency: String(row.provider) === "trading212" ? asset.currency : String(row.currency),
     }))
     .filter(eligibleTradeMarker)
     .reverse();
