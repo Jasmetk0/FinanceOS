@@ -1,15 +1,31 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getAssetDetail } from "@/lib/server/analytics";
+import { getPositionPriceChart } from "@/lib/server/position-price-history";
+import { PositionPriceChart } from "@/components/position-price-chart";
+
+async function PositionChartLoader({ symbol, assetId }: { symbol: string; assetId?: string }) {
+  const priceChart = await getPositionPriceChart(symbol, assetId);
+  return (
+    <SectionCard title="Cenový graf a moje obchody" subtitle="Vývoj ceny instrumentu a skutečné nákupy (+) a prodeje (−) z historie účtu">
+      {priceChart ? <PositionPriceChart data={priceChart} /> : (
+        <p className="text-sm text-[var(--muted)]">Pro tento instrument není možné zobrazit burzovní cenový graf.</p>
+      )}
+    </SectionCard>
+  );
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function AssetDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ symbol: string }>;
+  searchParams?: Promise<{ asset?: string }>;
 }) {
   const { symbol: rawSymbol } = await params;
   const detail = getAssetDetail(decodeURIComponent(rawSymbol));
@@ -17,6 +33,7 @@ export default async function AssetDetailPage({
   const isPrincipalAsset =
     detail.assetClass === "p2p" || detail.assetClass === "bond";
   const isMintosAsset = detail.providers.includes("mintos");
+  const selectedAsset = (await searchParams)?.asset;
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -175,6 +192,18 @@ export default async function AssetDetailPage({
           </>
         )}
       </section>
+
+      {!isPrincipalAsset ? (
+        <section id="price-chart" className="mt-5 scroll-mt-28">
+          <Suspense fallback={
+            <SectionCard title="Cenový graf a moje obchody" subtitle="Otevírám historii skutečných nákupů a prodejů">
+              <p role="status" className="animate-pulse text-sm text-[var(--muted)]">Načítám dostupné denní ceny a jednotlivé obchody…</p>
+            </SectionCard>
+          }>
+            <PositionChartLoader symbol={decodeURIComponent(rawSymbol)} assetId={selectedAsset} />
+          </Suspense>
+        </section>
+      ) : null}
 
       <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)]">
         <SectionCard title="Current holdings" subtitle="Rozpad podle účtu">
