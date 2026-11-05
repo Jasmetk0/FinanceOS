@@ -21,7 +21,10 @@ export default function InvestmentsPage() {
             Vyhledávej, porovnávej a filtruj všechny pozice. Údaje jsou z posledních dostupných záznamů platformy.
           </p>
         </div>
-        <Link href="/performance" prefetch={false} className="finance-action">Výkonnost a vklady ↗</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/indices" prefetch={false} className="finance-action">📈 Světové indexy ↗</Link>
+          <Link href="/performance" prefetch={false} className="finance-action">Výkonnost a vklady ↗</Link>
+        </div>
       </div>
 
       <section className="mt-5 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
