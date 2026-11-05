@@ -138,27 +138,35 @@ export function PositionPriceChart({
   const [range, setRange] = useState<Range>("MAX");
   const [selectedTradeId, setSelectedTradeId] = useState<string | null>(null);
   const [hoveredTradeId, setHoveredTradeId] = useState<string | null>(null);
+  const [tipPosition, setTipPosition] = useState({ x: 16, y: 16 });
   const [hoverDate, setHoverDate] = useState<string | null>(null);
   const [showTrades, setShowTrades] = useState(true);
   const [showList, setShowList] = useState(false);
 
   const model = useMemo(() => {
-    const end = timestamp(data.asOfDate);
+    const end = timestamp(data.asOfDate) + 12 * 3600000; // include the entire current exchange day
     const start = domainStart(range, end);
     const prices = data.prices.filter((p) => timestamp(p.date) >= start && timestamp(p.date) <= end);
     const trades = data.trades.filter((t) => timestamp(t.date) >= start && timestamp(t.date) <= end);
     if (prices.length === 0) return { prices, trades, plotted: [] as PlotTrade[], ticks: [] as number[], path: "", area: "", gapCount: 0, x: () => LEFT, y: () => TOP, minX: start, maxX: end, minY: 0, maxY: 1, unplaced: trades.length };
-    const minX = range === "MAX" ? timestamp(prices[0].date) : start;
+    const minX = range === "MAX" ? Math.min(timestamp(prices[0].date), ...trades.map(t => timestamp(t.date))) : start;
     const maxX = Math.max(end, timestamp(prices[prices.length - 1].date), minX + 86400000);
     const x = (value: number) => LEFT + PLOT_W * (value - minX) / (maxX - minX);
     const executions = trades.map((trade) => {
       const close = previousClose(data.prices, trade.date);
-      if (close === null) return null;
-      // Do not borrow a future market close to mark a historic execution.
-      const overlay = overlayTradePrice(trade, close, data.currency);
-      return { ...trade, close, ...overlay };
-    }).filter((trade) => trade !== null);
-    const values = [...prices.map((p) => p.close), ...executions.map((t) => t.chartPrice)];
+      // Only a documented, currency-matched execution price is plotted
+      // vertically on the market-price axis. All other REAL executions are
+      // shown on a separate date/time event lane, never at a fabricated price.
+      const overlay = close === null ? null : overlayTradePrice(trade, close, data.currency);
+      const valid = overlay?.usedTradePrice === true;
+      return {
+        ...trade,
+        chartPrice: valid ? Number(trade.price) : null,
+        usedTradePrice: valid,
+      };
+    });
+    const values = [...prices.map((p) => p.close),
+      ...executions.filter(t => t.chartPrice !== null).map(t => t.chartPrice as number)];
     const floor = Math.min(...values);
     const ceiling = Math.max(...values);
     const margin = Math.max((ceiling - floor) * 0.12, ceiling * 0.008, 0.00000001);
@@ -175,20 +183,20 @@ export function PositionPriceChart({
     const area = gaps === 0 ? path + " L" + x(timestamp(prices[prices.length - 1].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " L" + x(timestamp(prices[0].date)).toFixed(2) +
       " " + (TOP + PLOT_H) + " Z" : "";
-    const collisions = new Map<string, number>();
     const plotted = executions.map((trade) => {
-      const key = trade.date + "/" + trade.kind;
-      const collision = collisions.get(key) ?? 0;
-      collisions.set(key, collision + 1);
+      const executedAt = chartExecutionTimestamp(trade.occurredAt, data.exchangeTimezone) ??
+        timestamp(trade.date);
       return {
         ...trade,
-        x: Math.max(LEFT, Math.min(W - RIGHT, x(timestamp(trade.date)) + (collision % 5 - 2) * 5)),
-        y: y(trade.chartPrice),
+        // No +/-5 px collision jitter: horizontal position is sourced from
+        // the actual exchange-local clock timestamp, not a decoration.
+        x: Math.max(LEFT, Math.min(W - RIGHT, x(executedAt))),
+        y: trade.chartPrice === null ? TOP + PLOT_H + 15 : y(trade.chartPrice),
       };
     });
     const ticks = Array.from({ length: 5 }, (_, index) => minY + (maxY - minY) * index / 4);
-    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, x, y, minX, maxX, minY, maxY, unplaced: trades.length - plotted.length };
-  }, [data.prices, data.trades, data.currency, data.asOfDate, range]);
+    return { prices, trades, plotted, ticks, path, area, gapCount: gaps, x, y, minX, maxX, minY, maxY, unplaced: plotted.filter(t => !t.usedTradePrice).length };
+  }, [data.prices, data.trades, data.currency, data.asOfDate, data.exchangeTimezone, range]);
 
   const selectedTrade = model.trades.find((t) => t.id === selectedTradeId) ?? null;
   const activeTrade = model.plotted.find(t => t.id === hoveredTradeId) ??
