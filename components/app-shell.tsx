@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 type IconName =
-  | "overview" | "holdings" | "performance" | "history" | "insights"
+  | "overview" | "holdings" | "performance" | "history" | "indices" | "insights"
   | "plan" | "simulator" | "xray" | "analyst" | "reports" | "journal" | "transactions"
   | "cash" | "accounts" | "connections" | "settings";
 
@@ -26,6 +26,7 @@ const navigationGroups: Array<{ title: string; items: NavigationItem[] }> = [
     title: "Analýza a plánování",
     items: [
       { href: "/history", label: "Historie", icon: "history", keywords: "vývoj graf" },
+      { href: "/indices", label: "Světové indexy", icon: "indices", keywords: "sp500 sp 500 nasdaq nasdaq100 ftse all world dow dax trhy graf porovnání" },
       { href: "/insights", label: "Analýzy", icon: "insights" },
       { href: "/plan", label: "Plán", icon: "plan", keywords: "cíle" },
       { href: "/simulator", label: "Simulátor", icon: "simulator", keywords: "investice složené úročení inflace fire důchod kalkulačka" },
@@ -57,6 +58,7 @@ const icons: Record<IconName, ReactNode> = {
   holdings: <><path d="M3 3v18h18" /><path d="m6 16 5-5 4 3 6-8" /></>,
   performance: <><path d="M3 17 9 11l4 4 8-9" /><path d="M15 6h6v6" /></>,
   history: <><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l4 2" /></>,
+  indices: <><path d="M3 3v18h18" /><path d="m6 16 4-6 4 3 5-8" /><circle cx="19" cy="5" r="1.5"/><path d="M6 7h3M15 18h4" /></>,
   insights: <><path d="M12 2 9.8 9.8 2 12l7.8 2.2L12 22l2.2-7.8L22 12l-7.8-2.2z" /></>,
   plan: <><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="5" /><circle cx="12" cy="12" r="1" /></>,
   simulator: <><path d="M3 20V4m0 16h18M6 16l5-6 4 3 5-8"/><circle cx="20" cy="5" r="1"/></>,
