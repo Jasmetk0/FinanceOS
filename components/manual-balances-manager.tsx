@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 export interface ManualBalanceRow {
@@ -20,16 +20,37 @@ export function ManualBalancesManager({
   initialBalances: ManualBalanceRow[];
 }) {
   const router = useRouter();
+  const inFlight = useRef(false);
   const [balances, setBalances] = useState(initialBalances);
   const [editing, setEditing] = useState<ManualBalanceRow | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageKind, setMessageKind] = useState<"success" | "error" | null>(null);
 
   async function submit(form: HTMLFormElement) {
+    if (inFlight.current) return;
     const data = new FormData(form);
+    const rawValue = String(data.get("value") ?? "").trim();
+    const value = Number(rawValue);
+    const currency = String(data.get("currency") || "").trim().toUpperCase();
+    const name = String(data.get("name") || "").trim();
+
+    if (!name || !rawValue || !Number.isFinite(value) || value < 0) {
+      setMessage("Zadej název a platnou nezápornou hodnotu.");
+      setMessageKind("error");
+      return;
+    }
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      setMessage("Měna musí mít třípísmenný kód, například CZK, EUR nebo USD.");
+      setMessageKind("error");
+      return;
+    }
+
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
+    setMessageKind(null);
 
     try {
       const response = await fetch("/api/manual/balance", {
@@ -37,10 +58,10 @@ export function ManualBalancesManager({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           externalId: editing?.externalId,
-          name: String(data.get("name") || ""),
+          name,
           kind: String(data.get("kind") || "cash"),
-          value: Number(data.get("value")),
-          currency: String(data.get("currency") || "CZK"),
+          value,
+          currency,
         }),
       });
 
@@ -49,22 +70,26 @@ export function ManualBalancesManager({
         error?: string;
       };
       if (!response.ok) {
-        throw new Error(payload.error || "Balance update failed.");
+        throw new Error(payload.error || "Uložení zůstatku se nezdařilo.");
       }
 
       setBalances(payload.balances ?? []);
       setEditing(null);
       setOpen(false);
-      setMessage("Balance saved.");
+      setMessage("Ruční zůstatek byl uložen.");
+      setMessageKind("success");
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   async function remove(balance: ManualBalanceRow) {
+    if (inFlight.current) return;
     if (
       !window.confirm(
         "Smazat ručně vedenou položku „" + balance.name + "“ z net worth?",
@@ -73,8 +98,10 @@ export function ManualBalancesManager({
       return;
     }
 
+    inFlight.current = true;
     setBusy(true);
     setMessage(null);
+    setMessageKind(null);
     try {
       const response = await fetch("/api/manual/balance", {
         method: "DELETE",
@@ -86,10 +113,12 @@ export function ManualBalancesManager({
         error?: string;
       };
       if (!response.ok) {
-        throw new Error(payload.error || "Delete failed.");
+        throw new Error(payload.error || "Smazání zůstatku se nezdařilo.");
       }
 
       setBalances(payload.balances ?? []);
+      setMessage("Ruční zůstatek „" + balance.name + "“ byl odstraněn.");
+      setMessageKind("success");
       if (editing?.externalId === balance.externalId) {
         setEditing(null);
         setOpen(false);
@@ -97,28 +126,34 @@ export function ManualBalancesManager({
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setMessageKind("error");
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }
 
   function startEdit(balance: ManualBalanceRow) {
+    if (inFlight.current) return;
     setEditing(balance);
     setOpen(true);
     setMessage(null);
+    setMessageKind(null);
   }
 
   function startAdd() {
+    if (inFlight.current) return;
     setEditing(null);
     setOpen(true);
     setMessage(null);
+    setMessageKind(null);
   }
 
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-semibold">Manual net-worth balances</h2>
+          <h2 className="text-[15px] font-semibold">Ručně vedené zůstatky a majetek</h2>
           <p className="mt-1 text-sm leading-6 text-[var(--muted)]">
             Bankovní zůstatek, hotovost, jiný majetek nebo závazek, který
             FinanceOS neumí načíst automaticky.
@@ -127,15 +162,17 @@ export function ManualBalancesManager({
         <button
           type="button"
           onClick={startAdd}
-          className="shrink-0 rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d]"
+          disabled={busy}
+          className="finance-action finance-action-primary !min-h-10 disabled:opacity-50"
         >
-          + Add balance
+          + Přidat zůstatek
         </button>
       </div>
 
       {open ? (
         <form
           key={editing?.externalId || "new"}
+          aria-busy={busy}
           className="mt-4 rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
           onSubmit={(event) => {
             event.preventDefault();
@@ -144,29 +181,29 @@ export function ManualBalancesManager({
         >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label>
-              <span className="text-xs text-[var(--muted)]">Name</span>
+              <span className="text-xs text-[var(--muted)]">Název *</span>
               <input
                 name="name"
                 defaultValue={editing?.name || ""}
-                placeholder="Bank account, Cash, Car loan…"
+                placeholder="Bankovní účet, hotovost, úvěr…"
                 required
                 className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               />
             </label>
             <label>
-              <span className="text-xs text-[var(--muted)]">Kind</span>
+              <span className="text-xs text-[var(--muted)]">Typ položky</span>
               <select
                 name="kind"
                 defaultValue={editing?.kind || "cash"}
                 className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm"
               >
-                <option value="cash">Cash / bank balance</option>
-                <option value="asset">Other asset</option>
-                <option value="liability">Liability / debt</option>
+                <option value="cash">Hotovost / bankovní zůstatek</option>
+                <option value="asset">Ostatní majetek</option>
+                <option value="liability">Závazek / dluh</option>
               </select>
             </label>
             <label>
-              <span className="text-xs text-[var(--muted)]">Value</span>
+              <span className="text-xs text-[var(--muted)]">Hodnota *</span>
               <input
                 name="value"
                 type="number"
@@ -178,18 +215,26 @@ export function ManualBalancesManager({
               />
             </label>
             <label>
-              <span className="text-xs text-[var(--muted)]">Currency</span>
+              <span className="text-xs text-[var(--muted)]">Měna *</span>
               <input
                 name="currency"
                 defaultValue={editing?.currency || "CZK"}
+                pattern="[A-Za-z]{3}"
+                maxLength={3}
                 required
                 className="mt-1.5 w-full rounded-xl border border-[var(--border-strong)] bg-[var(--panel-soft)] px-3 py-2.5 text-sm uppercase"
               />
             </label>
           </div>
 
+          <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
+            Zadej hodnotu vždy kladně. Závazek FinanceOS automaticky odečte od čistého majetku.
+            Ruční zůstatek se nepřičítá k výplatám v peněžním deníku — obě evidence jsou oddělené.
+          </p>
           {message ? (
-            <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+            <p role={messageKind === "error" ? "alert" : "status"} aria-live="polite" className={["mt-3 rounded-xl border p-3 text-xs leading-5", messageKind === "error"
+              ? "border-[var(--danger)]/25 bg-[var(--danger)]/[.045] text-[var(--danger)]"
+              : "border-[var(--accent)]/20 bg-[var(--accent)]/[.045] text-[var(--accent)]"].join(" ")}>
               {message}
             </p>
           ) : null}
@@ -200,7 +245,7 @@ export function ManualBalancesManager({
               disabled={busy}
               className="rounded-xl bg-[var(--accent)] px-4 py-2.5 text-sm font-semibold text-[#07100d] disabled:opacity-50"
             >
-              {busy ? "Saving…" : editing ? "Update balance" : "Save balance"}
+              {busy ? "Ukládám…" : editing ? "Uložit změny" : "Uložit zůstatek"}
             </button>
             <button
               type="button"
@@ -208,14 +253,16 @@ export function ManualBalancesManager({
                 setOpen(false);
                 setEditing(null);
               }}
+              disabled={busy}
               className="rounded-xl border border-white/10 px-4 py-2.5 text-sm text-[var(--muted)]"
             >
-              Cancel
+              Zrušit
             </button>
           </div>
         </form>
       ) : message ? (
-        <p className="mt-3 text-xs leading-5 text-[var(--muted)]">{message}</p>
+        <p role={messageKind === "error" ? "alert" : "status"} aria-live="polite"
+          className={["mt-3 text-xs leading-5", messageKind === "error" ? "text-[var(--danger)]" : "text-[var(--accent)]"].join(" ")}>{message}</p>
       ) : null}
 
       {balances.length ? (
@@ -223,13 +270,13 @@ export function ManualBalancesManager({
           {balances.map((balance) => (
             <article
               key={balance.externalId}
-              className="rounded-2xl border border-[var(--border)] bg-white/[.025] p-4"
+              className="finance-account-card min-w-0 p-3.5"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="font-medium">{balance.name}</p>
-                  <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
-                    {balance.kind} · {balance.currency}
+                  <p className="mt-1 text-[10px] text-[var(--muted)]">
+                    {balance.kind === "cash" ? "Zůstatek" : balance.kind === "asset" ? "Majetek" : "Závazek"} · {balance.currency}
                   </p>
                 </div>
                 <p
@@ -246,7 +293,7 @@ export function ManualBalancesManager({
               </div>
 
               <p className="mt-4 text-xs text-[var(--muted)]">
-                Updated {new Date(balance.updatedAt).toLocaleString("cs-CZ")}
+                Aktualizováno {new Date(balance.updatedAt).toLocaleString("cs-CZ")}
               </p>
 
               <div className="mt-4 flex gap-2">
@@ -256,7 +303,7 @@ export function ManualBalancesManager({
                   disabled={busy}
                   className="rounded-lg border border-[var(--border-strong)] px-3 py-1.5 text-xs text-[var(--muted)] hover:text-white"
                 >
-                  Edit
+                  Upravit
                 </button>
                 <button
                   type="button"
@@ -264,7 +311,7 @@ export function ManualBalancesManager({
                   disabled={busy}
                   className="rounded-lg border border-[var(--danger)]/20 px-3 py-1.5 text-xs text-[var(--danger)]"
                 >
-                  Delete
+                  Smazat
                 </button>
               </div>
             </article>
