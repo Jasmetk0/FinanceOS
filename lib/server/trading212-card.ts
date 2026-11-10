@@ -445,6 +445,7 @@ function nearestUnambiguousCandidate(
 }
 
 function findExistingTransaction(
+  accountId: string,
   id: string,
   classification: NonNullable<ReturnType<typeof cardClassification>>,
   occurredAt: string | null,
@@ -458,9 +459,9 @@ function findExistingTransaction(
     const exact = db
       .prepare(
         "SELECT * FROM transactions WHERE provider = 'trading212' " +
-          "AND external_id = ? LIMIT 1",
+          "AND account_id = ? AND external_id = ? LIMIT 1",
       )
-      .get("cash:" + id);
+      .get(accountId, "cash:" + id);
     if (exact) return exact;
   }
 
@@ -486,7 +487,7 @@ function findExistingTransaction(
   const nativeTolerance = Math.max(0.02, Math.abs(signedAmount) * 0.000001);
   const nativeCandidates = db
     .prepare(
-      "SELECT * FROM transactions WHERE provider = 'trading212' " +
+      "SELECT * FROM transactions WHERE provider = 'trading212' AND account_id = ? " +
         `AND kind IN (${placeholders}) ` +
         "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
         "AND external_id NOT LIKE 'card-export:%' " +
@@ -496,6 +497,7 @@ function findExistingTransaction(
         "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
     )
     .all(
+      accountId,
       ...kindCandidates,
       occurredAt,
       occurredAt,
@@ -518,7 +520,7 @@ function findExistingTransaction(
   const czkTolerance = Math.max(0.5, Math.abs(amountCzk) * 0.00001);
   const czkCandidates = db
     .prepare(
-      "SELECT * FROM transactions WHERE provider = 'trading212' " +
+      "SELECT * FROM transactions WHERE provider = 'trading212' AND account_id = ? " +
         `AND kind IN (${placeholders}) ` +
         "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
         "AND external_id NOT LIKE 'card-export:%' " +
@@ -527,6 +529,7 @@ function findExistingTransaction(
         "ORDER BY ABS(julianday(occurred_at) - julianday(?)) ASC LIMIT 2",
     )
     .all(
+      accountId,
       ...kindCandidates,
       occurredAt,
       occurredAt,
@@ -648,6 +651,7 @@ function reconcileStoredRichExportRows() {
     const csvId =
       typeof metadata.csvId === "string" ? metadata.csvId : "";
     const existing = findExistingTransaction(
+      String(row.account_id),
       csvId,
       classification,
       String(row.occurred_at),
@@ -785,6 +789,7 @@ async function enrichReportRows(input: {
     if (classification.category === "card_cashback") cashbackRows += 1;
 
     const existing = findExistingTransaction(
+      input.accountId,
       id,
       classification,
       occurredAt,
@@ -1266,14 +1271,14 @@ export function getTrading212CardStatus() {
   const stats = db
     .prepare(`
       SELECT
-        SUM(CASE WHEN category LIKE 'card_spend:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS spend,
-        SUM(CASE WHEN category LIKE 'card_refund:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS refunds,
-        SUM(CASE WHEN category = 'card_cashback' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
-        SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS spend_count,
-        SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
+        SUM(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS spend,
+        SUM(CASE WHEN category LIKE 'card_refund:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS refunds,
+        SUM(CASE WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
+        SUM(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS spend_count,
+        SUM(CASE WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS cashback_count,
         SUM(
           CASE
-            WHEN category = 'card_cashback'
+            WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
               AND source_label LIKE '%· inferred'
             THEN 1 ELSE 0
           END
@@ -1304,8 +1309,8 @@ export function getTrading212CardStatus() {
             ELSE 0
           END
         ) AS enrichment_only_count,
-        MIN(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS first_card_at,
-        MAX(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS last_card_at
+        MIN(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN occurred_at END) AS first_card_at,
+        MAX(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN occurred_at END) AS last_card_at
       FROM transactions
       WHERE provider = 'trading212'
     `)
@@ -1338,6 +1343,7 @@ export function getTrading212CardStatus() {
         ) AS cashback
       FROM transactions
       WHERE provider = 'trading212'
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           category LIKE 'card_spend:%'
           OR category LIKE 'card_refund:%'
@@ -1381,6 +1387,7 @@ export function getTrading212CardStatus() {
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS purchases
       FROM transactions
       WHERE provider = 'trading212'
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           (
             category LIKE 'card_spend:%'

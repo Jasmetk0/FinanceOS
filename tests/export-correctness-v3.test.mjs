@@ -710,7 +710,8 @@ test("Trading 212 rich-export reconciliation repairs old unresolved cash rows sa
   const analytics = source("lib/server/analytics.ts");
 
   assert.ok(card.includes('const enrichmentOnly = true'));
-  assert.ok(card.includes('.get("cash:" + id)'));
+  assert.ok(card.includes('.get(accountId, "cash:" + id)'));
+  assert.ok(card.includes('AND account_id = ? AND external_id = ? LIMIT 1'));
   assert.equal(card.includes('"card-export:" + id, "cash:" + id'), false);
   assert.equal(card.includes('IN (?, ?) LIMIT 1'), false);
 

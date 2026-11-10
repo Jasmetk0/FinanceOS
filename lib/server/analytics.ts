@@ -246,6 +246,8 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
 
 export interface PortfolioHistoryMetric {
   valueCzk: number | null;
+  /** Reconstructed partial valuation, never to be presented as verified. */
+  estimatedValueCzk?: number | null;
   contributedCzk: number;
   externalRewardsCzk: number;
   capitalAttributedCzk: number;
@@ -265,6 +267,19 @@ export interface PortfolioHistoryPoint {
   total: PortfolioHistoryMetric;
   providers: Record<string, PortfolioHistoryMetric>;
   coverage: PortfolioHistoryCoverage;
+}
+
+/**
+ * Independent, ledger-backed timeline: a dated cash movement remains visible
+ * even when no historical market-value snapshot exists for that day.
+ * Amounts are cumulative KNOWN external owner contributions, not estimates
+ * of cash balances or proof that all bank flows were imported.
+ */
+export interface PortfolioCashFlowPoint {
+  date: string;
+  totalCzk: number;
+  providers: Record<string, number>;
+  performanceComplete: boolean;
 }
 
 function historyMetric(
@@ -463,6 +478,10 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     string,
     { provider: string; valueCzk: number }
   >();
+  const latestCandidateByAccount = new Map<
+    string,
+    { provider: string; valueCzk: number; partial: boolean }
+  >();
   const snapshotsByDate = new Map<
     string,
     Array<{
@@ -519,6 +538,29 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     left.provider.localeCompare(right.provider),
   );
 
+  const ledgerByProvider = new Map<string, number>();
+  let ledgerTotal = 0;
+  const cashFlows: PortfolioCashFlowPoint[] = [];
+  for (const flow of flows) {
+    if (flow.ownContributionDelta === 0) continue;
+    ledgerTotal += flow.ownContributionDelta;
+    ledgerByProvider.set(
+      flow.provider,
+      (ledgerByProvider.get(flow.provider) ?? 0) + flow.ownContributionDelta,
+    );
+    const point: PortfolioCashFlowPoint = {
+      date: flow.date,
+      totalCzk: ledgerTotal,
+      providers: Object.fromEntries(ledgerByProvider),
+      performanceComplete: !firstPerformanceGap || flow.date < firstPerformanceGap,
+    };
+    if (cashFlows.at(-1)?.date === flow.date) {
+      cashFlows[cashFlows.length - 1] = point;
+    } else {
+      cashFlows.push(point);
+    }
+  }
+
   const contributionByProvider = new Map<string, number>();
   const rewardsByProvider = new Map<string, number>();
   const transferAttributionByProvider = new Map<string, number>();
@@ -550,6 +592,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     }
 
     for (const item of snapshotsByDate.get(date) ?? []) {
+      latestCandidateByAccount.set(item.accountId, {
+        provider: item.provider,
+        valueCzk: item.valueCzk,
+        partial: item.partial,
+      });
       if (item.partial) {
         // A partial snapshot is an explicit coverage gap, not a date that can
         // be skipped. Remove the account until a later complete snapshot
@@ -572,9 +619,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
         (providerValues.get(account.provider) ?? 0) + account.valueCzk,
       );
     }
+    const candidateValues = new Map<string, number>();
+    for (const account of latestCandidateByAccount.values()) {
+      candidateValues.set(
+        account.provider,
+        (candidateValues.get(account.provider) ?? 0) + account.valueCzk,
+      );
+    }
 
     const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
     let totalValue = 0;
+    let provisionalTotal = 0;
+    let allProvidersValuedOrEstimated = true;
     const knownProviders: string[] = [];
     const missingProviders: string[] = [];
 
@@ -599,6 +655,15 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : providerShouldExist
             ? null
             : null;
+      const candidateCovered =
+        providerShouldExist &&
+        activeAccounts.every(
+          (item) =>
+            latestCandidateByAccount.has(item.accountId) &&
+            (item.valueThroughDate === null || date <= item.valueThroughDate),
+        );
+      const provisionalValue = value === null && candidateCovered &&
+        candidateValues.has(provider) ? candidateValues.get(provider)! : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
       const externalRewards = rewardsByProvider.get(provider) ?? 0;
       const transferAttribution =
@@ -608,15 +673,21 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const providerPerformanceGap = performanceGapByProvider.get(provider);
       const providerPerformanceComplete =
         !providerPerformanceGap || date < providerPerformanceGap;
-      providerMetrics[provider] = historyMetric(
-        value,
-        contributed,
-        externalRewards,
-        capitalAttributed,
-        providerPerformanceComplete,
-      );
+      providerMetrics[provider] = {
+        ...historyMetric(
+          value,
+          contributed,
+          externalRewards,
+          capitalAttributed,
+          providerPerformanceComplete,
+        ),
+        estimatedValueCzk: provisionalValue,
+      };
 
       if (!providerShouldExist) continue;
+      if (value !== null) provisionalTotal += value;
+      else if (provisionalValue !== null) provisionalTotal += provisionalValue;
+      else allProvidersValuedOrEstimated = false;
       if (value === null) {
         missingProviders.push(provider);
       } else {
@@ -629,6 +700,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       unlinkedWalletStart !== null && unlinkedWalletStart <= date;
     if (hasUnlinkedWalletGap) {
       missingProviders.push("unlinked-wallet");
+      allProvidersValuedOrEstimated = false;
     }
 
     const complete =
@@ -639,13 +711,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       // Never present a partial sum of providers as the user's historical
       // total portfolio value. Until every provider known to be active on the
       // date has a valuation source, total value / P&L / return stay unknown.
-      total: historyMetric(
-        complete ? totalValue : null,
-        totalOwnContribution,
-        totalExternalRewards,
-        totalOwnContribution + totalExternalRewards,
-        !firstPerformanceGap || date < firstPerformanceGap,
-      ),
+      total: {
+        ...historyMetric(
+          complete ? totalValue : null,
+          totalOwnContribution,
+          totalExternalRewards,
+          totalOwnContribution + totalExternalRewards,
+          !firstPerformanceGap || date < firstPerformanceGap,
+        ),
+        estimatedValueCzk: !complete && allProvidersValuedOrEstimated &&
+          knownProviders.length + missingProviders.length > 0
+          ? provisionalTotal : null,
+      },
       providers: providerMetrics,
       coverage: {
         complete,
@@ -668,6 +745,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   return {
     providers: [...providers].sort(),
     points,
+    cashFlows,
     coverage: {
       completePointCount: completePoints.length,
       totalPointCount: points.length,
@@ -1028,6 +1106,7 @@ export function getCashFlowData(months = 18) {
       SELECT provider, kind, occurred_at, amount_czk, category, source_label
       FROM transactions
       WHERE amount_czk IS NOT NULL
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           (
             provider = 'manual'
@@ -2298,13 +2377,19 @@ export function getAccountDetail(accountIdInput: string) {
       (!firstPerformanceGap || date < firstPerformanceGap);
     const capitalAttributed =
       ownContribution + externalRewards + transferAttribution;
-    let metric = historyMetric(
-      valuationCovered ? num(row.total_value_czk) : null,
-      ownContribution,
-      externalRewards,
-      capitalAttributed,
-      performanceComplete,
-    );
+    let metric: PortfolioHistoryMetric = {
+      ...historyMetric(
+        valuationCovered ? num(row.total_value_czk) : null,
+        ownContribution,
+        externalRewards,
+        capitalAttributed,
+        performanceComplete,
+      ),
+      estimatedValueCzk:
+        snapshotQuality === "partial" &&
+        (freshness.coverageThrough === null || date <= freshness.coverageThrough)
+          ? num(row.total_value_czk) : null,
+    };
 
     // Investown native statements explicitly tell us which cash movements are
     // yield/income/fees. For this provider there is no mark-to-market P/L: loan
@@ -2391,6 +2476,26 @@ export function getAccountDetail(accountIdInput: string) {
     });
   }
 
+  // Unlike valuations, external cash-flow has a separate ledger timeline.
+  // It must not disappear because a daily market-value snapshot is partial.
+  const accountCashFlows: PortfolioCashFlowPoint[] = [];
+  let accountContributed = 0;
+  for (const flow of flowRows) {
+    if (flow.ownContributionDelta === 0) continue;
+    accountContributed += flow.ownContributionDelta;
+    const point: PortfolioCashFlowPoint = {
+      date: flow.date,
+      totalCzk: accountContributed,
+      providers: { [provider]: accountContributed },
+      performanceComplete: !firstPerformanceGap || flow.date < firstPerformanceGap,
+    };
+    if (accountCashFlows.at(-1)?.date === flow.date) {
+      accountCashFlows[accountCashFlows.length - 1] = point;
+    } else {
+      accountCashFlows.push(point);
+    }
+  }
+
   const completeChartPoints = chartPoints.filter(
     (point) => point.coverage.complete,
   );
@@ -2439,6 +2544,31 @@ export function getAccountDetail(accountIdInput: string) {
             .map((row) => [String(row.key), String(row.value)]),
         )
       : null;
+  // Counts are diagnostic only: never silently convert an uncertain
+  // deposit into an external contribution merely to fill a graph.
+  const trading212CashDiagnostics = provider === "trading212"
+    ? db.prepare(`
+        SELECT
+          SUM(CASE WHEN kind IN ('deposit', 'withdrawal')
+            AND flow_scope = 'external' THEN 1 ELSE 0 END) AS confirmedMovements,
+          SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN 1 ELSE 0 END) AS unresolvedDeposits,
+          SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS unresolvedDepositsCzk,
+          MIN(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN occurred_at END) AS firstUnresolvedDeposit,
+          SUM(CASE WHEN kind IN ('deposit', 'withdrawal')
+            AND amount_czk IS NULL AND amount IS NOT NULL
+            THEN 1 ELSE 0 END) AS missingFxConversions,
+          SUM(CASE WHEN COALESCE(raw_json, '')
+            LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS unpairedCsvRows,
+          SUM(CASE WHEN COALESCE(raw_json, '')
+            LIKE '%"financeOsCsvPrimary":true%' THEN 1 ELSE 0 END) AS csvPrimaryRows
+        FROM transactions
+        WHERE provider = 'trading212' AND account_id = ?
+      `).get(String(account.id))
+    : null;
+
 
   return {
     id: String(account.id),
@@ -2519,10 +2649,22 @@ export function getAccountDetail(accountIdInput: string) {
           : null,
       fullExportActionInventory: trading212ExportInventory,
       trading212SyncState,
+      trading212CashDiagnostics: trading212CashDiagnostics
+        ? {
+            confirmedMovements: num(trading212CashDiagnostics.confirmedMovements),
+            unresolvedDeposits: num(trading212CashDiagnostics.unresolvedDeposits),
+            unresolvedDepositsCzk: num(trading212CashDiagnostics.unresolvedDepositsCzk),
+            firstUnresolvedDeposit: trading212CashDiagnostics.firstUnresolvedDeposit
+              ? String(trading212CashDiagnostics.firstUnresolvedDeposit) : null,
+            missingFxConversions: num(trading212CashDiagnostics.missingFxConversions),
+            unpairedCsvRows: num(trading212CashDiagnostics.unpairedCsvRows),
+            csvPrimaryRows: num(trading212CashDiagnostics.csvPrimaryRows),
+          } : null,
     },
     chart: {
       providers: [provider],
       points: chartPoints,
+      cashFlows: accountCashFlows,
       coverage: {
         completePointCount: completeChartPoints.length,
         totalPointCount: chartPoints.length,

@@ -67,6 +67,7 @@ export default async function AccountDetailPage({
       : investownInvestmentPnlCzk + investownExternalRewardsCzk;
   const apiReadCoverage = objectRecord(detail.sourceMetadata.apiReadCoverage);
   const syncState = objectRecord(detail.sourceMetadata.trading212SyncState);
+  const cashDiagnostics = objectRecord(detail.sourceMetadata.trading212CashDiagnostics);
   const exportInventory = objectRecord(
     detail.sourceMetadata.fullExportActionInventory,
   );
@@ -518,6 +519,47 @@ export default async function AccountDetailPage({
                 pokrytí je označen po úspěšném zpracování každého intervalu.
                 Jde o účet Invest/ISA, nikoliv samostatný CFD ledger.
               </p>
+
+              <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <h4 className="text-xs font-semibold">
+                  Proč mohou chybět vklady nebo výběry
+                </h4>
+                <p className="mt-1 text-[11px] leading-5 text-[var(--muted)]">
+                  Toto jsou počty skutečně uložených položek Trading 212.
+                  Nerozpoznané záznamy nejsou v čistých vkladech započtené.
+                </p>
+                <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+                  {([
+                    ["Potvrzené externí pohyby", cashDiagnostics.confirmedMovements],
+                    ["Neověřené vklady", cashDiagnostics.unresolvedDeposits],
+                    ["Chybí převod do CZK", cashDiagnostics.missingFxConversions],
+                    ["Nespárované CSV doplňky", cashDiagnostics.unpairedCsvRows],
+                    ["Samostatné CSV pohyby uznané do cash flow", cashDiagnostics.csvPrimaryRows],
+                  ] as Array<[string, unknown]>).map(([label, count]) => (
+                    <div key={label} className="flex items-center justify-between gap-3 rounded-lg border border-white/7 px-2.5 py-2">
+                      <span className="text-[var(--muted)]">{label}</span>
+                      <span className="font-mono tabular-nums">
+                        {typeof count === "number" ? count.toLocaleString("cs-CZ") : "—"}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="rounded-lg border border-white/7 px-2.5 py-2">
+                    <span className="text-[var(--muted)]">Součet nerozpoznaných vkladů</span>
+                    <strong className="ml-2 tabular-nums">
+                      {typeof cashDiagnostics.unresolvedDepositsCzk === "number"
+                        ? cashDiagnostics.unresolvedDepositsCzk.toLocaleString("cs-CZ", {
+                            maximumFractionDigits: 0,
+                          }) + " Kč"
+                        : "—"}
+                    </strong>
+                  </div>
+                </div>
+                {typeof cashDiagnostics.firstUnresolvedDeposit === "string" ? (
+                  <p className="mt-2 text-[11px] text-[var(--warning)]">
+                    První nerozpoznaný vklad: {cashDiagnostics.firstUnresolvedDeposit.slice(0, 10)}
+                  </p>
+                ) : null}
+              </div>
 
               {syncState.card_export_last_error ? (
                 <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--warning)]">

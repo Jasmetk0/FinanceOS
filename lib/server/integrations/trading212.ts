@@ -347,6 +347,52 @@ async function fetchPaginated(
   };
 }
 
+/**
+ * A transient CNB outage must not permanently remove a historic cash-flow
+ * entry from CZK charts. Retry a bounded set of missing conversions on every
+ * sync. No original amount, kind or provider payload is ever overwritten.
+ */
+async function repairHistoricalTrading212Fx(accountId: string) {
+  const db = getDb();
+  const where = "FROM transactions WHERE account_id = ? AND provider = 'trading212' " +
+    "AND amount_czk IS NULL AND amount IS NOT NULL AND currency IS NOT NULL " +
+    "AND COALESCE(raw_json, '') NOT LIKE '%\"enrichmentOnly\":true%'";
+  const count = Number(db.prepare("SELECT COUNT(*) AS count " + where)
+    .get(accountId)?.count ?? 0);
+  const batchLimit = 120;
+  const previousOffset = Number(getHistorySyncState("fx_repair_offset_v1") || 0);
+  const offset = count > 0 && Number.isSafeInteger(previousOffset) && previousOffset >= 0
+    ? previousOffset % count : 0;
+  const select = db.prepare(
+    "SELECT id, amount, currency, occurred_at " + where +
+    " ORDER BY occurred_at ASC, id ASC LIMIT ? OFFSET ?",
+  );
+  const missing = count ? [
+    ...select.all(accountId, batchLimit, offset),
+    ...(count > offset && count - offset < batchLimit
+      ? select.all(accountId, batchLimit - (count - offset), 0) : []),
+  ] : [];
+  // Rotate across failed rows so one old missing FX rate cannot starve later payments.
+  setHistorySyncState("fx_repair_offset_v1",
+    String(count ? (offset + missing.length) % count : 0));
+  const apply = db.prepare(
+    "UPDATE transactions SET amount_czk = ? WHERE id = ? AND amount_czk IS NULL",
+  );
+  let resolved = 0;
+  for (const row of missing) {
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount)) continue;
+    const currency = String(row.currency || "").toUpperCase();
+    const occurredAt = String(row.occurred_at || "");
+    if (!currency || !Number.isFinite(Date.parse(occurredAt))) continue;
+    const converted = await maybeToCzk(amount, currency, occurredAt);
+    if (converted === null || !Number.isFinite(converted)) continue;
+    apply.run(converted, String(row.id));
+    resolved++;
+  }
+  return { attempted: missing.length, resolved, remainingInBatch: missing.length - resolved };
+}
+
 export async function validateTrading212(
   environment: string,
   credentials: Trading212Credentials,
@@ -718,9 +764,12 @@ export async function syncTrading212() {
       stringValue(
         item,
         ["dateExecuted", "dateModified", "dateCreated", "filledAt", "createdAt"],
-        stringValue(order, ["createdAt"], new Date().toISOString()),
+        stringValue(order, ["createdAt"], ""),
       ),
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical order has no valid date; cursor not advanced.");
+    }
 
     let assetIdValue: string | null = null;
     if (ticker) {
@@ -782,8 +831,11 @@ export async function syncTrading212() {
     const occurredAt = stringValue(
       dividend,
       ["paidOn", "paidAt", "date", "createdAt"],
-      new Date().toISOString(),
+      "",
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical dividend has no valid date; cursor not advanced.");
+    }
 
     let assetIdValue: string | null = null;
     if (ticker) {
@@ -845,8 +897,11 @@ export async function syncTrading212() {
     const occurredAt = stringValue(
       transaction,
       ["dateTime", "date", "createdAt", "timestamp"],
-      new Date().toISOString(),
+      "",
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical cash movement has no valid date; cursor not advanced.");
+    }
 
     // Rich CSV classifications must survive recurring coarse API audits.
     const enriched = getDb().prepare(
@@ -881,6 +936,7 @@ export async function syncTrading212() {
     accountCurrency: currency,
   });
 
+  const fxRepair = await repairHistoricalTrading212Fx(accountIdValue);
   const cardDetected = hasTrading212CardEvidence();
   if (
     cardDetected &&
@@ -974,6 +1030,7 @@ export async function syncTrading212() {
     cashTransactions: cashTransactions.length,
     apiReadCoverage,
     cardSync,
+    fxRepair,
     cardDetected,
     historyBackfill: {
       ordersComplete:

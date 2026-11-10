@@ -69,7 +69,8 @@ test("transaction filtering stays on the client and mobile rows retain all nine 
 test("chart retains provenance and external-only contribution computation", () => {
   const chart = file("components/portfolio-history-chart.tsx");
   assert.ok(chart.includes("return data.contributedCzk;"));
-  assert.ok(chart.includes("point.coverage.performanceComplete !== false"));
+  assert.ok(chart.includes('metric === "contributions" && cashFlowPoints.length'));
+  assert.ok(chart.includes("Graf zobrazuje známé doložené externí pohyby"));
   assert.ok(chart.includes("finance-chart-canvas"));
   assert.ok(chart.includes("aria-pressed={metric === value}"));
 });
