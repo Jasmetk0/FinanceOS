@@ -625,13 +625,14 @@ test("Trading 212 cashback reversals preserve their sign and do not double-count
   );
 });
 
-test("Trading 212 card export cadence minimizes notifications with a bounded fallback", () => {
+test("Trading 212 card export uses bounded adaptive historical windows", () => {
   const card = source("lib/server/trading212-card.ts");
   assert.ok(card.includes("const REFRESH_MS = 7 * 24 * 60 * 60 * 1000"));
   assert.ok(card.includes("timeTo: nowIso"));
-  assert.ok(card.includes("FALLBACK_HISTORY_WINDOW_MS"));
+  assert.ok(card.includes("BACKFILL_WINDOW_DAYS_KEY"));
+  assert.ok(card.includes("trading212BackfillWindow("));
   assert.ok(card.includes('message.includes("(400)")'));
-  assert.ok(card.includes('"requested-fallback-window"'));
+  assert.ok(card.includes('"smaller-window"'));
 });
 
 
@@ -1067,7 +1068,7 @@ test("History separates 212 Card spend and refunds from ordinary withdrawals", (
 test("Trading 212 periodically re-audits full paginated history", () => {
   const t212 = source("lib/server/integrations/trading212.ts");
 
-  assert.ok(t212.includes('const HISTORY_BACKFILL_VERSION = "v2"'));
+  assert.ok(t212.includes('const HISTORY_BACKFILL_VERSION = "v3"'));
   assert.ok(
     t212.includes(
       "const HISTORY_DEEP_AUDIT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000",
@@ -1081,6 +1082,7 @@ test("Trading 212 periodically re-audits full paginated history", () => {
       'if (!fullScanActive && stopWhenKnownPrefix && items.length > 0)',
     ),
   );
-  assert.ok(t212.includes("setHistorySyncState(fullAuditAtKey, new Date().toISOString())"));
-  assert.ok(t212.includes("setHistorySyncState(cursorKey, nextPath)"));
+  assert.ok(t212.includes("setHistorySyncState(prefix + \":full_audit_at\", checkpoint.completedAt)"));
+  assert.ok(t212.includes("saveHistoryCheckpoint(cashFetch.checkpoint)"));
+  assert.ok(t212.includes("setHistorySyncState(prefix + \":cursor\", checkpoint.cursor)"));
 });

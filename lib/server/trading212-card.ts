@@ -1,6 +1,11 @@
 import { getDb } from "@/lib/server/db";
 import { maybeToCzk } from "@/lib/server/fx";
 import { upsertTransaction } from "@/lib/server/repository";
+import {
+  canPromoteTrading212ExportCash,
+  trading212BackfillComplete,
+  trading212BackfillWindow,
+} from "@/lib/shared/trading212-history-coverage.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -39,7 +44,13 @@ const RETRY_AFTER_KEY = "card_export_retry_after";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
 const ACTION_INVENTORY_KEY = "full_export_action_inventory";
-const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
+const BACKFILL_VERSION_KEY = "card_export_backfill_version";
+const BACKFILL_END_KEY = "card_export_backfill_end_v3";
+const BACKFILL_WINDOW_DAYS_KEY = "card_export_backfill_window_days_v3";
+const BACKFILL_COMPLETE_KEY = "card_export_backfill_complete_v3";
+const MATCH_STATUS_KEY = "card_export_reconciliation_v3";
+const BACKFILL_START = "2015-01-01T00:00:00.000Z";
+const BACKFILL_VERSION = "v3";
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 60 * 1000;
@@ -530,17 +541,48 @@ function findExistingTransaction(
   );
 }
 
+
+// If an approximate API counterpart exists, quarantine the CSV row rather
+// than double-count a deposit/card debit whose identifiers differ.
+function hasPlausibleCoarseCounterpart(input: {
+  accountId: string;
+  kind: string;
+  occurredAt: string;
+  amount: number;
+  currency: string;
+  amountCzk: number | null;
+}): boolean {
+  const kinds = input.kind === "income" ? ["deposit", "income"] :
+    input.kind === "transfer" ? ["deposit", "withdrawal", "transfer"] :
+    [input.kind];
+  const placeholders = kinds.map(() => "?").join(", ");
+  const nativeTolerance = Math.max(0.1, Math.abs(input.amount) * 0.02);
+  const czkTolerance = input.amountCzk === null ? -1 :
+    Math.max(10, Math.abs(input.amountCzk) * 0.03);
+  return Boolean(getDb().prepare(
+    "SELECT 1 FROM transactions WHERE provider = 'trading212' " +
+    "AND account_id = ? AND external_id NOT LIKE 'card-export:%' " +
+    "AND kind IN (" + placeholders + ") " +
+    "AND julianday(occurred_at) BETWEEN julianday(?) - 1.5 AND julianday(?) + 1.5 " +
+    "AND ((UPPER(currency) = UPPER(?) AND amount IS NOT NULL " +
+    "AND ABS(ABS(amount) - ?) <= ?) " +
+    "OR (amount_czk IS NOT NULL AND ? >= 0 AND ABS(ABS(amount_czk) - ?) <= ?)) " +
+    "LIMIT 1",
+  ).get(input.accountId, ...kinds, input.occurredAt, input.occurredAt,
+    input.currency, Math.abs(input.amount), nativeTolerance,
+    czkTolerance, Math.abs(input.amountCzk ?? 0), czkTolerance));
+}
+
 function reconcileStoredRichExportRows() {
   const db = getDb();
   const enrichmentRows = db
     .prepare(`
       SELECT
-        id, external_id, occurred_at, currency, amount, amount_czk,
+        id, external_id, account_id, occurred_at, currency, amount, amount_czk,
         note, source_label, counterparty_ref, raw_json
       FROM transactions
       WHERE provider = 'trading212'
         AND external_id LIKE 'card-export:%'
-        AND COALESCE(raw_json, '') LIKE '%"enrichmentOnly":true%'
       ORDER BY occurred_at ASC, id ASC
     `)
     .all();
@@ -566,6 +608,9 @@ function reconcileStoredRichExportRows() {
   );
 
   let reconciled = 0;
+  let activated = 0;
+  let ambiguous = 0;
+  const apiCashComplete = getState("history_v3:cash:complete") === "true";
 
   for (const row of enrichmentRows) {
     const raw = safeJson(row.raw_json);
@@ -610,7 +655,45 @@ function reconcileStoredRichExportRows() {
       String(row.currency),
       amountCzk,
     );
-    if (!existing || String(existing.id) === String(row.id)) continue;
+    if (!existing || String(existing.id) === String(row.id)) {
+      const eligible = classification.flowScope === "external" &&
+        ["deposit", "withdrawal", "income"].includes(classification.kind);
+      if (!eligible) continue;
+      const ambiguousMatch = hasPlausibleCoarseCounterpart({
+        accountId: String(row.account_id),
+        kind: classification.kind,
+        occurredAt: String(row.occurred_at),
+        amount,
+        currency: String(row.currency),
+        amountCzk,
+      });
+      if (ambiguousMatch) {
+        ambiguous++;
+        // An ambiguous possible pair must never count both copies.
+        if (raw.enrichmentOnly === false) {
+          db.prepare(
+            "UPDATE transactions SET flow_scope = 'not_applicable', raw_json = ? WHERE id = ?",
+          ).run(JSON.stringify({ ...raw, enrichmentOnly: true }), String(row.id));
+        }
+      } else if (canPromoteTrading212ExportCash({
+        kind: classification.kind,
+        flowScope: classification.flowScope,
+        apiCashComplete,
+        possibleCoarseMatch: ambiguousMatch,
+      }) && raw.enrichmentOnly !== false) {
+        // API history was traversed completely; the provider CSV is now the
+        // primary evidence for a cash movement absent from the coarse feed.
+        db.prepare(
+          "UPDATE transactions SET flow_scope = ?, raw_json = ? WHERE id = ?",
+        ).run(
+          classification.flowScope,
+          JSON.stringify({ ...raw, enrichmentOnly: false, financeOsCsvPrimary: true }),
+          String(row.id),
+        );
+        activated++;
+      }
+      continue;
+    }
 
     const targetRaw = safeJson(existing.raw_json);
     updateTarget.run(
@@ -639,6 +722,10 @@ function reconcileStoredRichExportRows() {
     reconciled += 1;
   }
 
+  setState(MATCH_STATUS_KEY, JSON.stringify({
+    reconciled, activated, ambiguous, apiCashComplete,
+    checkedAt: new Date().toISOString(),
+  }));
   return reconciled;
 }
 
@@ -648,6 +735,13 @@ async function enrichReportRows(input: {
   accountCurrency: string;
   reportId: number;
 }) {
+  // A 200 HTML error page or a changed/empty payload must NOT advance the
+  // historical cursor as if it were a successfully imported zero-row report.
+  const header = input.text.replace(/^\uFEFF/, "").slice(0, 4000).split(/\r?\n/, 1)[0].toLowerCase();
+  if (!/(^|,)("?action"?)(,|$)/i.test(header) ||
+      !header.includes("time (utc)") || !header.includes("id")) {
+    throw new Error("Trading 212 CSV export has missing required cash-flow columns.");
+  }
   const rows = parseTrading212Csv(input.text);
   let enriched = 0;
   let inserted = 0;
@@ -819,10 +913,18 @@ async function downloadCsv(
   url: string,
   credentials: Trading212CardCredentials,
 ) {
+  const destination = new URL(url);
+  if (destination.protocol !== "https:") {
+    throw new Error("Trading 212 CSV download must use HTTPS.");
+  }
+  // Signed provider export links may point to an external storage host.
+  // Try without credentials first; never forward API secrets off Trading 212.
   let response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
+  if (!response.ok &&
+      ["live.trading212.com", "demo.trading212.com"].includes(destination.hostname)) {
     response = await fetch(url, {
       cache: "no-store",
+      redirect: "error",
       headers: { Authorization: authHeader(credentials) },
     });
   }
@@ -887,6 +989,10 @@ async function syncTrading212CardHistoryInternal(input: {
     for (const key of [
       PENDING_KEY,
       CURSOR_KEY,
+      BACKFILL_VERSION_KEY,
+      BACKFILL_END_KEY,
+      BACKFILL_WINDOW_DAYS_KEY,
+      BACKFILL_COMPLETE_KEY,
       LAST_REFRESH_KEY,
       LAST_ERROR_KEY,
       RETRY_AFTER_KEY,
@@ -989,9 +1095,19 @@ async function syncTrading212CardHistoryInternal(input: {
       accountCurrency: input.accountCurrency,
       reportId: pending.reportId,
     });
+    reconcileStoredRichExportRows();
 
     if (pending.historical) {
-      setState(CURSOR_KEY, pending.timeTo);
+      if (getState(BACKFILL_VERSION_KEY) === BACKFILL_VERSION) {
+        // Traverse newest to oldest. Only processed reports advance coverage.
+        setState(BACKFILL_END_KEY, pending.timeFrom);
+        if (trading212BackfillComplete(pending.timeFrom, BACKFILL_START)) {
+          setState(BACKFILL_COMPLETE_KEY, "true");
+        }
+      } else {
+        // Finish already-requested legacy exports before migration.
+        setState(CURSOR_KEY, pending.timeTo);
+      }
     }
     setState(LAST_REFRESH_KEY, new Date().toISOString());
     deleteState(PENDING_KEY);
@@ -1007,69 +1123,59 @@ async function syncTrading212CardHistoryInternal(input: {
 
   const now = new Date();
   const nowIso = now.toISOString();
-  let cursor = getState(CURSOR_KEY);
-
-  if (!cursor) {
-    const earliest = getDb()
-      .prepare(`
-        SELECT MIN(occurred_at) AS occurred_at
-        FROM transactions
-        WHERE provider = 'trading212'
-          AND kind IN ('deposit', 'withdrawal')
-      `)
-      .get();
-    cursor = earliest?.occurred_at ? String(earliest.occurred_at) : nowIso;
-    setState(CURSOR_KEY, cursor);
+  if (getState(BACKFILL_VERSION_KEY) !== BACKFILL_VERSION) {
+    // Oldest imported record is NOT proof of the account's first deposit.
+    // Descending bounded windows first fix recent gaps, then audit older years.
+    setState(BACKFILL_END_KEY, nowIso);
+    setState(BACKFILL_WINDOW_DAYS_KEY, "364");
+    setState(BACKFILL_VERSION_KEY, BACKFILL_VERSION);
+    deleteState(BACKFILL_COMPLETE_KEY);
   }
-
-  const cursorDate = new Date(cursor);
-  const historical = !Number.isNaN(cursorDate.getTime())
-    && cursorDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000;
-
-  if (historical) {
-    // Prefer one complete transactions-only backfill to minimize provider
-    // export notifications. Some Trading 212 export surfaces historically
-    // limited a report to roughly one year, so fall back to bounded windows
-    // only when the provider rejects the full range.
-    try {
-      const requested = await requestExport({
-        environment: input.environment,
-        credentials: input.credentials,
-        timeFrom: cursorDate.toISOString(),
-        timeTo: nowIso,
-        historical: true,
-      });
-      return {
-        status: "requested" as const,
-        reportId: requested.reportId,
-        timeFrom: requested.timeFrom,
-        timeTo: requested.timeTo,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("(400)") && !message.includes("(413)")) {
+  if (getState(BACKFILL_COMPLETE_KEY) !== "true") {
+    const cursor = getState(BACKFILL_END_KEY) || nowIso;
+    const endMs = new Date(cursor).getTime();
+    if (!Number.isFinite(endMs)) {
+      throw new RangeError("Invalid Trading 212 export backfill cursor.");
+    }
+    const storedDays = Number(getState(BACKFILL_WINDOW_DAYS_KEY));
+    const windowDays = Number.isInteger(storedDays) && storedDays > 0 &&
+      storedDays <= 366 ? storedDays : 364;
+    const window = trading212BackfillWindow(
+      new Date(Math.min(endMs, now.getTime())).toISOString(), BACKFILL_START,
+      windowDays,
+    );
+    if (window === null) {
+      setState(BACKFILL_COMPLETE_KEY, "true");
+    } else {
+      try {
+        const requested = await requestExport({
+          environment: input.environment,
+          credentials: input.credentials,
+          timeFrom: window.timeFrom,
+          timeTo: window.timeTo,
+          historical: true,
+        });
+        return {
+          status: "requested-history-window" as const,
+          reportId: requested.reportId,
+          timeFrom: requested.timeFrom,
+          timeTo: requested.timeTo,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if ((message.includes("(400)") || message.includes("(413)")) &&
+            windowDays > 1) {
+          // Some account export surfaces reject one-year windows. Shrink
+          // adaptively on the NEXT sync to respect the POST 1/30s quota.
+          const smallerDays = windowDays > 90 ? 90 :
+            windowDays > 30 ? 30 : windowDays > 7 ? 7 : 1;
+          setState(BACKFILL_WINDOW_DAYS_KEY, String(smallerDays));
+          setState(LAST_ERROR_KEY,
+            "Trading 212 odmítl dlouhý export; další sync zkusí " + smallerDays + " dní.");
+          return { status: "smaller-window" as const, nextWindowDays: smallerDays };
+        }
         throw error;
       }
-
-      const fallbackTimeTo = new Date(
-        Math.min(
-          cursorDate.getTime() + FALLBACK_HISTORY_WINDOW_MS,
-          now.getTime(),
-        ),
-      ).toISOString();
-      const requested = await requestExport({
-        environment: input.environment,
-        credentials: input.credentials,
-        timeFrom: cursorDate.toISOString(),
-        timeTo: fallbackTimeTo,
-        historical: true,
-      });
-      return {
-        status: "requested-fallback-window" as const,
-        reportId: requested.reportId,
-        timeFrom: requested.timeFrom,
-        timeTo: requested.timeTo,
-      };
     }
   }
 
@@ -1339,7 +1445,11 @@ export function getTrading212CardStatus() {
     lastCardAt: stats?.last_card_at ? String(stats.last_card_at) : null,
     pending: parsePending(getState(PENDING_KEY)),
     fullExportActionInventory: safeJson(getState(ACTION_INVENTORY_KEY)),
-    coverageCursor: getState(CURSOR_KEY),
+    coverageCursor: getState(BACKFILL_END_KEY),
+    backfillComplete: getState(BACKFILL_COMPLETE_KEY) === "true",
+    backfillFrom: BACKFILL_START,
+    backfillWindowDays: Number(getState(BACKFILL_WINDOW_DAYS_KEY) || 364),
+    reconciliation: safeJson(getState(MATCH_STATUS_KEY)),
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),
     retryAfter: getState(RETRY_AFTER_KEY),

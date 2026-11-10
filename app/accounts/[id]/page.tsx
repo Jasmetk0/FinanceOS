@@ -476,28 +476,48 @@ export default async function AccountDetailPage({
 
               <div className="mt-4 grid gap-2 text-xs sm:grid-cols-2">
                 <div className="rounded-xl border border-white/7 px-3 py-2">
-                  <span className="text-[var(--muted)]">Full export</span>
+                  <span className="text-[var(--muted)]">Základní historie pohybů API</span>
                   <span className="ml-2 font-mono">
-                    {syncState.card_export_pending
-                      ? "čeká / generuje se"
-                      : syncState.card_export_last_error
-                        ? "chyba"
-                        : syncState.card_export_last_refresh
-                          ? "zpracován"
-                          : "zatím nevyžádán"}
+                    {syncState["history_v3:cash:complete"] === "true"
+                      ? "Prošla až na poslední stránku"
+                      : "Doplňuje se po stránkách"}
                   </span>
                 </div>
                 <div className="rounded-xl border border-white/7 px-3 py-2">
-                  <span className="text-[var(--muted)]">History cursory</span>
+                  <span className="text-[var(--muted)]">Podrobný export přes API</span>
                   <span className="ml-2 font-mono">
-                    {syncState["history_complete:orders"] === "true" &&
-                    syncState["history_complete:dividends"] === "true" &&
-                    syncState["history_complete:cash"] === "true"
-                      ? "kompletní"
-                      : "doplňují se"}
+                    {syncState.card_export_backfill_complete_v3 === "true"
+                      ? "Historické intervaly zpracovány"
+                      : syncState.card_export_pending
+                        ? "Report se připravuje"
+                        : syncState.card_export_last_error
+                          ? "Chyba / automatický další pokus"
+                          : "Zpětná historie se doplňuje"}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-white/7 px-3 py-2">
+                  <span className="text-[var(--muted)]">Kontrola exportů od 1. 1. 2015</span>
+                  <span className="ml-2 font-mono">
+                    {syncState.card_export_backfill_end_v3
+                      ? "Zpět do " + String(syncState.card_export_backfill_end_v3).slice(0, 10).split("-").reverse().join(".")
+                      : "Ještě nezačala"}
+                  </span>
+                </div>
+                <div className="rounded-xl border border-white/7 px-3 py-2">
+                  <span className="text-[var(--muted)]">Historické obchody a dividendy</span>
+                  <span className="ml-2 font-mono">
+                    {syncState["history_v3:orders:complete"] === "true" &&
+                    syncState["history_v3:dividends:complete"] === "true"
+                      ? "Paginace dokončena" : "Doplňují se"}
                   </span>
                 </div>
               </div>
+              <p className="mt-3 text-[11px] leading-5 text-[var(--muted)]">
+                Export se žádá a stahuje automaticky pomocí Trading 212 API klíče.
+                Neúplná historie se nedeklaruje jako úplná. Konec historického
+                pokrytí je označen po úspěšném zpracování každého intervalu.
+                Jde o účet Invest/ISA, nikoliv samostatný CFD ledger.
+              </p>
 
               {syncState.card_export_last_error ? (
                 <p className="mt-3 rounded-xl border border-[var(--warning)]/20 bg-[var(--warning)]/[0.04] p-3 text-xs leading-5 text-[var(--warning)]">

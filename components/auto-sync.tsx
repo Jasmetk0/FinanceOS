@@ -52,6 +52,9 @@ function needsTrading212BackfillRetry(payload: unknown) {
     if (
       cardStatus === "requested" ||
       cardStatus === "requested-fallback-window" ||
+      cardStatus === "requested-history-window" ||
+      cardStatus === "smaller-window" ||
+      cardStatus === "processed" ||
       cardStatus === "waiting"
     ) {
       return true;

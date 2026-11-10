@@ -130,8 +130,55 @@ async function sleep(ms: number) {
 }
 
 const HISTORY_PAGE_BUDGET = 8;
-const HISTORY_BACKFILL_VERSION = "v2";
+const HISTORY_BACKFILL_VERSION = "v3";
 const HISTORY_DEEP_AUDIT_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Trading 212's historical endpoints share a 6 requests/minute quota.
+let historyRequestQueue: Promise<void> = Promise.resolve();
+let nextHistoryRequestAt = 0;
+async function requestHistoryPage<T>(
+  environment: string,
+  credentials: Trading212Credentials,
+  path: string,
+): Promise<T> {
+  const turn = historyRequestQueue.then(async () => {
+    const waiting = nextHistoryRequestAt - Date.now();
+    if (waiting > 0) await sleep(waiting);
+    nextHistoryRequestAt = Date.now() + 10_500;
+  });
+  historyRequestQueue = turn.catch(() => {});
+  await turn;
+  return request<T>(environment, credentials, path);
+}
+
+interface HistoryCheckpoint {
+  key: string;
+  complete: boolean;
+  cursor: string | null;
+  completedAt: string | null;
+}
+interface HistoryFetchResult {
+  items: JsonObject[];
+  checkpoint: HistoryCheckpoint | null;
+}
+function saveHistoryCheckpoint(checkpoint: HistoryCheckpoint | null) {
+  if (!checkpoint) return;
+  const prefix = "history_" + HISTORY_BACKFILL_VERSION + ":" + checkpoint.key;
+  if (checkpoint.complete) {
+    setHistorySyncState(prefix + ":complete", "true");
+    deleteHistorySyncState(prefix + ":cursor");
+    if (checkpoint.completedAt) setHistorySyncState(prefix + ":full_audit_at", checkpoint.completedAt);
+  } else if (checkpoint.cursor) {
+    setHistorySyncState(prefix + ":cursor", checkpoint.cursor);
+  }
+}
+function validateHistoryPath(path: string, endpoint: string) {
+  const prefix = "/api/v0/equity/history/" + endpoint;
+  if (path === "/equity/history/" + endpoint + "?limit=50") return;
+  if (path.startsWith(prefix + "?") && !/[#\r\n\\]/.test(path)) return;
+  throw new RangeError("Trading 212 returned an invalid historical pagination path.");
+}
+
 
 function getHistorySyncState(key: string): string | null {
   const row = getDb()
@@ -194,8 +241,12 @@ async function fetchPaginated(
   initialPath: string,
   stopWhenKnownPrefix?: string,
   historyKey?: string,
-): Promise<JsonObject[]> {
+): Promise<HistoryFetchResult> {
   const all: JsonObject[] = [];
+  const endpoint = initialPath.split("?")[0].split("/").at(-1) || "";
+  const seenPages = new Set<string>();
+  let completed = false;
+  let continuation: string | null = null;
   const statePrefix = historyKey
     ? `history_${HISTORY_BACKFILL_VERSION}:${historyKey}`
     : null;
@@ -227,17 +278,21 @@ async function fetchPaginated(
   let page = 0;
 
   while (path) {
-    if (page > 0) {
-      // Historical orders/dividends/transactions are limited to 6 requests/minute.
-      await sleep(10_500);
+    validateHistoryPath(path, endpoint);
+    if (seenPages.has(path)) {
+      throw new Error("Trading 212 returned a repeated history cursor.");
     }
+    seenPages.add(path);
 
     const result: { items?: unknown[]; nextPagePath?: string | null } =
-      await request<{ items?: unknown[]; nextPagePath?: string | null }>(
+      await requestHistoryPage<{ items?: unknown[]; nextPagePath?: string | null }>(
         environment,
         credentials,
         path,
       );
+    if (!Array.isArray(result.items)) {
+      throw new Error("Trading 212 history page has no valid items array.");
+    }
     const items: JsonObject[] = Array.isArray(result.items)
       ? result.items.map((item: unknown) => asObject(item))
       : [];
@@ -267,19 +322,13 @@ async function fetchPaginated(
     page += 1;
 
     if (!nextPath) {
-      if (fullScanActive && completeKey && cursorKey) {
-        setHistorySyncState(completeKey, "true");
-        deleteHistorySyncState(cursorKey);
-        if (fullAuditAtKey) {
-          setHistorySyncState(fullAuditAtKey, new Date().toISOString());
-        }
-      }
+      completed = true;
       path = null;
       continue;
     }
 
     if (fullScanActive && cursorKey && page >= HISTORY_PAGE_BUDGET) {
-      setHistorySyncState(cursorKey, nextPath);
+      continuation = nextPath;
       path = null;
       continue;
     }
@@ -287,7 +336,15 @@ async function fetchPaginated(
     path = nextPath;
   }
 
-  return all;
+  // Checkpoint commits happen only after the rows are persisted. A failure
+  // can repeat pages, but will never skip an uncommitted historical page.
+  return {
+    items: all,
+    checkpoint: fullScanActive && historyKey && completeKey && cursorKey && fullAuditAtKey
+      ? { key: historyKey, complete: completed, cursor: continuation,
+          completedAt: completed ? new Date().toISOString() : null }
+      : null,
+  };
 }
 
 export async function validateTrading212(
@@ -559,7 +616,7 @@ export async function syncTrading212() {
     },
   });
 
-  const [orders, dividends, cashTransactions] = await Promise.all([
+  const [orderFetch, dividendFetch, cashFetch] = await Promise.all([
     fetchPaginated(
       environment,
       credentials,
@@ -582,6 +639,10 @@ export async function syncTrading212() {
       "cash",
     ),
   ]);
+
+  const orders = orderFetch.items;
+  const dividends = dividendFetch.items;
+  const cashTransactions = cashFetch.items;
 
   for (const item of orders) {
     const nestedOrder = asObject(item.order);
@@ -699,6 +760,8 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(orderFetch.checkpoint);
+
   for (const dividend of dividends) {
     const id = stringValue(
       dividend,
@@ -759,6 +822,8 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(dividendFetch.checkpoint);
+
   for (const transaction of cashTransactions) {
     const id = stringValue(
       transaction,
@@ -783,6 +848,13 @@ export async function syncTrading212() {
       new Date().toISOString(),
     );
 
+    // Rich CSV classifications must survive recurring coarse API audits.
+    const enriched = getDb().prepare(
+      "SELECT raw_json FROM transactions WHERE provider = 'trading212' AND external_id = ?",
+    ).get("cash:" + id);
+    if (String(enriched?.raw_json || "").includes('"financeOsCardExport"')) {
+      continue;
+    }
     upsertTransaction({
       provider: "trading212",
       accountId: accountIdValue,
@@ -799,6 +871,7 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(cashFetch.checkpoint);
   repairTrading212CashSemantics(getDb());
 
   const cardSync = await syncTrading212CardHistory({
@@ -904,11 +977,11 @@ export async function syncTrading212() {
     cardDetected,
     historyBackfill: {
       ordersComplete:
-        getHistorySyncState("history_complete:orders") === "true",
+        getHistorySyncState("history_v3:orders:complete") === "true",
       dividendsComplete:
-        getHistorySyncState("history_complete:dividends") === "true",
+        getHistorySyncState("history_v3:dividends:complete") === "true",
       cashComplete:
-        getHistorySyncState("history_complete:cash") === "true",
+        getHistorySyncState("history_v3:cash:complete") === "true",
     },
     dailyHistory,
   };
