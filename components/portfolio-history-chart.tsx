@@ -280,9 +280,9 @@ export function PortfolioHistoryChart({
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showTotal, setShowTotal] = useState(true);
-  // Incomplete deposits distort valuation-scale charts; overlays are opt-in.
+  // Incomplete cash movements distort the value axis; show that baseline only on request.
   const [showContributions, setShowContributions] = useState(false);
-  const [showEstimates, setShowEstimates] = useState(false);
+  const [showEstimates, setShowEstimates] = useState(true);
   const [selectedProviders, setSelectedProviders] = useState<string[]>(
     data.providers,
   );
@@ -1196,9 +1196,9 @@ export function PortfolioHistoryChart({
                   )}
                   fill="none"
                   stroke={colors[provider] || providerColor(provider)}
-                  strokeOpacity=".6"
-                  strokeDasharray="5 6"
-                  strokeWidth="1.4"
+                  strokeOpacity=".9"
+                  strokeDasharray="6 5"
+                  strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                 />
               ),
