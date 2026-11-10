@@ -280,7 +280,8 @@ export function PortfolioHistoryChart({
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showTotal, setShowTotal] = useState(true);
-  const [showContributions, setShowContributions] = useState(true);
+  // Incomplete cash movements distort the value axis; show that baseline only on request.
+  const [showContributions, setShowContributions] = useState(false);
   const [showEstimates, setShowEstimates] = useState(true);
   const [selectedProviders, setSelectedProviders] = useState<string[]>(
     data.providers,
@@ -386,6 +387,20 @@ export function PortfolioHistoryChart({
   const displayProviders = selectedProviders.filter((provider) =>
     data.providers.includes(provider),
   );
+  // For a one-provider chart, "Celkem" is identical to that provider.
+  const singleProviderDuplicate = data.providers.length === 1 &&
+    displayProviders.includes(data.providers[0]);
+  const showTotalSeries = showTotal && !singleProviderDuplicate;
+  const showAnySeries = showTotal || displayProviders.length > 0;
+  const latestKnownCashFlow = data.cashFlows?.at(-1);
+  const cashHistoryUncertain = (data.cashFlows ?? []).some(
+    (point) => point.performanceComplete === false,
+  );
+  const lastKnownContribution = latestKnownCashFlow?.totalCzk ?? 0;
+  const hasPartialEstimates = data.points.some((point) =>
+    point.total.estimatedValueCzk != null ||
+    Object.values(point.providers).some((value) => value.estimatedValueCzk != null),
+  );
 
   const visibleCashFlows = useMemo(() => {
     if (!cashFlowPoints.length || !effectiveLatest) return [];
@@ -456,7 +471,7 @@ export function PortfolioHistoryChart({
 
     const values: number[] = [];
 
-    if (showTotal) {
+    if (showTotalSeries) {
       for (const point of filtered) {
         const value = metricValueForPoint(
           metric,
@@ -480,7 +495,7 @@ export function PortfolioHistoryChart({
       }
     }
 
-    if (metric === "value" && showContributions) {
+    if (metric === "value" && showContributions && showAnySeries) {
       for (const point of visibleCashFlows.length ? visibleCashFlows : filtered) {
         values.push(netDepositedCzk(point.total));
       }
@@ -488,7 +503,7 @@ export function PortfolioHistoryChart({
     if (metric === "value" && showEstimates) {
       for (const point of filtered) {
         const provisional = point.total.estimatedValueCzk;
-        if (provisional !== undefined && provisional !== null &&
+        if (showTotalSeries && provisional !== undefined && provisional !== null &&
             Number.isFinite(provisional)) values.push(provisional);
         for (const provider of displayProviders) {
           const estimate = point.providers[provider]?.estimatedValueCzk;
@@ -551,6 +566,8 @@ export function PortfolioHistoryChart({
     filtered,
     metric,
     showTotal,
+    showTotalSeries,
+    showAnySeries,
     showContributions,
     showEstimates,
     displayProviders,
@@ -749,6 +766,40 @@ export function PortfolioHistoryChart({
         </div>
       ) : null}
 
+      {metric === "value" && hasPartialEstimates ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-[var(--muted)]">
+          <span className="inline-flex items-center gap-2">
+            <span className="w-6 border-t-2" style={{ borderColor: singleProviderDuplicate ? colors[data.providers[0]] : "#9cf3ce" }} />
+            Evidovaná hodnota účtu
+          </span>
+          {showEstimates ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-6 border-t-2 border-dashed" style={{ borderColor: singleProviderDuplicate ? colors[data.providers[0]] : "#f59e0b" }} />
+              Rekonstrukce z dostupných údajů, nikoli ověřený stav
+            </span>
+          ) : null}
+          {showContributions ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-6 border-t border-dashed border-white/50" />
+              Známé čisté pohyby
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {cashHistoryUncertain && lastKnownContribution < 0 &&
+       (metric === "value" || metric === "contributions") ? (
+        <div role="status" className="mt-3 rounded-lg border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-3 text-xs leading-5">
+          <span className="font-semibold text-[var(--warning)]">
+            Pozor: známé čisté pohyby jsou {formatCurrency(lastKnownContribution)}.
+          </span>{" "}
+          Záporná hodnota při neúplné historii není potvrzený celoživotní výsledek
+          vkladů. Pravděpodobně chybí část příchozích transakcí, nebo je některý
+          interní převod klasifikován jako výběr. FinanceOS ji automaticky
+          nenahrazuje odhadem a při běžném zobrazení hodnoty ji nevykresluje.
+        </div>
+      ) : null}
+
       {metric === "contributions" && cashFlowPoints.some(
         (point) => point.coverage.performanceComplete === false,
       ) ? (
@@ -820,10 +871,16 @@ export function PortfolioHistoryChart({
               checked={showContributions}
               onChange={(event) => setShowContributions(event.target.checked)}
             />
-            Čisté vklady jako baseline
+            Známé čisté vklady jako baseline
           </label>
         ) : null}
       </div>
+
+      {singleProviderDuplicate ? (
+        <p className="mt-2 text-[11px] text-[var(--muted)]">
+          Celkem = {providerLabel(data.providers[0])} · zobrazuje se pouze jedna společná křivka.
+        </p>
+      ) : null}
 
       {metric === "value" && filtered.some((point) =>
         point.total.estimatedValueCzk != null ||
@@ -835,7 +892,7 @@ export function PortfolioHistoryChart({
             checked={showEstimates}
             onChange={(event) => setShowEstimates(event.target.checked)}
           />
-          Zobrazit orientační rekonstruovanou hodnotu (přerušovaně, neověřeno)
+          Orientační historická hodnota (přerušovaně · neověřeno)
         </label>
       ) : null}
 
@@ -906,7 +963,7 @@ export function PortfolioHistoryChart({
             <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {metricLabel(metric)}
             </p>
-            {showTotal ? (
+            {showTotalSeries ? (
               <TooltipRow
                 label="Celkem"
                 color="#f6fbf8"
@@ -920,7 +977,7 @@ export function PortfolioHistoryChart({
                 )}
               />
             ) : null}
-            {metric === "value" && showEstimates &&
+            {metric === "value" && showEstimates && showTotalSeries &&
             hoverPoint.total.valueCzk === null &&
             hoverPoint.total.estimatedValueCzk != null ? (
               <TooltipRow
@@ -929,23 +986,28 @@ export function PortfolioHistoryChart({
                 value={formatCurrency(hoverPoint.total.estimatedValueCzk)}
               />
             ) : null}
-            {displayProviders.map((provider) => (
-              <TooltipRow
-                key={provider}
-                label={providerLabel(provider)}
-                color={colors[provider] || providerColor(provider)}
-                value={formatValue(
-                  hoverPoint.providers[provider]
-                    ? metricValueForPoint(
+            {displayProviders.map((provider) => {
+              const item = hoverPoint.providers[provider];
+              const estimated = metric === "value" && showEstimates &&
+                item?.valueCzk === null && item.estimatedValueCzk != null;
+              return (
+                <TooltipRow
+                  key={provider}
+                  label={providerLabel(provider) + (estimated ? " · neověřený odhad" : "")}
+                  color={colors[provider] || providerColor(provider)}
+                  value={estimated
+                    ? formatCurrency(item.estimatedValueCzk!)
+                    : formatValue(
+                        item
+                          ? metricValueForPoint(
+                              metric, item, hoverPoint.coverage.performanceComplete,
+                            )
+                          : null,
                         metric,
-                        hoverPoint.providers[provider],
-                        hoverPoint.coverage.performanceComplete,
-                      )
-                    : null,
-                  metric,
-                )}
-              />
-            ))}
+                      )}
+                />
+              );
+            })}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
               {hoverPoint.coverage.performanceComplete === false
                 ? "Známé čisté vklady"
@@ -954,6 +1016,21 @@ export function PortfolioHistoryChart({
               <br />
               Externí odměny:{" "}
               {formatCurrency(hoverPoint.total.externalRewardsCzk)}
+              {Math.abs(
+                hoverPoint.total.capitalAttributedCzk -
+                hoverPoint.total.contributedCzk -
+                hoverPoint.total.externalRewardsCzk
+              ) > 0.005 ? (
+                <>
+                  <br />
+                  Připsané přesuny kapitálu:{" "}
+                  {formatCurrency(
+                    hoverPoint.total.capitalAttributedCzk -
+                    hoverPoint.total.contributedCzk -
+                    hoverPoint.total.externalRewardsCzk,
+                  )}
+                </>
+              ) : null}
               <br />
               Kapitál pro P/L:{" "}
               {formatCurrency(hoverPoint.total.capitalAttributedCzk)}
@@ -1153,7 +1230,7 @@ export function PortfolioHistoryChart({
               </>
             ) : null}
 
-            {metric === "value" && showEstimates && showTotal ? (
+            {metric === "value" && showEstimates && showTotalSeries ? (
               <path
                 d={buildPath(
                   filtered,
@@ -1183,15 +1260,15 @@ export function PortfolioHistoryChart({
                   )}
                   fill="none"
                   stroke={colors[provider] || providerColor(provider)}
-                  strokeOpacity=".6"
-                  strokeDasharray="5 6"
-                  strokeWidth="1.4"
+                  strokeOpacity=".9"
+                  strokeDasharray="6 5"
+                  strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                 />
               ),
             ) : null}
 
-            {showTotal ? (
+            {showTotalSeries ? (
               <path
                 d={buildPath(
                   filtered,
@@ -1296,7 +1373,7 @@ export function PortfolioHistoryChart({
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                {showTotal &&
+                {showTotalSeries &&
                 metricValueForPoint(
                   metric,
                   hoverPoint.total,

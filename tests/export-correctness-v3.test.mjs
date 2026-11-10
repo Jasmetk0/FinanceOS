@@ -898,7 +898,7 @@ test("net deposits exclude internal transfers while account P/L keeps capital at
   assert.ok(chart.includes("function netDepositedCzk"));
   assert.ok(chart.includes("return data.contributedCzk"));
   assert.ok(chart.includes("function metricValueForPoint"));
-  assert.ok(chart.includes("Čisté vklady jako baseline"));
+  assert.ok(chart.includes("Známé čisté vklady jako baseline"));
 
   assert.ok(analytics.includes("const netContributed = deposits - withdrawals"));
   assert.ok(
