@@ -39,7 +39,12 @@ const RETRY_AFTER_KEY = "card_export_retry_after";
 const CARD_DETECTED_KEY = "card_detected";
 const ACCOUNT_KEY = "card_account_id";
 const ACTION_INVENTORY_KEY = "full_export_action_inventory";
-const FALLBACK_HISTORY_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
+const BACKFILL_VERSION_KEY = "card_export_backfill_version";
+const BACKFILL_END_KEY = "card_export_backfill_end_v3";
+const BACKFILL_COMPLETE_KEY = "card_export_backfill_complete_v3";
+const BACKFILL_START = "2015-01-01T00:00:00.000Z";
+const BACKFILL_VERSION = "v3";
+const BACKFILL_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 60 * 1000;
@@ -887,6 +892,9 @@ async function syncTrading212CardHistoryInternal(input: {
     for (const key of [
       PENDING_KEY,
       CURSOR_KEY,
+      BACKFILL_VERSION_KEY,
+      BACKFILL_END_KEY,
+      BACKFILL_COMPLETE_KEY,
       LAST_REFRESH_KEY,
       LAST_ERROR_KEY,
       RETRY_AFTER_KEY,
@@ -991,7 +999,16 @@ async function syncTrading212CardHistoryInternal(input: {
     });
 
     if (pending.historical) {
-      setState(CURSOR_KEY, pending.timeTo);
+      if (getState(BACKFILL_VERSION_KEY) === BACKFILL_VERSION) {
+        // Traverse newest to oldest. Only processed reports advance coverage.
+        setState(BACKFILL_END_KEY, pending.timeFrom);
+        if (pending.timeFrom <= BACKFILL_START) {
+          setState(BACKFILL_COMPLETE_KEY, "true");
+        }
+      } else {
+        // Finish already-requested legacy exports before migration.
+        setState(CURSOR_KEY, pending.timeTo);
+      }
     }
     setState(LAST_REFRESH_KEY, new Date().toISOString());
     deleteState(PENDING_KEY);
@@ -1007,65 +1024,36 @@ async function syncTrading212CardHistoryInternal(input: {
 
   const now = new Date();
   const nowIso = now.toISOString();
-  let cursor = getState(CURSOR_KEY);
-
-  if (!cursor) {
-    const earliest = getDb()
-      .prepare(`
-        SELECT MIN(occurred_at) AS occurred_at
-        FROM transactions
-        WHERE provider = 'trading212'
-          AND kind IN ('deposit', 'withdrawal')
-      `)
-      .get();
-    cursor = earliest?.occurred_at ? String(earliest.occurred_at) : nowIso;
-    setState(CURSOR_KEY, cursor);
+  if (getState(BACKFILL_VERSION_KEY) !== BACKFILL_VERSION) {
+    // Oldest imported record is NOT proof of the account's first deposit.
+    // Descending bounded windows first fix recent gaps, then audit older years.
+    setState(BACKFILL_END_KEY, nowIso);
+    setState(BACKFILL_VERSION_KEY, BACKFILL_VERSION);
+    deleteState(BACKFILL_COMPLETE_KEY);
   }
-
-  const cursorDate = new Date(cursor);
-  const historical = !Number.isNaN(cursorDate.getTime())
-    && cursorDate.getTime() < now.getTime() - 24 * 60 * 60 * 1000;
-
-  if (historical) {
-    // Prefer one complete transactions-only backfill to minimize provider
-    // export notifications. Some Trading 212 export surfaces historically
-    // limited a report to roughly one year, so fall back to bounded windows
-    // only when the provider rejects the full range.
-    try {
+  if (getState(BACKFILL_COMPLETE_KEY) !== "true") {
+    const cursor = getState(BACKFILL_END_KEY) || nowIso;
+    const endMs = new Date(cursor).getTime();
+    if (!Number.isFinite(endMs)) {
+      throw new RangeError("Invalid Trading 212 export backfill cursor.");
+    }
+    const from = new Date(Math.max(
+      new Date(BACKFILL_START).getTime(),
+      endMs - BACKFILL_WINDOW_MS,
+    )).toISOString();
+    const to = new Date(Math.min(endMs, now.getTime())).toISOString();
+    if (from >= to) {
+      setState(BACKFILL_COMPLETE_KEY, "true");
+    } else {
       const requested = await requestExport({
         environment: input.environment,
         credentials: input.credentials,
-        timeFrom: cursorDate.toISOString(),
-        timeTo: nowIso,
+        timeFrom: from,
+        timeTo: to,
         historical: true,
       });
       return {
-        status: "requested" as const,
-        reportId: requested.reportId,
-        timeFrom: requested.timeFrom,
-        timeTo: requested.timeTo,
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes("(400)") && !message.includes("(413)")) {
-        throw error;
-      }
-
-      const fallbackTimeTo = new Date(
-        Math.min(
-          cursorDate.getTime() + FALLBACK_HISTORY_WINDOW_MS,
-          now.getTime(),
-        ),
-      ).toISOString();
-      const requested = await requestExport({
-        environment: input.environment,
-        credentials: input.credentials,
-        timeFrom: cursorDate.toISOString(),
-        timeTo: fallbackTimeTo,
-        historical: true,
-      });
-      return {
-        status: "requested-fallback-window" as const,
+        status: "requested-history-window" as const,
         reportId: requested.reportId,
         timeFrom: requested.timeFrom,
         timeTo: requested.timeTo,
@@ -1339,7 +1327,9 @@ export function getTrading212CardStatus() {
     lastCardAt: stats?.last_card_at ? String(stats.last_card_at) : null,
     pending: parsePending(getState(PENDING_KEY)),
     fullExportActionInventory: safeJson(getState(ACTION_INVENTORY_KEY)),
-    coverageCursor: getState(CURSOR_KEY),
+    coverageCursor: getState(BACKFILL_END_KEY),
+    backfillComplete: getState(BACKFILL_COMPLETE_KEY) === "true",
+    backfillFrom: BACKFILL_START,
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),
     retryAfter: getState(RETRY_AFTER_KEY),
