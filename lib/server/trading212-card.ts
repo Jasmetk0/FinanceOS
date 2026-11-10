@@ -1,6 +1,11 @@
 import { getDb } from "@/lib/server/db";
 import { maybeToCzk } from "@/lib/server/fx";
 import { upsertTransaction } from "@/lib/server/repository";
+import {
+  canPromoteTrading212ExportCash,
+  trading212BackfillComplete,
+  trading212BackfillWindow,
+} from "@/lib/shared/trading212-history-coverage.mjs";
 
 type JsonObject = Record<string, unknown>;
 
@@ -45,7 +50,6 @@ const BACKFILL_COMPLETE_KEY = "card_export_backfill_complete_v3";
 const MATCH_STATUS_KEY = "card_export_reconciliation_v3";
 const BACKFILL_START = "2015-01-01T00:00:00.000Z";
 const BACKFILL_VERSION = "v3";
-const BACKFILL_WINDOW_MS = 364 * 24 * 60 * 60 * 1000;
 const REFRESH_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_OVERLAP_MS = 14 * 24 * 60 * 60 * 1000;
 const ERROR_BACKOFF_MS = 60 * 60 * 1000;
@@ -670,7 +674,12 @@ function reconcileStoredRichExportRows() {
             "UPDATE transactions SET flow_scope = 'not_applicable', raw_json = ? WHERE id = ?",
           ).run(JSON.stringify({ ...raw, enrichmentOnly: true }), String(row.id));
         }
-      } else if (apiCashComplete && raw.enrichmentOnly !== false) {
+      } else if (canPromoteTrading212ExportCash({
+        kind: classification.kind,
+        flowScope: classification.flowScope,
+        apiCashComplete,
+        possibleCoarseMatch: ambiguousMatch,
+      }) && raw.enrichmentOnly !== false) {
         // API history was traversed completely; the provider CSV is now the
         // primary evidence for a cash movement absent from the coarse feed.
         db.prepare(
@@ -1075,7 +1084,7 @@ async function syncTrading212CardHistoryInternal(input: {
       if (getState(BACKFILL_VERSION_KEY) === BACKFILL_VERSION) {
         // Traverse newest to oldest. Only processed reports advance coverage.
         setState(BACKFILL_END_KEY, pending.timeFrom);
-        if (pending.timeFrom <= BACKFILL_START) {
+        if (trading212BackfillComplete(pending.timeFrom, BACKFILL_START)) {
           setState(BACKFILL_COMPLETE_KEY, "true");
         }
       } else {
@@ -1110,19 +1119,17 @@ async function syncTrading212CardHistoryInternal(input: {
     if (!Number.isFinite(endMs)) {
       throw new RangeError("Invalid Trading 212 export backfill cursor.");
     }
-    const from = new Date(Math.max(
-      new Date(BACKFILL_START).getTime(),
-      endMs - BACKFILL_WINDOW_MS,
-    )).toISOString();
-    const to = new Date(Math.min(endMs, now.getTime())).toISOString();
-    if (from >= to) {
+    const window = trading212BackfillWindow(
+      new Date(Math.min(endMs, now.getTime())).toISOString(), BACKFILL_START,
+    );
+    if (window === null) {
       setState(BACKFILL_COMPLETE_KEY, "true");
     } else {
       const requested = await requestExport({
         environment: input.environment,
         credentials: input.credentials,
-        timeFrom: from,
-        timeTo: to,
+        timeFrom: window.timeFrom,
+        timeTo: window.timeTo,
         historical: true,
       });
       return {
