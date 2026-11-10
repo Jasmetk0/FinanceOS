@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Pill, SectionCard, StatCard, EmptyState } from "@/components/ui";
 import { HoldingsExplorer } from "@/components/holdings-explorer";
+import { PortfolioAllocationChart } from "@/components/portfolio-allocation-chart";
 import { getDashboardData } from "@/lib/server/analytics";
 
 export const runtime = "nodejs";
@@ -43,6 +44,21 @@ export default function InvestmentsPage() {
           <Link href="/connections" prefetch={false} className="text-xs font-semibold text-[var(--warning)] hover:underline">Zkontrolovat zdroje ↗</Link>
         </div>
       ) : null}
+
+      <section className="mt-4" aria-label="Rozložení portfolia">
+        <SectionCard
+          title="📊 Rozložení portfolia"
+          subtitle="Hodnoty z evidovaných účtů · přepni třídy aktiv, platformy nebo jednotlivé pozice"
+          action={<Link href="/xray" prefetch={false} className="text-xs font-semibold text-[var(--accent)]">Portfolio X-Ray ↗</Link>}
+        >
+          <PortfolioAllocationChart
+            allocation={dashboard.allocation}
+            accounts={dashboard.accounts}
+            holdings={holdings}
+            netWorthCzk={dashboard.summary.netWorthCzk}
+          />
+        </SectionCard>
+      </section>
 
       <div className="mt-4">
         <SectionCard title="Průzkumník portfolia" subtitle="Filtruj podle účtu, platformy, třídy aktiv a dostupnosti P/L. Řazení nepřepisuje zdrojová data." action={<Link href="/accounts" prefetch={false} className="text-xs font-semibold text-[var(--accent)]">Přehled účtů ↗</Link>}>
