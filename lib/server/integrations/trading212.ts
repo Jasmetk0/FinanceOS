@@ -616,7 +616,7 @@ export async function syncTrading212() {
     },
   });
 
-  const [orders, dividends, cashTransactions] = await Promise.all([
+  const [orderFetch, dividendFetch, cashFetch] = await Promise.all([
     fetchPaginated(
       environment,
       credentials,
@@ -639,6 +639,10 @@ export async function syncTrading212() {
       "cash",
     ),
   ]);
+
+  const orders = orderFetch.items;
+  const dividends = dividendFetch.items;
+  const cashTransactions = cashFetch.items;
 
   for (const item of orders) {
     const nestedOrder = asObject(item.order);
@@ -756,6 +760,8 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(orderFetch.checkpoint);
+
   for (const dividend of dividends) {
     const id = stringValue(
       dividend,
@@ -816,6 +822,8 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(dividendFetch.checkpoint);
+
   for (const transaction of cashTransactions) {
     const id = stringValue(
       transaction,
@@ -840,6 +848,13 @@ export async function syncTrading212() {
       new Date().toISOString(),
     );
 
+    // Rich CSV classifications must survive recurring coarse API audits.
+    const enriched = getDb().prepare(
+      "SELECT raw_json FROM transactions WHERE provider = 'trading212' AND external_id = ?",
+    ).get("cash:" + id);
+    if (String(enriched?.raw_json || "").includes('"financeOsCardExport"')) {
+      continue;
+    }
     upsertTransaction({
       provider: "trading212",
       accountId: accountIdValue,
@@ -856,6 +871,7 @@ export async function syncTrading212() {
     });
   }
 
+  saveHistoryCheckpoint(cashFetch.checkpoint);
   repairTrading212CashSemantics(getDb());
 
   const cardSync = await syncTrading212CardHistory({
@@ -961,11 +977,11 @@ export async function syncTrading212() {
     cardDetected,
     historyBackfill: {
       ordersComplete:
-        getHistorySyncState("history_complete:orders") === "true",
+        getHistorySyncState("history_v3:orders:complete") === "true",
       dividendsComplete:
-        getHistorySyncState("history_complete:dividends") === "true",
+        getHistorySyncState("history_v3:dividends:complete") === "true",
       cashComplete:
-        getHistorySyncState("history_complete:cash") === "true",
+        getHistorySyncState("history_v3:cash:complete") === "true",
     },
     dailyHistory,
   };
