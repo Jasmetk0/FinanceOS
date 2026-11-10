@@ -267,6 +267,19 @@ export interface PortfolioHistoryPoint {
   coverage: PortfolioHistoryCoverage;
 }
 
+/**
+ * Independent, ledger-backed timeline: a dated cash movement remains visible
+ * even when no historical market-value snapshot exists for that day.
+ * Amounts are cumulative KNOWN external owner contributions, not estimates
+ * of cash balances or proof that all bank flows were imported.
+ */
+export interface PortfolioCashFlowPoint {
+  date: string;
+  totalCzk: number;
+  providers: Record<string, number>;
+  performanceComplete: boolean;
+}
+
 function historyMetric(
   valueCzk: number | null,
   contributedCzk: number,
@@ -519,6 +532,29 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     left.provider.localeCompare(right.provider),
   );
 
+  const ledgerByProvider = new Map<string, number>();
+  let ledgerTotal = 0;
+  const cashFlows: PortfolioCashFlowPoint[] = [];
+  for (const flow of flows) {
+    if (flow.ownContributionDelta === 0) continue;
+    ledgerTotal += flow.ownContributionDelta;
+    ledgerByProvider.set(
+      flow.provider,
+      (ledgerByProvider.get(flow.provider) ?? 0) + flow.ownContributionDelta,
+    );
+    const point: PortfolioCashFlowPoint = {
+      date: flow.date,
+      totalCzk: ledgerTotal,
+      providers: Object.fromEntries(ledgerByProvider),
+      performanceComplete: !firstPerformanceGap || flow.date < firstPerformanceGap,
+    };
+    if (cashFlows.at(-1)?.date === flow.date) {
+      cashFlows[cashFlows.length - 1] = point;
+    } else {
+      cashFlows.push(point);
+    }
+  }
+
   const contributionByProvider = new Map<string, number>();
   const rewardsByProvider = new Map<string, number>();
   const transferAttributionByProvider = new Map<string, number>();
@@ -668,6 +704,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
   return {
     providers: [...providers].sort(),
     points,
+    cashFlows,
     coverage: {
       completePointCount: completePoints.length,
       totalPointCount: points.length,
@@ -2391,6 +2428,26 @@ export function getAccountDetail(accountIdInput: string) {
     });
   }
 
+  // Unlike valuations, external cash-flow has a separate ledger timeline.
+  // It must not disappear because a daily market-value snapshot is partial.
+  const accountCashFlows: PortfolioCashFlowPoint[] = [];
+  let accountContributed = 0;
+  for (const flow of flowRows) {
+    if (flow.ownContributionDelta === 0) continue;
+    accountContributed += flow.ownContributionDelta;
+    const point: PortfolioCashFlowPoint = {
+      date: flow.date,
+      totalCzk: accountContributed,
+      providers: { [provider]: accountContributed },
+      performanceComplete: !firstPerformanceGap || flow.date < firstPerformanceGap,
+    };
+    if (accountCashFlows.at(-1)?.date === flow.date) {
+      accountCashFlows[accountCashFlows.length - 1] = point;
+    } else {
+      accountCashFlows.push(point);
+    }
+  }
+
   const completeChartPoints = chartPoints.filter(
     (point) => point.coverage.complete,
   );
@@ -2523,6 +2580,7 @@ export function getAccountDetail(accountIdInput: string) {
     chart: {
       providers: [provider],
       points: chartPoints,
+      cashFlows: accountCashFlows,
       coverage: {
         completePointCount: completeChartPoints.length,
         totalPointCount: chartPoints.length,
