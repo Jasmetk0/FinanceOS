@@ -44,10 +44,10 @@ test("partial reconstructed valuations are only shown as explicitly labelled est
 
 test("CSV enrichment matching is scoped to one broker account", () => {
   const rich = source("lib/server/trading212-card.ts");
-  assert.ok(rich.includes("function findExistingTransaction(\n  accountId: string,"));
+  assert.match(rich, /function findExistingTransaction\(\s*accountId: string,/);
   assert.ok(rich.includes("AND account_id = ? AND external_id = ? LIMIT 1"));
-  assert.ok(rich.includes("String(row.account_id),\n      csvId,"));
-  assert.ok(rich.includes("input.accountId,\n      id,"));
+  assert.match(rich, /String\(row.account_id\),\s*csvId,/);
+  assert.match(rich, /input.accountId,\s*id,/);
 });
 
 test("card spending and cashback reports ignore enrichment-only duplicates", () => {
