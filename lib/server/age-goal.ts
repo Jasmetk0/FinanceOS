@@ -17,7 +17,8 @@ export function getAgeGoalSettings(): AgeGoalSettings {
   const rows = getDb().prepare(
     "SELECT key, value FROM plan_settings WHERE key IN (?, ?, ?, ?)",
   ).all(BIRTH_KEY, AGE_KEY, INCOME_KEY, WITHDRAWAL_KEY);
-  const values = new Map(rows.map((row) => [String(row.key), String(row.value)]));
+  const values = new Map<string, string>(rows.map((row): [string, string] =>
+    [String(row.key), String(row.value)]));
   const rawAge = values.get(AGE_KEY);
   const targetAge = rawAge === undefined ? null : Number(rawAge);
   const income = values.has(INCOME_KEY) ? Number(values.get(INCOME_KEY)) : null;
