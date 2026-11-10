@@ -2544,6 +2544,31 @@ export function getAccountDetail(accountIdInput: string) {
             .map((row) => [String(row.key), String(row.value)]),
         )
       : null;
+  // Counts are diagnostic only: never silently convert an uncertain
+  // deposit into an external contribution merely to fill a graph.
+  const trading212CashDiagnostics = provider === "trading212"
+    ? db.prepare(`
+        SELECT
+          SUM(CASE WHEN kind IN ('deposit', 'withdrawal')
+            AND flow_scope = 'external' THEN 1 ELSE 0 END) AS confirmedMovements,
+          SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN 1 ELSE 0 END) AS unresolvedDeposits,
+          SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS unresolvedDepositsCzk,
+          MIN(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
+            THEN occurred_at END) AS firstUnresolvedDeposit,
+          SUM(CASE WHEN kind IN ('deposit', 'withdrawal')
+            AND amount_czk IS NULL AND amount IS NOT NULL
+            THEN 1 ELSE 0 END) AS missingFxConversions,
+          SUM(CASE WHEN COALESCE(raw_json, '')
+            LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS unpairedCsvRows,
+          SUM(CASE WHEN COALESCE(raw_json, '')
+            LIKE '%"financeOsCsvPrimary":true%' THEN 1 ELSE 0 END) AS csvPrimaryRows
+        FROM transactions
+        WHERE provider = 'trading212' AND account_id = ?
+      `).get(String(account.id))
+    : null;
+
 
   return {
     id: String(account.id),
@@ -2624,6 +2649,17 @@ export function getAccountDetail(accountIdInput: string) {
           : null,
       fullExportActionInventory: trading212ExportInventory,
       trading212SyncState,
+      trading212CashDiagnostics: trading212CashDiagnostics
+        ? {
+            confirmedMovements: num(trading212CashDiagnostics.confirmedMovements),
+            unresolvedDeposits: num(trading212CashDiagnostics.unresolvedDeposits),
+            unresolvedDepositsCzk: num(trading212CashDiagnostics.unresolvedDepositsCzk),
+            firstUnresolvedDeposit: trading212CashDiagnostics.firstUnresolvedDeposit
+              ? String(trading212CashDiagnostics.firstUnresolvedDeposit) : null,
+            missingFxConversions: num(trading212CashDiagnostics.missingFxConversions),
+            unpairedCsvRows: num(trading212CashDiagnostics.unpairedCsvRows),
+            csvPrimaryRows: num(trading212CashDiagnostics.csvPrimaryRows),
+          } : null,
     },
     chart: {
       providers: [provider],
