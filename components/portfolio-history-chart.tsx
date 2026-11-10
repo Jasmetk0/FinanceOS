@@ -32,7 +32,15 @@ export interface PortfolioChartPoint {
   };
 }
 
+export interface PortfolioCashFlowChartPoint {
+  date: string;
+  totalCzk: number;
+  providers: Record<string, number>;
+  performanceComplete: boolean;
+}
+
 export interface PortfolioChartData {
+  cashFlows?: PortfolioCashFlowChartPoint[];
   providers: string[];
   points: PortfolioChartPoint[];
   coverage: {
@@ -94,10 +102,22 @@ function metricValue(
 function metricValueForPoint(
   metric: PortfolioChartMetric,
   data: PortfolioChartMetricData,
-  performanceComplete: boolean | undefined,
+  _performanceComplete: boolean | undefined,
 ) {
-  if (metric === "contributions" && performanceComplete === false) return null;
+  // An incomplete performance/valuation history must never hide cash
+  // movements that actually exist in the ledger. The UI labels them as known.
   return metricValue(metric, data);
+}
+
+function cashMetric(value: number): PortfolioChartMetricData {
+  return {
+    valueCzk: null,
+    contributedCzk: value,
+    externalRewardsCzk: 0,
+    capitalAttributedCzk: value,
+    profitCzk: null,
+    returnPct: null,
+  };
 }
 
 function metricLabel(metric: PortfolioChartMetric) {
@@ -287,8 +307,34 @@ export function PortfolioHistoryChart({
   );
   const [hoverDate, setHoverDate] = useState<string | null>(null);
 
-  const earliest = data.points[0]?.date ?? "";
-  const latest = data.points.at(-1)?.date ?? "";
+  const cashFlowPoints = useMemo<PortfolioChartPoint[]>(
+    () =>
+      (data.cashFlows ?? []).map((flow) => ({
+        date: flow.date,
+        total: cashMetric(flow.totalCzk),
+        providers: Object.fromEntries(
+          Object.entries(flow.providers).map(([provider, amount]) => [
+            provider,
+            cashMetric(amount),
+          ]),
+        ),
+        coverage: {
+          complete: false,
+          performanceComplete: flow.performanceComplete,
+          knownProviders: [],
+          missingProviders: [],
+        },
+      })),
+    [data.cashFlows],
+  );
+  const chartSource =
+    metric === "contributions" && cashFlowPoints.length
+      ? cashFlowPoints
+      : data.points;
+  const earliest = [data.points[0]?.date, cashFlowPoints[0]?.date]
+    .filter((day): day is string => Boolean(day)).sort()[0] ?? "";
+  const latest = [data.points.at(-1)?.date, cashFlowPoints.at(-1)?.date]
+    .filter((day): day is string => Boolean(day)).sort().at(-1) ?? "";
   const statementEstimateProvider =
     data.providers.length === 1 &&
     (data.providers[0] === "investown" || data.providers[0] === "mintos")
@@ -310,7 +356,7 @@ export function PortfolioHistoryChart({
     estimateEndDate && estimateEndDate > latest ? estimateEndDate : latest;
 
   const filtered = useMemo(() => {
-    if (!data.points.length) return [];
+    if (!chartSource.length) return [];
 
     let start: string | null = null;
     let end: string | null = effectiveLatest || null;
@@ -322,13 +368,13 @@ export function PortfolioHistoryChart({
       start = effectiveLatest ? getPeriodStart(period, effectiveLatest) : null;
     }
 
-    return data.points.filter(
+    return chartSource.filter(
       (point) =>
         (!start || point.date >= start) &&
         (!end || point.date <= end),
     );
   }, [
-    data.points,
+    chartSource,
     period,
     customStart,
     customEnd,
@@ -338,6 +384,36 @@ export function PortfolioHistoryChart({
   const displayProviders = selectedProviders.filter((provider) =>
     data.providers.includes(provider),
   );
+
+  const visibleCashFlows = useMemo(() => {
+    if (!cashFlowPoints.length || !effectiveLatest) return [];
+    const windowStart = period === "CUSTOM"
+      ? customStart || earliest
+      : getPeriodStart(period, effectiveLatest);
+    const windowEnd = period === "CUSTOM"
+      ? customEnd || effectiveLatest
+      : effectiveLatest;
+    const prior = [...cashFlowPoints].reverse()
+      .find((point) => point.date < windowStart);
+    const inside = cashFlowPoints.filter((point) =>
+      point.date >= windowStart && point.date <= windowEnd,
+    );
+    if (prior) inside.unshift({ ...prior, date: windowStart });
+    // A flow series must include a zero baseline before the first deposit.
+    else if (inside.length && inside[0].date > windowStart)
+      inside.unshift({
+        ...inside[0],
+        date: windowStart,
+        total: cashMetric(0),
+        providers: {},
+      });
+    if (inside.length && inside.at(-1)!.date < windowEnd) {
+      inside.push({ ...inside.at(-1)!, date: windowEnd });
+    }
+    return inside;
+  }, [
+    cashFlowPoints, period, customStart, customEnd, earliest, effectiveLatest,
+  ]);
 
   const estimateSourcePoint =
     statementEstimateProvider && estimateEndDate && filtered.length
@@ -400,13 +476,8 @@ export function PortfolioHistoryChart({
     }
 
     if (metric === "value" && showContributions) {
-      for (const point of filtered) {
-        if (
-          point.coverage.complete &&
-          point.coverage.performanceComplete !== false
-        ) {
-          values.push(netDepositedCzk(point.total));
-        }
+      for (const point of visibleCashFlows.length ? visibleCashFlows : filtered) {
+        values.push(netDepositedCzk(point.total));
       }
     }
 
@@ -466,6 +537,7 @@ export function PortfolioHistoryChart({
     showContributions,
     displayProviders,
     estimateEndDate,
+    visibleCashFlows,
   ]);
 
   const hoverPoint = useMemo(
@@ -475,12 +547,12 @@ export function PortfolioHistoryChart({
 
   const firstPoint = filtered[0] ?? null;
   const lastPoint = filtered.at(-1) ?? null;
+  const cashPeriodStart = visibleCashFlows[0] ?? firstPoint;
+  const cashPeriodEnd = visibleCashFlows.at(-1) ?? lastPoint;
   const periodNetContribution =
-    firstPoint &&
-    lastPoint &&
-    firstPoint.coverage.performanceComplete !== false &&
-    lastPoint.coverage.performanceComplete !== false
-      ? netDepositedCzk(lastPoint.total) - netDepositedCzk(firstPoint.total)
+    cashPeriodStart && cashPeriodEnd
+      ? netDepositedCzk(cashPeriodEnd.total) -
+        netDepositedCzk(cashPeriodStart.total)
       : null;
   const periodExternalRewards =
     firstPoint && lastPoint
@@ -532,11 +604,11 @@ export function PortfolioHistoryChart({
     setHoverDate(nearest.date);
   }
 
-  if (data.points.length < 1) {
+  if (data.points.length < 1 && cashFlowPoints.length < 1) {
     return (
       <div className="grid h-64 place-items-center rounded-2xl border border-dashed border-white/10 bg-white/[0.015] px-6 text-center">
         <p className="max-w-lg text-sm leading-6 text-[var(--muted)]">
-          Pro graf zatím nejsou k dispozici portfolio snapshoty.
+          Pro graf zatím nejsou k dispozici ani hodnoty portfolia, ani doložené peněžní pohyby.
         </p>
       </div>
     );
@@ -645,14 +717,23 @@ export function PortfolioHistoryChart({
             Historická hodnota portfolia je {data.coverage.status === "partial" ? "částečná" : "nedostatečná"}.
           </span>{" "}
           FinanceOS nevydává součet jen části platforem za celkovou hodnotu.
-          Celková křivka proto začíná až tam, kde máme hodnotu všech účtů,
-          které už v daný den existovaly.
+          Křivka hodnoty se proto zobrazí jen pro dny s potřebným pokrytím.
+          Známé vklady a výběry se ale vykreslují samostatně podle účetních dat.
           {data.coverage.firstCompleteDate
             ? " První kompletní bod: " +
               dateLabel(data.coverage.firstCompleteDate) +
               "."
             : ""}
         </div>
+      ) : null}
+
+      {metric === "contributions" && cashFlowPoints.some(
+        (point) => point.coverage.performanceComplete === false,
+      ) ? (
+        <p className="mt-3 text-xs leading-5 text-[var(--warning)]">
+          Graf zobrazuje známé doložené externí pohyby. Část dalších vkladů
+          nebo výběrů čeká na klasifikaci; součet zatím není úplná historie.
+        </p>
       ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -956,15 +1037,11 @@ export function PortfolioHistoryChart({
             {metric === "value" && showContributions ? (
               <path
                 d={buildPath(
-                  filtered,
-                  (point) =>
-                    point.coverage.complete &&
-                    point.coverage.performanceComplete !== false
-                      ? netDepositedCzk(point.total)
-                      : null,
+                  visibleCashFlows.length ? visibleCashFlows : filtered,
+                  (point) => netDepositedCzk(point.total),
                   chart.xScale,
                   chart.yScale,
-                  statementStepProvider ? "step" : "linear",
+                  "step",
                 )}
                 fill="none"
                 stroke="rgba(237,247,242,0.34)"
