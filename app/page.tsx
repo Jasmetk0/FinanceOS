@@ -22,6 +22,7 @@ export default function Home() {
     { href: "/performance", title: "Výkonnost", description: "Zisk a výnos", symbol: "chart" },
     { href: "/cash-flow", title: "Peněžní toky", description: "Vklady a výběry", symbol: "flow" },
     { href: "/investments", title: "Investice", description: "Aktuální pozice", symbol: "invest" },
+    { href: "/investments#allocation-chart", title: "Rozložení", description: "Váhy a podíly", symbol: "pie" },
     { href: "/connections", title: "Propojení", description: "API a importy", symbol: "link" },
   ];
 
@@ -99,7 +100,7 @@ export default function Home() {
         />
       </section>
 
-      <nav aria-label="Rychlé odkazy" className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <nav aria-label="Rychlé odkazy" className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
         {quickLinks.map((item) => (
           <Link key={item.href} href={item.href} prefetch={false} className="finance-quick-link group min-w-0">
             <span className="finance-quick-icon">
@@ -107,6 +108,7 @@ export default function Home() {
                 {item.symbol === "chart" ? <><path d="M3 17 9 11l4 4 8-9"/><path d="M15 6h6v6"/></> : null}
                 {item.symbol === "flow" ? <><path d="M4 7h16m-4-4 4 4-4 4M20 17H4m4-4-4 4 4 4"/></> : null}
                 {item.symbol === "invest" ? <><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 15v-4m4 4V8m4 7v-6"/></> : null}
+                {item.symbol === "pie" ? <><path d="M12 3a9 9 0 1 0 9 9h-9z"/><path d="M13 3v8h8a8 8 0 0 0-8-8z"/></> : null}
                 {item.symbol === "link" ? <><path d="M9 7V4m6 3V4M7 7h10v5a5 5 0 0 1-10 0V7ZM12 17v4"/></> : null}
               </svg>
             </span>
