@@ -718,9 +718,12 @@ export async function syncTrading212() {
       stringValue(
         item,
         ["dateExecuted", "dateModified", "dateCreated", "filledAt", "createdAt"],
-        stringValue(order, ["createdAt"], new Date().toISOString()),
+        stringValue(order, ["createdAt"], ""),
       ),
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical order has no valid date; cursor not advanced.");
+    }
 
     let assetIdValue: string | null = null;
     if (ticker) {
@@ -782,8 +785,11 @@ export async function syncTrading212() {
     const occurredAt = stringValue(
       dividend,
       ["paidOn", "paidAt", "date", "createdAt"],
-      new Date().toISOString(),
+      "",
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical dividend has no valid date; cursor not advanced.");
+    }
 
     let assetIdValue: string | null = null;
     if (ticker) {
@@ -845,8 +851,11 @@ export async function syncTrading212() {
     const occurredAt = stringValue(
       transaction,
       ["dateTime", "date", "createdAt", "timestamp"],
-      new Date().toISOString(),
+      "",
     );
+    if (!occurredAt || !Number.isFinite(Date.parse(occurredAt))) {
+      throw new Error("Trading 212 historical cash movement has no valid date; cursor not advanced.");
+    }
 
     // Rich CSV classifications must survive recurring coarse API audits.
     const enriched = getDb().prepare(
