@@ -808,10 +808,13 @@ export async function syncTrading212DailyHistory(
   // this residual is the opening cash balance for the reconstruction.
   const openingCashResidualCzk = currentCashCzk - totalCashImpact;
   const transactionHistoryComplete =
-    getState("history_complete:orders") === "true" &&
-    getState("history_complete:dividends") === "true" &&
-    getState("history_complete:cash") === "true";
-  const cashHistoryComplete = transactionHistoryComplete;
+    getState("history_v3:orders:complete") === "true" &&
+    getState("history_v3:dividends:complete") === "true" &&
+    getState("history_v3:cash:complete") === "true";
+  // CSV exports are an independent provider ledger; never call historical
+  // cash snapshots fully reconstructed while that audit is still pending.
+  const cashHistoryComplete = transactionHistoryComplete &&
+    getState("card_export_backfill_complete_v3") === "true";
 
   db.prepare(
     "DELETE FROM snapshots WHERE account_id = ? AND source = 'reconstructed'",
