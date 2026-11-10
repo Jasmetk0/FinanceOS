@@ -280,8 +280,9 @@ export function PortfolioHistoryChart({
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [showTotal, setShowTotal] = useState(true);
-  const [showContributions, setShowContributions] = useState(true);
-  const [showEstimates, setShowEstimates] = useState(true);
+  // Incomplete deposits distort valuation-scale charts; overlays are opt-in.
+  const [showContributions, setShowContributions] = useState(false);
+  const [showEstimates, setShowEstimates] = useState(false);
   const [selectedProviders, setSelectedProviders] = useState<string[]>(
     data.providers,
   );
@@ -386,6 +387,11 @@ export function PortfolioHistoryChart({
   const displayProviders = selectedProviders.filter((provider) =>
     data.providers.includes(provider),
   );
+  // For a one-provider chart, "Celkem" is identical to that provider.
+  const singleProviderDuplicate = data.providers.length === 1 &&
+    displayProviders.includes(data.providers[0]);
+  const showTotalSeries = showTotal && !singleProviderDuplicate;
+  const showAnySeries = showTotal || displayProviders.length > 0;
 
   const visibleCashFlows = useMemo(() => {
     if (!cashFlowPoints.length || !effectiveLatest) return [];
@@ -456,7 +462,7 @@ export function PortfolioHistoryChart({
 
     const values: number[] = [];
 
-    if (showTotal) {
+    if (showTotalSeries) {
       for (const point of filtered) {
         const value = metricValueForPoint(
           metric,
@@ -480,7 +486,7 @@ export function PortfolioHistoryChart({
       }
     }
 
-    if (metric === "value" && showContributions) {
+    if (metric === "value" && showContributions && showAnySeries) {
       for (const point of visibleCashFlows.length ? visibleCashFlows : filtered) {
         values.push(netDepositedCzk(point.total));
       }
@@ -488,7 +494,7 @@ export function PortfolioHistoryChart({
     if (metric === "value" && showEstimates) {
       for (const point of filtered) {
         const provisional = point.total.estimatedValueCzk;
-        if (provisional !== undefined && provisional !== null &&
+        if (showTotalSeries && provisional !== undefined && provisional !== null &&
             Number.isFinite(provisional)) values.push(provisional);
         for (const provider of displayProviders) {
           const estimate = point.providers[provider]?.estimatedValueCzk;
@@ -551,6 +557,8 @@ export function PortfolioHistoryChart({
     filtered,
     metric,
     showTotal,
+    showTotalSeries,
+    showAnySeries,
     showContributions,
     showEstimates,
     displayProviders,
@@ -906,7 +914,7 @@ export function PortfolioHistoryChart({
             <p className="mt-1 text-[10px] uppercase tracking-wider text-[var(--muted)]">
               {metricLabel(metric)}
             </p>
-            {showTotal ? (
+            {showTotalSeries ? (
               <TooltipRow
                 label="Celkem"
                 color="#f6fbf8"
@@ -920,7 +928,7 @@ export function PortfolioHistoryChart({
                 )}
               />
             ) : null}
-            {metric === "value" && showEstimates &&
+            {metric === "value" && showEstimates && showTotalSeries &&
             hoverPoint.total.valueCzk === null &&
             hoverPoint.total.estimatedValueCzk != null ? (
               <TooltipRow
@@ -929,23 +937,28 @@ export function PortfolioHistoryChart({
                 value={formatCurrency(hoverPoint.total.estimatedValueCzk)}
               />
             ) : null}
-            {displayProviders.map((provider) => (
-              <TooltipRow
-                key={provider}
-                label={providerLabel(provider)}
-                color={colors[provider] || providerColor(provider)}
-                value={formatValue(
-                  hoverPoint.providers[provider]
-                    ? metricValueForPoint(
+            {displayProviders.map((provider) => {
+              const item = hoverPoint.providers[provider];
+              const estimated = metric === "value" && showEstimates &&
+                item?.valueCzk === null && item.estimatedValueCzk != null;
+              return (
+                <TooltipRow
+                  key={provider}
+                  label={providerLabel(provider) + (estimated ? " · neověřený odhad" : "")}
+                  color={estimated ? "#f59e0b" : colors[provider] || providerColor(provider)}
+                  value={estimated
+                    ? formatCurrency(item.estimatedValueCzk!)
+                    : formatValue(
+                        item
+                          ? metricValueForPoint(
+                              metric, item, hoverPoint.coverage.performanceComplete,
+                            )
+                          : null,
                         metric,
-                        hoverPoint.providers[provider],
-                        hoverPoint.coverage.performanceComplete,
-                      )
-                    : null,
-                  metric,
-                )}
-              />
-            ))}
+                      )}
+                />
+              );
+            })}
             <div className="mt-2 border-t border-white/8 pt-2 text-[11px] text-[var(--muted)]">
               {hoverPoint.coverage.performanceComplete === false
                 ? "Známé čisté vklady"
@@ -1153,7 +1166,7 @@ export function PortfolioHistoryChart({
               </>
             ) : null}
 
-            {metric === "value" && showEstimates && showTotal ? (
+            {metric === "value" && showEstimates && showTotalSeries ? (
               <path
                 d={buildPath(
                   filtered,
@@ -1191,7 +1204,7 @@ export function PortfolioHistoryChart({
               ),
             ) : null}
 
-            {showTotal ? (
+            {showTotalSeries ? (
               <path
                 d={buildPath(
                   filtered,
@@ -1296,7 +1309,7 @@ export function PortfolioHistoryChart({
                   strokeWidth="1"
                   vectorEffect="non-scaling-stroke"
                 />
-                {showTotal &&
+                {showTotalSeries &&
                 metricValueForPoint(
                   metric,
                   hoverPoint.total,
