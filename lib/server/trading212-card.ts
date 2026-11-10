@@ -734,6 +734,13 @@ async function enrichReportRows(input: {
   accountCurrency: string;
   reportId: number;
 }) {
+  // A 200 HTML error page or a changed/empty payload must NOT advance the
+  // historical cursor as if it were a successfully imported zero-row report.
+  const header = input.text.slice(0, 4000).split(/\r?\n/, 1)[0].toLowerCase();
+  if (!/(^|,)("?action"?)(,|$)/i.test(header) ||
+      !header.includes("time (utc)") || !header.includes("id")) {
+    throw new Error("Trading 212 CSV export has missing required cash-flow columns.");
+  }
   const rows = parseTrading212Csv(input.text);
   let enriched = 0;
   let inserted = 0;
