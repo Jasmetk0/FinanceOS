@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { LifeTimelineEditor } from "@/components/life-timeline-editor";
+import { AgeGoalPlanner } from "@/components/age-goal-planner";
 import { SimulatorScenarioLibrary } from "@/components/simulator-scenario-library";
 import type { FinancialScenario } from "@/lib/simulator/scenarios";
 import { validateTimelineRules, type TimelineRule } from "@/lib/simulator/timeline";
@@ -30,13 +31,14 @@ const compact = (value: number) =>
   Math.abs(value) >= 1000 ? number(value / 1000, 0) + " tis." : number(value, 0);
 
 function ProjectionChart({
-  points, target, real, selectedMonth, onSelect,
+  points, target, real, selectedMonth, onSelect, birthAge,
 }: {
   points: ReturnType<typeof simulate>["points"];
   target: number;
   real: boolean;
   selectedMonth: number;
   onSelect: (month: number) => void;
+  birthAge: number | null;
 }) {
   const width = 980, height = 318, left = 78, right = 18, top = 18, bottom = 40;
   const w = width - left - right, h = height - top - bottom;
@@ -70,7 +72,7 @@ function ProjectionChart({
             </g>
           ))}
           {[0,.25,.5,.75,1].map((v) => (
-            <text key={v} x={x(maxMonth*v)} y={height-12} fontSize="12" fill="#a5b7ca" textAnchor="middle">{number(maxMonth*v/12,0)} l.</text>
+            <text key={v} x={x(maxMonth*v)} y={height-12} fontSize="12" fill="#a5b7ca" textAnchor="middle">{birthAge === null ? number(maxMonth*v/12,0) + " l." : number(birthAge + maxMonth*v/12, 0) + " let"}</text>
           ))}
           <path d={path + " L" + x(maxMonth) + " " + y(0) + " L" + x(0) + " " + y(0) + " Z"} fill="url(#simulator-projection-fill)" />
           <path d={line(targets)} stroke="#f4c47c" strokeWidth="2" fill="none" strokeDasharray="7 7" />
@@ -81,7 +83,7 @@ function ProjectionChart({
       </div>
       <label htmlFor="simulator-chart-scrub" className="flex items-center justify-between gap-3 text-xs">
         <span className="text-[var(--muted)]">Prozkoumat měsíc</span>
-        <strong>{durationLabel(active.month)} · {money(real ? active.realCzk : active.nominalCzk)}</strong>
+        <strong>{birthAge === null ? durationLabel(active.month) : "Přibližně " + number(birthAge + active.month / 12, 1) + " let"} · {money(real ? active.realCzk : active.nominalCzk)}</strong>
       </label>
       <input id="simulator-chart-scrub" className="w-full accent-[var(--accent)]" type="range" min="0" max={maxMonth} step="1" value={activeIndex} onChange={(e) => onSelect(Number(e.target.value))} />
       <div className="flex flex-wrap gap-4 text-[11px] text-[var(--muted)]">
@@ -98,6 +100,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
   const [events, setEvents] = useState<SimulatorEvent[]>([]);
   const [rules, setRules] = useState<TimelineRule[]>([]);
   const [startAge, setStartAge] = useState(22);
+  const [birthAge, setBirthAge] = useState<number | null>(null);
   const [eventYear, setEventYear] = useState("5");
   const [eventAmount, setEventAmount] = useState("100000");
   const [real, setReal] = useState(true);
@@ -204,6 +207,21 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
           <button type="button" className="finance-action finance-action-primary" onClick={saveScenario}>Uložit scénář</button>
         </div>
       </div>
+      <AgeGoalPlanner
+        inputs={inputs}
+        events={events}
+        rules={rules}
+        onGoalInputChange={(key, value) => setField(key, String(value))}
+        onSolveForTargetAge={(months) => {
+          setInputs((current) => ({ ...current, years: months / 12 }));
+          setUnknown("monthlyContributionCzk");
+          setMessage("Pro cílový věk dopočítávám potřebný měsíční vklad. Tabulka podle věku stále ukazuje původně zadaný vklad.");
+        }}
+        onBirthDateSaved={(_date, age) => {
+          setBirthAge(age);
+          if (age !== null) setStartAge(age);
+        }}
+      />
       <section className="finance-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -276,7 +294,7 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
             <button type="button" aria-pressed={!real} className={["finance-chart-tab !min-h-8", !real ? "!bg-[var(--accent)]/10 !text-[var(--accent)]" : ""].join(" ")} onClick={() => setReal(false)}>Nominálně</button>
           </div>
         </div>
-        {forecast ? <ProjectionChart points={forecast.points} target={forecast.goalRealCzk} real={real} selectedMonth={selectedMonth} onSelect={setSelectedMonth} /> : <p className="text-sm text-[var(--warning)]">Graf se zobrazí po zadání platných hodnot.</p>}
+        {forecast ? <ProjectionChart points={forecast.points} target={forecast.goalRealCzk} real={real} selectedMonth={selectedMonth} onSelect={setSelectedMonth} birthAge={birthAge} /> : <p className="text-sm text-[var(--warning)]">Graf se zobrazí po zadání platných hodnot.</p>}
         {forecast ? (() => {
           const point = forecast.points[Math.min(selectedMonth, forecast.points.length - 1)];
           return <div className="mt-3 grid gap-2 border-t border-[var(--border)] pt-3 text-xs sm:grid-cols-3">
