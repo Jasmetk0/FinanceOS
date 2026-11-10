@@ -4,6 +4,7 @@ import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { SyncButton } from "@/components/sync-button";
 import { getDashboardData, getHistoryData } from "@/lib/server/analytics";
 import { PortfolioHistoryChart } from "@/components/portfolio-history-chart";
+import { PortfolioAllocationChart } from "@/components/portfolio-allocation-chart";
 import { providerColor, providerLabel } from "@/lib/provider-visuals";
 import { DataFreshnessBadge } from "@/components/data-freshness-badge";
 
@@ -17,7 +18,6 @@ export default function Home() {
     data.connections.length > 0 ||
     data.accounts.some((account) => account.provider !== "manual");
   const staleAccounts = data.accounts.filter((account) => account.dataFreshness.status === "stale");
-  const allocationTotal = data.allocation.reduce((sum, item) => sum + Math.max(0, item.valueCzk), 0);
   const quickLinks = [
     { href: "/performance", title: "Výkonnost", description: "Zisk a výnos", symbol: "chart" },
     { href: "/cash-flow", title: "Peněžní toky", description: "Vklady a výběry", symbol: "flow" },
@@ -250,35 +250,17 @@ export default function Home() {
 
       <section className="mt-4 grid gap-4 xl:grid-cols-2">
         <SectionCard
-          title="Alokace"
-          subtitle="Rozložení hodnoty podle třídy aktiv"
-          action={<Link href="/investments" prefetch={false} className="text-xs font-semibold text-[var(--accent)] hover:underline">Zobrazit pozice ↗</Link>}
+          title="Rozložení portfolia"
+          subtitle="Interaktivní graf podle tříd aktiv, platforem a pozic"
+          action={<Link href="/investments#allocation-chart" prefetch={false} className="text-xs font-semibold text-[var(--accent)] hover:underline">Detail rozložení ↗</Link>}
         >
-          {data.allocation.length ? (
-            <div className="grid gap-2.5 sm:grid-cols-2">
-              {data.allocation.map((item) => {
-                const pct = allocationTotal > 0 ? (Math.max(0, item.valueCzk) / allocationTotal) * 100 : 0;
-                return (
-                <div
-                  key={item.label}
-                  className="rounded-[14px] border border-[var(--border)] bg-white/[.025] p-3"
-                >
-                  <span className="text-sm capitalize text-[var(--muted)]">
-                    {item.label}
-                  </span>
-                  <p className="mt-2 text-[19px] font-semibold tracking-[-.03em] tabular-nums">
-                    {item.valueCzk.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} Kč
-                  </p>
-                  <div className="mt-3 flex items-center gap-3">
-                    <div className="finance-meter flex-1"><span style={{ width: pct + "%", backgroundColor: "var(--accent)" }} /></div>
-                    <span className="shrink-0 text-[11px] font-semibold tabular-nums text-[var(--muted)]">{pct.toLocaleString("cs-CZ", { maximumFractionDigits: 1 })} %</span>
-                  </div>
-                </div>
-              )})}
-            </div>
-          ) : (
-            <p className="text-sm text-[var(--muted)]">Zatím žádné pozice.</p>
-          )}
+          <PortfolioAllocationChart
+            allocation={data.allocation}
+            accounts={data.accounts}
+            holdings={data.holdings}
+            netWorthCzk={data.summary.netWorthCzk}
+            compact
+          />
         </SectionCard>
 
         <SectionCard title="Poslední aktivita" subtitle="Nejnovější záznamy ze všech účtů" action={<Link href="/transactions" prefetch={false} className="text-xs font-semibold text-[var(--accent)] hover:underline">Všechny transakce ↗</Link>}>
