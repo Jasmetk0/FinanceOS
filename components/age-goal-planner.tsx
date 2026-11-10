@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ageOnDate, birthdayAtAge, isValidBirthDate, monthsUntilAge } from "@/lib/simulator/age";
-import { goalRealCzk, simulate, type SimulatorEvent, type SimulatorInputs } from "@/lib/simulator/engine";
+import { SIMULATOR_DEFAULTS, goalRealCzk, simulate, type SimulatorEvent, type SimulatorInputs } from "@/lib/simulator/engine";
 import type { TimelineRule } from "@/lib/simulator/timeline";
 
 const money = (n: number) =>
@@ -30,6 +30,10 @@ export function AgeGoalPlanner({
   const [birthDate, setBirthDate] = useState("");
   const [targetAge, setTargetAge] = useState("40");
   const [saved, setSaved] = useState({ birthDate: "", targetAge: "" });
+  const [savedGoalNumbers, setSavedGoalNumbers] = useState({
+    monthly: SIMULATOR_DEFAULTS.targetMonthlyIncomeCzk,
+    withdrawal: SIMULATOR_DEFAULTS.withdrawalRatePct,
+  });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -41,7 +45,8 @@ export function AgeGoalPlanner({
       try {
         const response = await fetch("/api/age-goal", { cache: "no-store" });
         const data = (await response.json()) as {
-          settings?: { birthDate: string | null; targetAge: number | null };
+          settings?: { birthDate: string | null; targetAge: number | null;
+            targetMonthlyIncomeCzk: number | null; withdrawalRatePct: number | null };
           error?: string;
         };
         if (!response.ok || !data.settings) {
@@ -55,6 +60,15 @@ export function AgeGoalPlanner({
         setBirthDate(date);
         setTargetAge(String(goal));
         setSaved({ birthDate: date, targetAge: data.settings.targetAge === null ? "" : String(goal) });
+        const monthly = data.settings.targetMonthlyIncomeCzk ?? SIMULATOR_DEFAULTS.targetMonthlyIncomeCzk;
+        const withdrawal = data.settings.withdrawalRatePct ?? SIMULATOR_DEFAULTS.withdrawalRatePct;
+        setSavedGoalNumbers({ monthly, withdrawal });
+        if (data.settings.targetMonthlyIncomeCzk !== null) {
+          onGoalInputChange("targetMonthlyIncomeCzk", monthly);
+        }
+        if (data.settings.withdrawalRatePct !== null) {
+          onGoalInputChange("withdrawalRatePct", withdrawal);
+        }
         onBirthDateSaved(date || null, age);
       } catch (error) {
         if (active) setMessage("Nastavení není dostupné: " +
@@ -129,9 +143,12 @@ export function AgeGoalPlanner({
     }
   }, [birthDate, today, targetAge, validity, inputs, events, rules]);
 
-  const dirty = birthDate !== saved.birthDate || targetAge !==
-    (saved.targetAge || (saved.birthDate ? String(Math.max(40,
-      isValidBirthDate(saved.birthDate, today) ? ageOnDate(saved.birthDate, today) + 15 : 40)) : "40"));
+  const defaultSavedAge = saved.targetAge || (saved.birthDate &&
+    isValidBirthDate(saved.birthDate, today) ?
+    String(Math.max(40, ageOnDate(saved.birthDate, today) + 15)) : "40");
+  const dirty = birthDate !== saved.birthDate || targetAge !== defaultSavedAge ||
+    inputs.targetMonthlyIncomeCzk !== savedGoalNumbers.monthly ||
+    inputs.withdrawalRatePct !== savedGoalNumbers.withdrawal;
 
   async function save() {
     if (!today || !birthDate || validity.error || validity.months === null || saving) return;
@@ -141,13 +158,17 @@ export function AgeGoalPlanner({
       const response = await fetch("/api/age-goal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ birthDate, targetAge: Number(targetAge) }),
+        body: JSON.stringify({ birthDate, targetAge: Number(targetAge),
+          targetMonthlyIncomeCzk: inputs.targetMonthlyIncomeCzk,
+          withdrawalRatePct: inputs.withdrawalRatePct }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(data.error || "Uložení se nezdařilo.");
       setSaved({ birthDate, targetAge });
+      setSavedGoalNumbers({ monthly: inputs.targetMonthlyIncomeCzk,
+        withdrawal: inputs.withdrawalRatePct });
       onBirthDateSaved(birthDate, validity.age);
-      setMessage("Datum narození a cílový věk jsou uloženy lokálně v FinanceOS.");
+      setMessage("Datum narození, cílový věk a parametry čerpání jsou uloženy v FinanceOS.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -162,7 +183,7 @@ export function AgeGoalPlanner({
           <h2 id="age-goal-heading" className="text-base font-semibold">🎯 Finanční svoboda podle věku</h2>
           <p className="mt-1 max-w-3xl text-xs leading-5 text-[var(--muted)]">
             Naplánuj, v kolika letech chceš čerpat z portfolia. Datum narození a cílový věk
-            se ukládají na tomto počítači; finanční scénář zvlášť v simulátoru.
+            a parametry čerpání se ukládají na tomto počítači; ostatní finanční scénář zvlášť v simulátoru.
           </p>
         </div>
         {validity.age !== null ?
@@ -209,9 +230,11 @@ export function AgeGoalPlanner({
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button type="button" disabled={loading || saving || !dirty || !birthDate ||
-          Boolean(validity.error) || validity.months === null}
+          !Number.isFinite(inputs.targetMonthlyIncomeCzk) || inputs.targetMonthlyIncomeCzk < 0 ||
+          !Number.isFinite(inputs.withdrawalRatePct) || inputs.withdrawalRatePct <= 0 ||
+          inputs.withdrawalRatePct > 100 || Boolean(validity.error) || validity.months === null}
           className="finance-action finance-action-primary disabled:opacity-50" onClick={() => void save()}>
-          {saving ? "Ukládám…" : "Uložit datum narození a věk"}
+          {saving ? "Ukládám…" : "Uložit můj finanční cíl"}
         </button>
         {projection && validity.months !== null ?
           <button type="button" className="finance-action" onClick={() => onSolveForTargetAge(validity.months!)}>
