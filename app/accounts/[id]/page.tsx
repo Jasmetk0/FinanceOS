@@ -227,6 +227,37 @@ export default async function AccountDetailPage({
               Pro tento účet zatím není uložená historická řada.
             </p>
           )}
+          {detail.provider === "trading212" ? (
+            <details className="mt-3 rounded-xl border border-[var(--border)] bg-white/[0.015] p-3 text-xs">
+              <summary className="cursor-pointer font-semibold">
+                Rozklad čistých vkladů Trading 212 · kontrola nesrovnalostí
+              </summary>
+              <p className="mt-2 leading-5 text-[var(--muted)]">
+                Níže jsou pouze doložené pohyby uložené v FinanceOS.
+                Rozdíl mezi příchozími a odchozími platbami
+                neznamená skutečný zisk ani celoživotní saldo, pokud historie není kompletní.
+              </p>
+              <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                {([
+                  ["Potvrzené příchozí platby", cashDiagnostics.confirmedDepositsCzk],
+                  ["Potvrzené odchozí platby včetně karty", cashDiagnostics.confirmedWithdrawalsCzk],
+                  ["Z toho platby Trading 212 kartou", cashDiagnostics.confirmedCardSpendCzk],
+                  ["Nerozpoznané příchozí platby", cashDiagnostics.unresolvedDepositsCzk],
+                ] as Array<[string, unknown]>).map(([label, amount]) => (
+                  <div key={label} className="rounded-lg border border-white/8 p-2.5">
+                    <dt className="text-[var(--muted)]">{label}</dt>
+                    <dd className="mt-1 font-semibold tabular-nums">
+                      {typeof amount === "number" ? money(amount) : "—"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-2 text-[11px] text-[var(--muted)]">
+                Nevyplněné vklady se nedopočítávají z ceny akcií.
+                Zkontroluj také stav dokončení historie na kartě Kvalita dat.
+              </p>
+            </details>
+          ) : null}
         </SectionCard>
 
         <SectionCard
