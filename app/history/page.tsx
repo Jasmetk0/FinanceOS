@@ -1,5 +1,7 @@
 import { Pill, SectionCard, StatCard } from "@/components/ui";
 import { getHistoryData } from "@/lib/server/analytics";
+import { getAgeGoalSettings } from "@/lib/server/age-goal";
+import { ageOnDate, isValidBirthDate } from "@/lib/simulator/age";
 import { HistoricalPriceImporter } from "@/components/historical-price-importer";
 import {
   listPriceImportAssets,
@@ -17,6 +19,22 @@ export default function HistoryPage() {
   const data = getHistoryData();
   const priceAssets = listPriceImportAssets();
   const reconstructed = reconstructPricedHoldingsHistory();
+  const { birthDate } = getAgeGoalSettings();
+  const validBirthDate = birthDate && isValidBirthDate(birthDate, new Date().toISOString().slice(0, 10))
+    ? birthDate : null;
+  const snapshotsByAge = new Map<number, { date: string; valueCzk: number }>();
+  if (validBirthDate) {
+    // Use only recorded complete-quality snapshots: never infer missing older wealth.
+    for (const snapshot of data.snapshots) {
+      const date = snapshot.date.slice(0, 10);
+      if (date >= validBirthDate) {
+        snapshotsByAge.set(ageOnDate(validBirthDate, date), {
+          date, valueCzk: snapshot.valueCzk,
+        });
+      }
+    }
+  }
+  const ageSnapshots = [...snapshotsByAge.entries()].sort((a, b) => b[0] - a[0]).slice(0, 30);
 
   return (
     <main className="mx-auto w-full max-w-[1500px] p-4 sm:p-6 lg:p-8">
@@ -34,6 +52,7 @@ export default function HistoryPage() {
 
       <nav aria-label="Rychlé sekce historie" className="finance-scrollbar sticky top-[68px] z-20 -mx-1 mt-5 flex gap-1.5 overflow-x-auto rounded-xl border border-[var(--border)] bg-[var(--background)]/95 p-2 backdrop-blur-xl lg:top-[74px]">
         {[
+          { href: "#history-by-age", label: "Majetek podle věku" },
           { href: "#history-flows", label: "Vklady a výběry" },
           { href: "#history-chart", label: "Vývoj portfolia" },
           { href: "#history-reconstruction", label: "Rekonstrukce" },
@@ -120,6 +139,42 @@ export default function HistoryPage() {
           </p>
         </div>
       ) : null}
+
+      <div id="history-by-age" className="mt-4 scroll-mt-36">
+        <SectionCard
+          title="Skutečně evidovaný majetek podle věku"
+          subtitle="Poslední dostupný snapshot z každého dosaženého věku — pouze známé investiční účty"
+        >
+          {!validBirthDate ? (
+            <p className="text-sm leading-6 text-[var(--muted)]">
+              Nejprve si <a href="/simulator#age-goal-heading" className="font-semibold text-[var(--accent)] underline underline-offset-2">nastav datum narození ve finančním simulátoru</a>.
+              Potom se zde historické snapshoty seskupí podle věku.
+            </p>
+          ) : ageSnapshots.length ? (
+            <div className="finance-scrollbar max-h-[340px] overflow-auto rounded-xl border border-[var(--border)]">
+              <table className="finance-data-table w-full min-w-[400px] text-left">
+                <thead>
+                  <tr><th>Věk</th><th>Poslední evidovaný den</th><th className="text-right">Hodnota účtů</th></tr>
+                </thead>
+                <tbody>
+                  {ageSnapshots.map(([age, snapshot]) => (
+                    <tr key={age}>
+                      <td className="font-semibold">{age} let</td>
+                      <td>{snapshot.date.split("-").reverse().join(".")}</td>
+                      <td className="text-right tabular-nums">{snapshot.valueCzk.toLocaleString("cs-CZ", { maximumFractionDigits: 0 })} Kč</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <p className="text-sm text-[var(--muted)]">Zatím není dostupný žádný historický snapshot účtů.</p>}
+          <p className="mt-3 text-xs leading-5 text-[var(--muted)]">
+            Nejde o kompletní historické čisté jmění. Starší chybějící účty a období se neodhadují,
+            řádky ukazují pouze poslední zaznamenanou hodnotu v daném věku, nikoli stav přímo
+            v den narozenin. Modelované budoucí hodnoty jsou samostatně v simulátoru.
+          </p>
+        </SectionCard>
+      </div>
 
       <div id="history-flows" className="mt-4 scroll-mt-36">
         <SectionCard
