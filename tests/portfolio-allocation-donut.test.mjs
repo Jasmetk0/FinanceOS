@@ -27,6 +27,8 @@ test("portfolio allocation groups positions by asset identity across platforms",
       { assetId: "a-amd", symbol: "AMD", name: "AMD", assetClass: "stock", valueCzk: 35_000 },
       { assetId: "a-etf", symbol: "VWCE", name: "Vanguard", assetClass: "etf", valueCzk: 60_000 },
       { assetId: "a-btc", symbol: "BTC", name: "Bitcoin", assetClass: "crypto", valueCzk: 20_000 },
+      { assetId: "a-fiat", symbol: "EUR", name: "Fiat balance", assetClass: "cash", valueCzk: 2_000 },
+      { assetId: "a-loan", symbol: "LOAN", name: "Loan", assetClass: "p2p", valueCzk: 8_000 },
     ],
   };
   const views = getPortfolioAllocationViews(input);
