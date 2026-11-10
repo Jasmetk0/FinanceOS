@@ -68,5 +68,7 @@ test("bad API dates never turn old money movements into today's activity", () =>
   assert.ok(t212.includes("repairHistoricalTrading212Fx"));
   assert.ok(t212.includes("AND amount_czk IS NULL"));
   assert.ok(t212.includes("UPDATE transactions SET amount_czk = ? WHERE id = ? AND amount_czk IS NULL"));
-  assert.ok(t212.includes("LIMIT 120"));
+  assert.ok(t212.includes("const batchLimit = 120"));
+  assert.ok(t212.includes('getHistorySyncState("fx_repair_offset_v1")'));
+  assert.ok(t212.includes("ORDER BY occurred_at ASC, id ASC LIMIT ? OFFSET ?"));
 });
