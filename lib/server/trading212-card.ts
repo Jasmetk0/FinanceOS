@@ -1271,14 +1271,14 @@ export function getTrading212CardStatus() {
   const stats = db
     .prepare(`
       SELECT
-        SUM(CASE WHEN category LIKE 'card_spend:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS spend,
-        SUM(CASE WHEN category LIKE 'card_refund:%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS refunds,
-        SUM(CASE WHEN category = 'card_cashback' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
-        SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS spend_count,
-        SUM(CASE WHEN category = 'card_cashback' THEN 1 ELSE 0 END) AS cashback_count,
+        SUM(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS spend,
+        SUM(CASE WHEN category LIKE 'card_refund:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS refunds,
+        SUM(CASE WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN COALESCE(amount_czk, 0) ELSE 0 END) AS cashback,
+        SUM(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS spend_count,
+        SUM(CASE WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN 1 ELSE 0 END) AS cashback_count,
         SUM(
           CASE
-            WHEN category = 'card_cashback'
+            WHEN category = 'card_cashback' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
               AND source_label LIKE '%· inferred'
             THEN 1 ELSE 0
           END
@@ -1309,8 +1309,8 @@ export function getTrading212CardStatus() {
             ELSE 0
           END
         ) AS enrichment_only_count,
-        MIN(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS first_card_at,
-        MAX(CASE WHEN category LIKE 'card_spend:%' THEN occurred_at END) AS last_card_at
+        MIN(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN occurred_at END) AS first_card_at,
+        MAX(CASE WHEN category LIKE 'card_spend:%' AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%' THEN occurred_at END) AS last_card_at
       FROM transactions
       WHERE provider = 'trading212'
     `)
@@ -1343,6 +1343,7 @@ export function getTrading212CardStatus() {
         ) AS cashback
       FROM transactions
       WHERE provider = 'trading212'
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           category LIKE 'card_spend:%'
           OR category LIKE 'card_refund:%'
@@ -1386,6 +1387,7 @@ export function getTrading212CardStatus() {
         SUM(CASE WHEN category LIKE 'card_spend:%' THEN 1 ELSE 0 END) AS purchases
       FROM transactions
       WHERE provider = 'trading212'
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           (
             category LIKE 'card_spend:%'
