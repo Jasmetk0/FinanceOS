@@ -769,12 +769,12 @@ export function PortfolioHistoryChart({
       {metric === "value" && hasPartialEstimates ? (
         <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-[var(--muted)]">
           <span className="inline-flex items-center gap-2">
-            <span className="w-6 border-t-2 border-[var(--accent)]" />
+            <span className="w-6 border-t-2" style={{ borderColor: singleProviderDuplicate ? colors[data.providers[0]] : "#9cf3ce" }} />
             Evidovaná hodnota účtu
           </span>
           {showEstimates ? (
             <span className="inline-flex items-center gap-2">
-              <span className="w-6 border-t-2 border-dashed border-[#f59e0b]" />
+              <span className="w-6 border-t-2 border-dashed" style={{ borderColor: singleProviderDuplicate ? colors[data.providers[0]] : "#f59e0b" }} />
               Rekonstrukce z dostupných údajů, nikoli ověřený stav
             </span>
           ) : null}
