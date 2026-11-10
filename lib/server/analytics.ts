@@ -2549,6 +2549,18 @@ export function getAccountDetail(accountIdInput: string) {
   const trading212CashDiagnostics = provider === "trading212"
     ? db.prepare(`
         SELECT
+          SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'external'
+            AND amount_czk IS NOT NULL AND
+            COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
+            THEN ABS(amount_czk) ELSE 0 END) AS confirmedDepositsCzk,
+          SUM(CASE WHEN kind = 'withdrawal' AND flow_scope = 'external'
+            AND amount_czk IS NOT NULL AND
+            COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
+            THEN ABS(amount_czk) ELSE 0 END) AS confirmedWithdrawalsCzk,
+          SUM(CASE WHEN kind = 'withdrawal' AND flow_scope = 'external'
+            AND category LIKE 'card_spend:%'
+            AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
+            THEN ABS(COALESCE(amount_czk, 0)) ELSE 0 END) AS confirmedCardSpendCzk,
           SUM(CASE WHEN kind IN ('deposit', 'withdrawal')
             AND flow_scope = 'external' THEN 1 ELSE 0 END) AS confirmedMovements,
           SUM(CASE WHEN kind = 'deposit' AND flow_scope = 'unclassified'
@@ -2652,6 +2664,9 @@ export function getAccountDetail(accountIdInput: string) {
       trading212CashDiagnostics: trading212CashDiagnostics
         ? {
             confirmedMovements: num(trading212CashDiagnostics.confirmedMovements),
+            confirmedDepositsCzk: num(trading212CashDiagnostics.confirmedDepositsCzk),
+            confirmedWithdrawalsCzk: num(trading212CashDiagnostics.confirmedWithdrawalsCzk),
+            confirmedCardSpendCzk: num(trading212CashDiagnostics.confirmedCardSpendCzk),
             unresolvedDeposits: num(trading212CashDiagnostics.unresolvedDeposits),
             unresolvedDepositsCzk: num(trading212CashDiagnostics.unresolvedDepositsCzk),
             firstUnresolvedDeposit: trading212CashDiagnostics.firstUnresolvedDeposit
