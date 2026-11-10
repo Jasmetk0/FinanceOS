@@ -70,7 +70,7 @@ test("chart retains provenance and external-only contribution computation", () =
   const chart = file("components/portfolio-history-chart.tsx");
   assert.ok(chart.includes("return data.contributedCzk;"));
   assert.ok(chart.includes('metric === "contributions" && cashFlowPoints.length'));
-  assert.ok(chart.includes("Graf zobrazuje známé doložené externí pohyby".replace(" externí", "")));
+  assert.ok(chart.includes("Graf zobrazuje známé doložené externí pohyby"));
   assert.ok(chart.includes("finance-chart-canvas"));
   assert.ok(chart.includes("aria-pressed={metric === value}"));
 });
