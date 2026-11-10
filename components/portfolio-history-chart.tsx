@@ -387,9 +387,9 @@ export function PortfolioHistoryChart({
 
   const visibleCashFlows = useMemo(() => {
     if (!cashFlowPoints.length || !effectiveLatest) return [];
-    const windowStart = period === "CUSTOM"
+    const windowStart = (period === "CUSTOM"
       ? customStart || earliest
-      : getPeriodStart(period, effectiveLatest);
+      : getPeriodStart(period, effectiveLatest)) || earliest;
     const windowEnd = period === "CUSTOM"
       ? customEnd || effectiveLatest
       : effectiveLatest;
@@ -443,6 +443,9 @@ export function PortfolioHistoryChart({
     if (filtered.length < 1) return null;
 
     const timestamps = filtered.map((point) => parseDate(point.date));
+    if (metric === "value" && showContributions) {
+      timestamps.push(...visibleCashFlows.map((point) => parseDate(point.date)));
+    }
     if (estimateEndDate && estimateEndDate > filtered.at(-1)!.date) {
       timestamps.push(parseDate(estimateEndDate));
     }
@@ -547,13 +550,17 @@ export function PortfolioHistoryChart({
 
   const firstPoint = filtered[0] ?? null;
   const lastPoint = filtered.at(-1) ?? null;
-  const cashPeriodStart = visibleCashFlows[0] ?? firstPoint;
   const cashPeriodEnd = visibleCashFlows.at(-1) ?? lastPoint;
-  const periodNetContribution =
-    cashPeriodStart && cashPeriodEnd
-      ? netDepositedCzk(cashPeriodEnd.total) -
-        netDepositedCzk(cashPeriodStart.total)
-      : null;
+  const periodStart = period === "CUSTOM"
+    ? customStart || earliest
+    : effectiveLatest
+      ? getPeriodStart(period, effectiveLatest) || earliest
+      : earliest;
+  const cashPeriodStartingBalance = [...(data.cashFlows ?? [])].reverse()
+    .find((point) => point.date < periodStart)?.totalCzk ?? 0;
+  const periodNetContribution = cashPeriodEnd
+    ? netDepositedCzk(cashPeriodEnd.total) - cashPeriodStartingBalance
+    : null;
   const periodExternalRewards =
     firstPoint && lastPoint
       ? lastPoint.total.externalRewardsCzk -
@@ -816,13 +823,16 @@ export function PortfolioHistoryChart({
                 : "Čisté vklady celkem"
             }
             value={
-              lastPoint.coverage.performanceComplete === false
-                ? "—"
-                : formatValue(netDepositedCzk(lastPoint.total), "contributions")
+              formatValue(
+                netDepositedCzk(
+                  visibleCashFlows.at(-1)?.total ?? lastPoint.total,
+                ),
+                "contributions",
+              )
             }
             hint={
               lastPoint.coverage.performanceComplete === false
-                ? "Cash-flow historie obsahuje nevyřešené vklady/výběry."
+                ? "Známé externí vklady/výběry. Další pohyby čekají na ověření."
                 : undefined
             }
           />
