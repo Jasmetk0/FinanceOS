@@ -246,6 +246,8 @@ function getCombinedSnapshotSeries(db: ReturnType<typeof getDb>) {
 
 export interface PortfolioHistoryMetric {
   valueCzk: number | null;
+  /** Reconstructed partial valuation, never to be presented as verified. */
+  estimatedValueCzk?: number | null;
   contributedCzk: number;
   externalRewardsCzk: number;
   capitalAttributedCzk: number;
@@ -476,6 +478,10 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     string,
     { provider: string; valueCzk: number }
   >();
+  const latestCandidateByAccount = new Map<
+    string,
+    { provider: string; valueCzk: number; partial: boolean }
+  >();
   const snapshotsByDate = new Map<
     string,
     Array<{
@@ -586,6 +592,11 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
     }
 
     for (const item of snapshotsByDate.get(date) ?? []) {
+      latestCandidateByAccount.set(item.accountId, {
+        provider: item.provider,
+        valueCzk: item.valueCzk,
+        partial: item.partial,
+      });
       if (item.partial) {
         // A partial snapshot is an explicit coverage gap, not a date that can
         // be skipped. Remove the account until a later complete snapshot
@@ -608,9 +619,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
         (providerValues.get(account.provider) ?? 0) + account.valueCzk,
       );
     }
+    const candidateValues = new Map<string, number>();
+    for (const account of latestCandidateByAccount.values()) {
+      candidateValues.set(
+        account.provider,
+        (candidateValues.get(account.provider) ?? 0) + account.valueCzk,
+      );
+    }
 
     const providerMetrics: Record<string, PortfolioHistoryMetric> = {};
     let totalValue = 0;
+    let provisionalTotal = 0;
+    let allProvidersValuedOrEstimated = true;
     const knownProviders: string[] = [];
     const missingProviders: string[] = [];
 
@@ -635,6 +655,15 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
           : providerShouldExist
             ? null
             : null;
+      const candidateCovered =
+        providerShouldExist &&
+        activeAccounts.every(
+          (item) =>
+            latestCandidateByAccount.has(item.accountId) &&
+            (item.valueThroughDate === null || date <= item.valueThroughDate),
+        );
+      const provisionalValue = value === null && candidateCovered &&
+        candidateValues.has(provider) ? candidateValues.get(provider)! : null;
       const contributed = contributionByProvider.get(provider) ?? 0;
       const externalRewards = rewardsByProvider.get(provider) ?? 0;
       const transferAttribution =
@@ -644,15 +673,21 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       const providerPerformanceGap = performanceGapByProvider.get(provider);
       const providerPerformanceComplete =
         !providerPerformanceGap || date < providerPerformanceGap;
-      providerMetrics[provider] = historyMetric(
-        value,
-        contributed,
-        externalRewards,
-        capitalAttributed,
-        providerPerformanceComplete,
-      );
+      providerMetrics[provider] = {
+        ...historyMetric(
+          value,
+          contributed,
+          externalRewards,
+          capitalAttributed,
+          providerPerformanceComplete,
+        ),
+        estimatedValueCzk: provisionalValue,
+      };
 
       if (!providerShouldExist) continue;
+      if (value !== null) provisionalTotal += value;
+      else if (provisionalValue !== null) provisionalTotal += provisionalValue;
+      else allProvidersValuedOrEstimated = false;
       if (value === null) {
         missingProviders.push(provider);
       } else {
@@ -665,6 +700,7 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       unlinkedWalletStart !== null && unlinkedWalletStart <= date;
     if (hasUnlinkedWalletGap) {
       missingProviders.push("unlinked-wallet");
+      allProvidersValuedOrEstimated = false;
     }
 
     const complete =
@@ -675,13 +711,18 @@ function getPortfolioHistoryChartData(db: ReturnType<typeof getDb>) {
       // Never present a partial sum of providers as the user's historical
       // total portfolio value. Until every provider known to be active on the
       // date has a valuation source, total value / P&L / return stay unknown.
-      total: historyMetric(
-        complete ? totalValue : null,
-        totalOwnContribution,
-        totalExternalRewards,
-        totalOwnContribution + totalExternalRewards,
-        !firstPerformanceGap || date < firstPerformanceGap,
-      ),
+      total: {
+        ...historyMetric(
+          complete ? totalValue : null,
+          totalOwnContribution,
+          totalExternalRewards,
+          totalOwnContribution + totalExternalRewards,
+          !firstPerformanceGap || date < firstPerformanceGap,
+        ),
+        estimatedValueCzk: !complete && allProvidersValuedOrEstimated &&
+          knownProviders.length + missingProviders.length > 0
+          ? provisionalTotal : null,
+      },
       providers: providerMetrics,
       coverage: {
         complete,
@@ -2335,13 +2376,19 @@ export function getAccountDetail(accountIdInput: string) {
       (!firstPerformanceGap || date < firstPerformanceGap);
     const capitalAttributed =
       ownContribution + externalRewards + transferAttribution;
-    let metric = historyMetric(
-      valuationCovered ? num(row.total_value_czk) : null,
-      ownContribution,
-      externalRewards,
-      capitalAttributed,
-      performanceComplete,
-    );
+    let metric: PortfolioHistoryMetric = {
+      ...historyMetric(
+        valuationCovered ? num(row.total_value_czk) : null,
+        ownContribution,
+        externalRewards,
+        capitalAttributed,
+        performanceComplete,
+      ),
+      estimatedValueCzk:
+        snapshotQuality === "partial" &&
+        (freshness.coverageThrough === null || date <= freshness.coverageThrough)
+          ? num(row.total_value_czk) : null,
+    };
 
     // Investown native statements explicitly tell us which cash movements are
     // yield/income/fees. For this provider there is no mark-to-market P/L: loan
