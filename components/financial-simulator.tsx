@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { LifeTimelineEditor } from "@/components/life-timeline-editor";
+import { AgeGoalPlanner } from "@/components/age-goal-planner";
 import { SimulatorScenarioLibrary } from "@/components/simulator-scenario-library";
 import type { FinancialScenario } from "@/lib/simulator/scenarios";
 import { validateTimelineRules, type TimelineRule } from "@/lib/simulator/timeline";
@@ -204,6 +205,20 @@ export function FinancialSimulator({ trackedPortfolioCzk }: { trackedPortfolioCz
           <button type="button" className="finance-action finance-action-primary" onClick={saveScenario}>Uložit scénář</button>
         </div>
       </div>
+      <AgeGoalPlanner
+        inputs={inputs}
+        events={events}
+        rules={rules}
+        onGoalInputChange={(key, value) => setField(key, String(value))}
+        onSolveForTargetAge={(months) => {
+          setInputs((current) => ({ ...current, years: months / 12 }));
+          setUnknown("monthlyContributionCzk");
+          setMessage("Pro cílový věk dopočítávám potřebný měsíční vklad. Tabulka podle věku stále ukazuje původně zadaný vklad.");
+        }}
+        onBirthDateSaved={(_date, age) => {
+          if (age !== null) setStartAge(age);
+        }}
+      />
       <section className="finance-surface p-4 sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
