@@ -26,7 +26,7 @@ interface Props {
 export function AgeGoalPlanner({
   inputs, events, rules, onGoalInputChange, onSolveForTargetAge, onBirthDateSaved,
 }: Props) {
-  const [today, setToday] = useState("");
+  const [today] = useState(() => localToday());
   const [birthDate, setBirthDate] = useState("");
   const [targetAge, setTargetAge] = useState("40");
   const [saved, setSaved] = useState({ birthDate: "", targetAge: "" });
@@ -40,7 +40,6 @@ export function AgeGoalPlanner({
 
   useEffect(() => {
     let active = true;
-    setToday(localToday());
     (async () => {
       try {
         const response = await fetch("/api/age-goal", { cache: "no-store" });
