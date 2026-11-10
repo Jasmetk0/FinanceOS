@@ -392,6 +392,15 @@ export function PortfolioHistoryChart({
     displayProviders.includes(data.providers[0]);
   const showTotalSeries = showTotal && !singleProviderDuplicate;
   const showAnySeries = showTotal || displayProviders.length > 0;
+  const latestKnownCashFlow = data.cashFlows?.at(-1);
+  const cashHistoryUncertain = (data.cashFlows ?? []).some(
+    (point) => point.performanceComplete === false,
+  );
+  const lastKnownContribution = latestKnownCashFlow?.totalCzk ?? 0;
+  const hasPartialEstimates = data.points.some((point) =>
+    point.total.estimatedValueCzk != null ||
+    Object.values(point.providers).some((value) => value.estimatedValueCzk != null),
+  );
 
   const visibleCashFlows = useMemo(() => {
     if (!cashFlowPoints.length || !effectiveLatest) return [];
@@ -757,6 +766,40 @@ export function PortfolioHistoryChart({
         </div>
       ) : null}
 
+      {metric === "value" && hasPartialEstimates ? (
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-[var(--muted)]">
+          <span className="inline-flex items-center gap-2">
+            <span className="w-6 border-t-2 border-[var(--accent)]" />
+            Evidovaná hodnota účtu
+          </span>
+          {showEstimates ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-6 border-t-2 border-dashed border-[#f59e0b]" />
+              Rekonstrukce z dostupných údajů, nikoli ověřený stav
+            </span>
+          ) : null}
+          {showContributions ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-6 border-t border-dashed border-white/50" />
+              Známé čisté pohyby
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {cashHistoryUncertain && lastKnownContribution < 0 &&
+       (metric === "value" || metric === "contributions") ? (
+        <div role="status" className="mt-3 rounded-lg border border-[var(--warning)]/25 bg-[var(--warning)]/[0.05] p-3 text-xs leading-5">
+          <span className="font-semibold text-[var(--warning)]">
+            Pozor: známé čisté pohyby jsou {formatCurrency(lastKnownContribution)}.
+          </span>{" "}
+          Záporná hodnota při neúplné historii není potvrzený celoživotní výsledek
+          vkladů. Pravděpodobně chybí část příchozích transakcí, nebo je některý
+          interní převod klasifikován jako výběr. FinanceOS ji automaticky
+          nenahrazuje odhadem a při běžném zobrazení hodnoty ji nevykresluje.
+        </div>
+      ) : null}
+
       {metric === "contributions" && cashFlowPoints.some(
         (point) => point.coverage.performanceComplete === false,
       ) ? (
@@ -828,7 +871,7 @@ export function PortfolioHistoryChart({
               checked={showContributions}
               onChange={(event) => setShowContributions(event.target.checked)}
             />
-            Čisté vklady jako baseline
+            Známé čisté vklady jako baseline
           </label>
         ) : null}
       </div>
@@ -843,7 +886,7 @@ export function PortfolioHistoryChart({
             checked={showEstimates}
             onChange={(event) => setShowEstimates(event.target.checked)}
           />
-          Zobrazit orientační rekonstruovanou hodnotu (přerušovaně, neověřeno)
+          Orientační historická hodnota (přerušovaně · neověřeno)
         </label>
       ) : null}
 
@@ -967,6 +1010,21 @@ export function PortfolioHistoryChart({
               <br />
               Externí odměny:{" "}
               {formatCurrency(hoverPoint.total.externalRewardsCzk)}
+              {Math.abs(
+                hoverPoint.total.capitalAttributedCzk -
+                hoverPoint.total.contributedCzk -
+                hoverPoint.total.externalRewardsCzk
+              ) > 0.005 ? (
+                <>
+                  <br />
+                  Připsané přesuny kapitálu:{" "}
+                  {formatCurrency(
+                    hoverPoint.total.capitalAttributedCzk -
+                    hoverPoint.total.contributedCzk -
+                    hoverPoint.total.externalRewardsCzk,
+                  )}
+                </>
+              ) : null}
               <br />
               Kapitál pro P/L:{" "}
               {formatCurrency(hoverPoint.total.capitalAttributedCzk)}
