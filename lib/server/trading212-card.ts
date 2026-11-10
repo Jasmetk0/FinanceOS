@@ -46,6 +46,7 @@ const ACCOUNT_KEY = "card_account_id";
 const ACTION_INVENTORY_KEY = "full_export_action_inventory";
 const BACKFILL_VERSION_KEY = "card_export_backfill_version";
 const BACKFILL_END_KEY = "card_export_backfill_end_v3";
+const BACKFILL_WINDOW_DAYS_KEY = "card_export_backfill_window_days_v3";
 const BACKFILL_COMPLETE_KEY = "card_export_backfill_complete_v3";
 const MATCH_STATUS_KEY = "card_export_reconciliation_v3";
 const BACKFILL_START = "2015-01-01T00:00:00.000Z";
@@ -990,6 +991,7 @@ async function syncTrading212CardHistoryInternal(input: {
       CURSOR_KEY,
       BACKFILL_VERSION_KEY,
       BACKFILL_END_KEY,
+      BACKFILL_WINDOW_DAYS_KEY,
       BACKFILL_COMPLETE_KEY,
       LAST_REFRESH_KEY,
       LAST_ERROR_KEY,
@@ -1125,6 +1127,7 @@ async function syncTrading212CardHistoryInternal(input: {
     // Oldest imported record is NOT proof of the account's first deposit.
     // Descending bounded windows first fix recent gaps, then audit older years.
     setState(BACKFILL_END_KEY, nowIso);
+    setState(BACKFILL_WINDOW_DAYS_KEY, "364");
     setState(BACKFILL_VERSION_KEY, BACKFILL_VERSION);
     deleteState(BACKFILL_COMPLETE_KEY);
   }
@@ -1134,25 +1137,45 @@ async function syncTrading212CardHistoryInternal(input: {
     if (!Number.isFinite(endMs)) {
       throw new RangeError("Invalid Trading 212 export backfill cursor.");
     }
+    const storedDays = Number(getState(BACKFILL_WINDOW_DAYS_KEY));
+    const windowDays = Number.isInteger(storedDays) && storedDays > 0 &&
+      storedDays <= 366 ? storedDays : 364;
     const window = trading212BackfillWindow(
       new Date(Math.min(endMs, now.getTime())).toISOString(), BACKFILL_START,
+      windowDays,
     );
     if (window === null) {
       setState(BACKFILL_COMPLETE_KEY, "true");
     } else {
-      const requested = await requestExport({
-        environment: input.environment,
-        credentials: input.credentials,
-        timeFrom: window.timeFrom,
-        timeTo: window.timeTo,
-        historical: true,
-      });
-      return {
-        status: "requested-history-window" as const,
-        reportId: requested.reportId,
-        timeFrom: requested.timeFrom,
-        timeTo: requested.timeTo,
-      };
+      try {
+        const requested = await requestExport({
+          environment: input.environment,
+          credentials: input.credentials,
+          timeFrom: window.timeFrom,
+          timeTo: window.timeTo,
+          historical: true,
+        });
+        return {
+          status: "requested-history-window" as const,
+          reportId: requested.reportId,
+          timeFrom: requested.timeFrom,
+          timeTo: requested.timeTo,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if ((message.includes("(400)") || message.includes("(413)")) &&
+            windowDays > 1) {
+          // Some account export surfaces reject one-year windows. Shrink
+          // adaptively on the NEXT sync to respect the POST 1/30s quota.
+          const smallerDays = windowDays > 90 ? 90 :
+            windowDays > 30 ? 30 : windowDays > 7 ? 7 : 1;
+          setState(BACKFILL_WINDOW_DAYS_KEY, String(smallerDays));
+          setState(LAST_ERROR_KEY,
+            "Trading 212 odmítl dlouhý export; další sync zkusí " + smallerDays + " dní.");
+          return { status: "smaller-window" as const, nextWindowDays: smallerDays };
+        }
+        throw error;
+      }
     }
   }
 
@@ -1425,6 +1448,7 @@ export function getTrading212CardStatus() {
     coverageCursor: getState(BACKFILL_END_KEY),
     backfillComplete: getState(BACKFILL_COMPLETE_KEY) === "true",
     backfillFrom: BACKFILL_START,
+    backfillWindowDays: Number(getState(BACKFILL_WINDOW_DAYS_KEY) || 364),
     reconciliation: safeJson(getState(MATCH_STATUS_KEY)),
     lastRefreshAt: getState(LAST_REFRESH_KEY),
     lastError: getState(LAST_ERROR_KEY),
