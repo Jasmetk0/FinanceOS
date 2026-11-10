@@ -96,12 +96,14 @@ export function PortfolioAllocationChart({
     slices.find((item) => item.id === hoverId) ??
     slices.find((item) => item.id === selectedId) ?? null;
   const chartGroups = useMemo(() => {
-    let position = 0;
     return slices.map((slice, index) => {
-      const start = total > 0 ? position / total : 0;
-      position += slice.amountCzk;
+      const previousAmount = slices.slice(0, index).reduce(
+        (sum, item) => sum + item.amountCzk, 0,
+      );
+      const start = total > 0 ? previousAmount / total : 0;
+      const end = total > 0 ? (previousAmount + slice.amountCzk) / total : 0;
       return {
-        ...slice, start, end: total > 0 ? position / total : 0,
+        ...slice, start, end,
         color: view === "platforms"
           ? providerColor(slice.id)
           : view === "classes"
