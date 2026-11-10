@@ -347,6 +347,43 @@ async function fetchPaginated(
   };
 }
 
+/**
+ * A transient CNB outage must not permanently remove a historic cash-flow
+ * entry from CZK charts. Retry a bounded set of missing conversions on every
+ * sync. No original amount, kind or provider payload is ever overwritten.
+ */
+async function repairHistoricalTrading212Fx(accountId: string) {
+  const db = getDb();
+  const missing = db.prepare(`
+    SELECT id, amount, currency, occurred_at
+    FROM transactions
+    WHERE account_id = ?
+      AND provider = 'trading212'
+      AND amount_czk IS NULL
+      AND amount IS NOT NULL
+      AND currency IS NOT NULL
+      AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
+    ORDER BY occurred_at ASC
+    LIMIT 120
+  `).all(accountId);
+  const apply = db.prepare(
+    "UPDATE transactions SET amount_czk = ? WHERE id = ? AND amount_czk IS NULL",
+  );
+  let resolved = 0;
+  for (const row of missing) {
+    const amount = Number(row.amount);
+    if (!Number.isFinite(amount)) continue;
+    const currency = String(row.currency || "").toUpperCase();
+    const occurredAt = String(row.occurred_at || "");
+    if (!currency || !Number.isFinite(Date.parse(occurredAt))) continue;
+    const converted = await maybeToCzk(amount, currency, occurredAt);
+    if (converted === null || !Number.isFinite(converted)) continue;
+    apply.run(converted, String(row.id));
+    resolved++;
+  }
+  return { attempted: missing.length, resolved, remainingInBatch: missing.length - resolved };
+}
+
 export async function validateTrading212(
   environment: string,
   credentials: Trading212Credentials,
@@ -890,6 +927,7 @@ export async function syncTrading212() {
     accountCurrency: currency,
   });
 
+  const fxRepair = await repairHistoricalTrading212Fx(accountIdValue);
   const cardDetected = hasTrading212CardEvidence();
   if (
     cardDetected &&
@@ -983,6 +1021,7 @@ export async function syncTrading212() {
     cashTransactions: cashTransactions.length,
     apiReadCoverage,
     cardSync,
+    fxRepair,
     cardDetected,
     historyBackfill: {
       ordersComplete:
