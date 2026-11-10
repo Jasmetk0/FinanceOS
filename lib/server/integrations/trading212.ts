@@ -354,18 +354,27 @@ async function fetchPaginated(
  */
 async function repairHistoricalTrading212Fx(accountId: string) {
   const db = getDb();
-  const missing = db.prepare(`
-    SELECT id, amount, currency, occurred_at
-    FROM transactions
-    WHERE account_id = ?
-      AND provider = 'trading212'
-      AND amount_czk IS NULL
-      AND amount IS NOT NULL
-      AND currency IS NOT NULL
-      AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
-    ORDER BY occurred_at ASC
-    LIMIT 120
-  `).all(accountId);
+  const where = "FROM transactions WHERE account_id = ? AND provider = 'trading212' " +
+    "AND amount_czk IS NULL AND amount IS NOT NULL AND currency IS NOT NULL " +
+    "AND COALESCE(raw_json, '') NOT LIKE '%\"enrichmentOnly\":true%'";
+  const count = Number(db.prepare("SELECT COUNT(*) AS count " + where)
+    .get(accountId)?.count ?? 0);
+  const batchLimit = 120;
+  const previousOffset = Number(getHistorySyncState("fx_repair_offset_v1") || 0);
+  const offset = count > 0 && Number.isSafeInteger(previousOffset) && previousOffset >= 0
+    ? previousOffset % count : 0;
+  const select = db.prepare(
+    "SELECT id, amount, currency, occurred_at " + where +
+    " ORDER BY occurred_at ASC, id ASC LIMIT ? OFFSET ?",
+  );
+  const missing = count ? [
+    ...select.all(accountId, batchLimit, offset),
+    ...(count > offset && count - offset < batchLimit
+      ? select.all(accountId, batchLimit - (count - offset), 0) : []),
+  ] : [];
+  // Rotate across failed rows so one old missing FX rate cannot starve later payments.
+  setHistorySyncState("fx_repair_offset_v1",
+    String(count ? (offset + missing.length) % count : 0));
   const apply = db.prepare(
     "UPDATE transactions SET amount_czk = ? WHERE id = ? AND amount_czk IS NULL",
   );
