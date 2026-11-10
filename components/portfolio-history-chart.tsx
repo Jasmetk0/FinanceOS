@@ -876,6 +876,12 @@ export function PortfolioHistoryChart({
         ) : null}
       </div>
 
+      {singleProviderDuplicate ? (
+        <p className="mt-2 text-[11px] text-[var(--muted)]">
+          Celkem = {providerLabel(data.providers[0])} · zobrazuje se pouze jedna společná křivka.
+        </p>
+      ) : null}
+
       {metric === "value" && filtered.some((point) =>
         point.total.estimatedValueCzk != null ||
         Object.values(point.providers).some((provider) => provider.estimatedValueCzk != null),
@@ -988,7 +994,7 @@ export function PortfolioHistoryChart({
                 <TooltipRow
                   key={provider}
                   label={providerLabel(provider) + (estimated ? " · neověřený odhad" : "")}
-                  color={estimated ? "#f59e0b" : colors[provider] || providerColor(provider)}
+                  color={colors[provider] || providerColor(provider)}
                   value={estimated
                     ? formatCurrency(item.estimatedValueCzk!)
                     : formatValue(
