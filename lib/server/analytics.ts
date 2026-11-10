@@ -1106,6 +1106,7 @@ export function getCashFlowData(months = 18) {
       SELECT provider, kind, occurred_at, amount_czk, category, source_label
       FROM transactions
       WHERE amount_czk IS NOT NULL
+        AND COALESCE(raw_json, '') NOT LIKE '%"enrichmentOnly":true%'
         AND (
           (
             provider = 'manual'
