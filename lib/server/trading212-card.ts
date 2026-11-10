@@ -905,10 +905,18 @@ async function downloadCsv(
   url: string,
   credentials: Trading212CardCredentials,
 ) {
+  const destination = new URL(url);
+  if (destination.protocol !== "https:") {
+    throw new Error("Trading 212 CSV download must use HTTPS.");
+  }
+  // Signed provider export links may point to an external storage host.
+  // Try without credentials first; never forward API secrets off Trading 212.
   let response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
+  if (!response.ok &&
+      ["live.trading212.com", "demo.trading212.com"].includes(destination.hostname)) {
     response = await fetch(url, {
       cache: "no-store",
+      redirect: "error",
       headers: { Authorization: authHeader(credentials) },
     });
   }
