@@ -13,6 +13,7 @@ export type PortfolioChartMetric = "value" | "profit" | "return" | "contribution
 
 export interface PortfolioChartMetricData {
   valueCzk: number | null;
+  estimatedValueCzk?: number | null;
   contributedCzk: number;
   externalRewardsCzk: number;
   capitalAttributedCzk: number;
@@ -280,6 +281,7 @@ export function PortfolioHistoryChart({
   const [customEnd, setCustomEnd] = useState("");
   const [showTotal, setShowTotal] = useState(true);
   const [showContributions, setShowContributions] = useState(true);
+  const [showEstimates, setShowEstimates] = useState(true);
   const [selectedProviders, setSelectedProviders] = useState<string[]>(
     data.providers,
   );
@@ -483,6 +485,18 @@ export function PortfolioHistoryChart({
         values.push(netDepositedCzk(point.total));
       }
     }
+    if (metric === "value" && showEstimates) {
+      for (const point of filtered) {
+        const provisional = point.total.estimatedValueCzk;
+        if (provisional !== undefined && provisional !== null &&
+            Number.isFinite(provisional)) values.push(provisional);
+        for (const provider of displayProviders) {
+          const estimate = point.providers[provider]?.estimatedValueCzk;
+          if (estimate !== undefined && estimate !== null &&
+              Number.isFinite(estimate)) values.push(estimate);
+        }
+      }
+    }
 
     if (!values.length) return null;
     if (metric === "profit" || metric === "return") values.push(0);
@@ -538,6 +552,7 @@ export function PortfolioHistoryChart({
     metric,
     showTotal,
     showContributions,
+    showEstimates,
     displayProviders,
     estimateEndDate,
     visibleCashFlows,
@@ -810,6 +825,20 @@ export function PortfolioHistoryChart({
         ) : null}
       </div>
 
+      {metric === "value" && filtered.some((point) =>
+        point.total.estimatedValueCzk != null ||
+        Object.values(point.providers).some((provider) => provider.estimatedValueCzk != null),
+      ) ? (
+        <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-[var(--warning)]/25 px-3 py-2 text-xs text-[var(--muted)]">
+          <input
+            type="checkbox"
+            checked={showEstimates}
+            onChange={(event) => setShowEstimates(event.target.checked)}
+          />
+          Zobrazit orientační rekonstruovanou hodnotu (přerušovaně, neověřeno)
+        </label>
+      ) : null}
+
       {!compact && lastPoint ? (
         <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <MiniStat
@@ -889,6 +918,15 @@ export function PortfolioHistoryChart({
                   ),
                   metric,
                 )}
+              />
+            ) : null}
+            {metric === "value" && showEstimates &&
+            hoverPoint.total.valueCzk === null &&
+            hoverPoint.total.estimatedValueCzk != null ? (
+              <TooltipRow
+                label="Orientační celkem · neověřeno"
+                color="#f59e0b"
+                value={formatCurrency(hoverPoint.total.estimatedValueCzk)}
               />
             ) : null}
             {displayProviders.map((provider) => (
@@ -1113,6 +1151,44 @@ export function PortfolioHistoryChart({
                 ) : null}
 
               </>
+            ) : null}
+
+            {metric === "value" && showEstimates && showTotal ? (
+              <path
+                d={buildPath(
+                  filtered,
+                  (point) => point.total.valueCzk === null
+                    ? point.total.estimatedValueCzk ?? null : null,
+                  chart.xScale,
+                  chart.yScale,
+                )}
+                fill="none"
+                stroke="#f59e0b"
+                strokeOpacity=".85"
+                strokeDasharray="5 6"
+                strokeWidth="1.8"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {metric === "value" && showEstimates ? displayProviders.map(
+              (provider) => (
+                <path
+                  key={"estimate-" + provider}
+                  d={buildPath(
+                    filtered,
+                    (point) => point.providers[provider]?.valueCzk === null
+                      ? point.providers[provider]?.estimatedValueCzk ?? null : null,
+                    chart.xScale,
+                    chart.yScale,
+                  )}
+                  fill="none"
+                  stroke={colors[provider] || providerColor(provider)}
+                  strokeOpacity=".6"
+                  strokeDasharray="5 6"
+                  strokeWidth="1.4"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ),
             ) : null}
 
             {showTotal ? (
