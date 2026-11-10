@@ -36,7 +36,7 @@ test("partial reconstructed valuations are only shown as explicitly labelled est
   assert.ok(server.includes("estimatedValueCzk: !complete"));
   assert.ok(server.includes('snapshotQuality === "partial"'));
   assert.ok(reconstruction.includes("cashHistoryComplete"));
-  assert.ok(client.includes("Zobrazit orientační rekonstruovanou hodnotu"));
+  assert.ok(client.includes("Orientační historická hodnota (přerušovaně · neověřeno)"));
   assert.ok(client.includes('strokeDasharray="5 6"'));
   assert.ok(client.includes("Orientační celkem · neověřeno"));
   assert.ok(client.includes("point.total.valueCzk === null"));
